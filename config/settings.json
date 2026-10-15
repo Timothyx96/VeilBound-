@@ -1,0 +1,79 @@
+{
+  "animation": {
+    "preset": "Normal",
+    "presets": {
+      "Slow": {
+        "card_flip_ms": 6200,
+        "delay_between_reveals_ms": 8600,
+        "card_information_ms": 12500,
+        "score_count_ms": 20000,
+        "row_result_ms": 25000,
+        "row_transition_ms": 7200,
+        "final_round_result_ms": 25000
+      },
+      "Normal": {
+        "card_flip_ms": 1200,
+        "delay_between_reveals_ms": 1000,
+        "card_information_ms": 8000,
+        "score_count_ms": 2000,
+        "row_result_ms": 2500,
+        "row_transition_ms": 1000,
+        "final_round_result_ms": 5000
+      },
+      "Fast": {
+        "card_flip_ms": 300,
+        "delay_between_reveals_ms": 200,
+        "card_information_ms": 600,
+        "score_count_ms": 750,
+        "row_result_ms": 900,
+        "row_transition_ms": 250,
+        "final_round_result_ms": 1500
+      }
+    }
+  },
+  "card_frame": {
+    "placed": {
+      "width": 1.25,
+      "height": 1.28
+    }
+  },
+  "audio": {
+    "background_music": {
+      "enabled": true,
+      "sound": "assets/sounds/Background_music/Background_Music.mp3",
+      "volume": 0.1,
+      "loop": true
+    },
+    "card_reveal": {
+      "enabled": true,
+      "random_selection": true,
+      "sounds": [
+        "assets/sounds/Abillity_Sfx/Sfx1.mp3",
+        "assets/sounds/Abillity_Sfx/Sfx2.mp3",
+        "assets/sounds/Abillity_Sfx/Sfx3.mp3",
+        "assets/sounds/Abillity_Sfx/Sfx4.mp3",
+        "assets/sounds/Abillity_Sfx/Sfx5.mp3",
+        "assets/sounds/Abillity_Sfx/Sfx6.mp3",
+        "assets/sounds/Abillity_Sfx/Sfx7.mp3"
+      ]
+    },
+    "card_place": {
+      "enabled": true,
+      "sound": "assets/sounds/card_place/Card Place Sfx.mp3"
+    },
+    "next_row": {
+      "enabled": true,
+      "sound": "assets/sounds/New_row/New Row sfx.mp3"
+    },
+    "counter_sfx": {
+      "enabled": true,
+      "sound": "assets/sounds/counter_sfx/Counter.mp3"
+    }
+  },
+  "background": {
+    "selected": "background2",
+    "presets": {
+      "background2": "assets/backgrounds/Backrgound2.png"
+    }
+  }
+}

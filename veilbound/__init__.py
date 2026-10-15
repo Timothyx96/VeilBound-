@@ -1,0 +1,2 @@
+"""Veilbound card game prototype."""
+
