@@ -1,0 +1,34 @@
+# Veilbound Ability System (design notes, NOT implemented yet)
+
+Every character has a type (GOAT, fighter, regular, more can be added), base points, and at most one ability. Every ability belongs to one of three scopes.
+
+## Scope 1: Row level
+The effect depends only on the cards in the same row and is calculated when the row is scored.
+- Duo: bonus points if the duo partner is in the same row.
+- Count: bonus points for having a specific number of characters, or of a character type, in the row.
+- Sole type: winning the row by being the only card type in it (for example only GOATs).
+- Late arrival: bonus points for being the last character placed in the row ("the hero always arrives late").
+
+## Scope 2: Event timing
+The effect triggers at the moment the card is revealed.
+- Example: eliminate a revealed card in the same row, chosen by the player who owns the ability.
+- This needs a player choice in the middle of the reveal sequence.
+
+## Scope 3: Entire board
+The effect changes the rules of the board itself.
+- Example: when revealed, switch the points assigned to rows.
+
+## Rules for the code
+- Card data holds type, base points, and an ability id with parameters. Ability logic lives in one place, keyed by ability id. Never in rendering code.
+- Game state is plain data: row point values, per row an ordered list of slots (owner, card id, face-up/down, eliminated flag, placement order).
+- Row point values are part of the state, not constants (Scope 3 changes them).
+- Resolution order: placement, then reveals (triggers run in reveal order), then scoring (Scope 1 is calculated from the final state).
+- Player choices work as request and response: the server pauses, asks that player, validates the answer, then continues.
+- Targets can only be revealed cards. Face-down cards can never be targeted or inspected.
+- The server only sends card and ability data for revealed cards.
+
+## Open rules (decide before implementing abilities)
+- Does an eliminated card keep its slot? Does it still count for type counts, duos, and "last placed"?
+- If two reveal effects trigger in the same end-phase flip, in which order do they resolve?
+- If a row-points switch happens, do rows that were already scored change retroactively? (Probably scoring only happens after all reveals.)
+- Can an ability target the owner's own cards, or only the opponent's?
