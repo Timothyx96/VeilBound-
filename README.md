@@ -1,6 +1,6 @@
 # Veilbound
 
-Veilbound is an offline, local two-player card game prototype built with Python and Pygame. The shared rules engine does not import Pygame; card definitions are JSON and the desktop client owns rendering and animation.
+Veilbound is a two-player card game prototype built with Python and Pygame. It supports local hot-seat play on one screen and online play through an authoritative room server. The shared rules engine does not import Pygame; card definitions are JSON and the desktop client owns rendering and animation.
 
 ## Setup
 
@@ -16,11 +16,31 @@ If PowerShell blocks venv activation, use `.\.venv\Scripts\python.exe` in place 
 
 ## Run
 
+### Local game
+
 ```powershell
 python -m veilbound.client
 ```
 
-Two players share the window. On each turn, the active player must drag a card from their hand into the next empty slot of a row; turns alternate until every slot in all four rows is filled. Players cannot pass or skip placement. The opening player gets the existing start-of-turn draw after the initial five-card hand. Press **Esc** to quit.
+Choose **Local Game** in the menu. Two players share the window. On each turn, the active player must drag a card from their hand into the next empty slot of a row; turns alternate until every slot in all four rows is filled. Players cannot pass or skip placement. The opening player gets the existing start-of-turn draw after the initial five-card hand. Press **Esc** to quit.
+
+### Online game
+
+Start the room server (default `127.0.0.1:8765`; use `--host 0.0.0.0` for LAN play):
+
+```powershell
+python -m veilbound.server
+python -m veilbound.server --host 0.0.0.0 --port 8765
+```
+
+Then start two clients:
+
+```powershell
+python -m veilbound.client
+python -m veilbound.client --host 192.168.1.10 --port 8765
+```
+
+Choose **Host Online Room** on one client and share the six-character room code it shows. Choose **Join Online Room** on the other client and enter the code (Tab switches between the host, port, and code fields). The match starts when both players are connected. Gameplay, animations, and sounds are identical to local play; each player sees only their own hand, the room code stays in the footer, and the status line shows when it is the opponent's turn. If a player disconnects, the room pauses until they reconnect with the same credentials, and missed reveals are replayed automatically.
 
 Press **F11** or **Alt+Enter** to toggle fullscreen. Press the same shortcut again to return to the previous window size.
 
@@ -36,7 +56,7 @@ Character effects are descriptive text only. Scoring uses each character's `base
 python -m pytest -q
 ```
 
-Coverage includes roster and 40-card pool validation, random-deal population, cross-round pool persistence and no card reuse, four rows and randomized capacities, sequential slot placement, turn alternation and hidden cards, reveal order, base-point totals, ties, point awards, round resets, animation settings, and image-loading fallbacks.
+Coverage includes roster and 40-card pool validation, random-deal population, cross-round pool persistence and no card reuse, four rows and randomized capacities, sequential slot placement, turn alternation and hidden cards, reveal order, base-point totals, ties, point awards, round resets, animation settings, image-loading fallbacks, menu routing and room-code validation, protocol framing, two-peer room flow with reveal acknowledgments, and masked remote state with input gating.
 
 ## Structure
 

@@ -7,20 +7,22 @@ from veilbound.client.settings import PROJECT_ROOT, load_settings
 from veilbound.shared.models import GameEvent
 
 
-def test_project_settings_use_real_assets_and_slow_is_at_least_ten_times_longer():
+def test_project_settings_use_real_assets_and_respect_preset_floors():
     settings = load_settings()
-    assert settings.animation_preset == "Slow"
-    assert settings.animation_ms["card_flip_ms"] >= 6200
-    assert settings.animation_ms["delay_between_reveals_ms"] >= 8600
-    assert settings.animation_ms["card_information_ms"] >= 12500
-    assert settings.animation_ms["row_result_ms"] >= 19000
-    assert settings.animation_ms["row_transition_ms"] >= 7200
+    assert settings.animation_preset in {"Slow", "Normal", "Fast"}
+    assert settings.animation_ms["card_flip_ms"] >= 300
+    assert settings.animation_ms["delay_between_reveals_ms"] >= 200
+    assert settings.animation_ms["card_information_ms"] >= 600
+    assert settings.animation_ms["row_result_ms"] >= 900
+    assert settings.animation_ms["row_transition_ms"] >= 250
+    assert settings.animation_preset == load_settings().animation_preset == "Normal"
 
     reveal = settings.audio["card_reveal"]
     assert len(reveal["sounds"]) == 7
     assert all((PROJECT_ROOT / path).is_file() for path in reveal["sounds"])
     assert (PROJECT_ROOT / settings.audio["next_row"]["sound"]).is_file()
-    assert settings.audio["card_place"] == {"enabled": False, "sound": None}
+    assert settings.audio["card_place"]["enabled"] is True
+    assert (PROJECT_ROOT / settings.audio["card_place"]["sound"]).is_file()
     assert settings.background_path
     assert (PROJECT_ROOT / settings.background_path).is_file()
 
@@ -77,19 +79,24 @@ def test_audio_events_play_one_uniform_reveal_and_one_next_row_sound(monkeypatch
     audio = AudioManager(settings.audio)
     audio.rng = FixedIndex(6)
 
+    sounds_by_path = {sound.path: sound for sound in loaded}
+    next_row_sound = sounds_by_path[str(PROJECT_ROOT / settings.audio["next_row"]["sound"])]
+    card_place_sound = sounds_by_path[str(PROJECT_ROOT / settings.audio["card_place"]["sound"])]
+
     reveal = GameEvent("card_revealed", "revealed", {"card_id": "card-1"})
     next_row = GameEvent("next_row", "next row", {"row_id": "row-2"})
     audio.on_events((reveal, reveal, next_row, next_row))
 
     assert audio.rng.seen_size == 7
     assert loaded[6].play_count == 1
-    assert loaded[-1].play_count == 1
+    assert next_row_sound.play_count == 1
     assert sum(sound.play_count for sound in loaded) == 2
     audio.play_card_place("placement-1")
-    assert sum(sound.play_count for sound in loaded) == 2
+    assert card_place_sound.play_count == 1
+    assert sum(sound.play_count for sound in loaded) == 3
     audio.reset_match()
     audio.on_events((next_row,))
-    assert loaded[-1].play_count == 2
+    assert next_row_sound.play_count == 2
 
 
 def test_reveal_audio_plays_once_per_distinct_card_reveal(monkeypatch, tmp_path):

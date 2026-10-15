@@ -57,6 +57,7 @@ class Renderer:
         self.flip_started: dict[tuple[str, int], float] = {}
         self.notice = "Drag a card into a valid empty slot."
         self.notice_until = 0.0
+        self.room_label: str | None = None
         self.turn_confirmation_player_id: str | None = None
         self.last_card_reveal = ""
         self.reveal_card: dict | None = None
@@ -692,6 +693,12 @@ class Renderer:
             else:
                 empty = sum(row.capacity - row.placed_count for row in state.rows)
                 text = f"Round {state.round_number}: {state.active_player.name} to place - {empty} slots remain"
+                if (
+                    state.viewer_id is not None
+                    and state.active_player.id != state.viewer_id
+                    and self.turn_confirmation_player_id is None
+                ):
+                    text = f"Waiting for {state.active_player.name} to place - {empty} slots remain"
         elif state.phase == GamePhase.REVEAL:
             text = self.last_card_reveal or f"Revealing Row {state.current_row.number}"
         elif state.phase == GamePhase.ROW_SCORING:
@@ -714,6 +721,9 @@ class Renderer:
 
     def _draw_footer(self, screen, layout):
         footer = "Drag cards to slots  -  F11: fullscreen  -  Esc: quit"
+        room_label = getattr(self, "room_label", None)
+        if room_label:
+            footer += f"  -  {room_label}"
         self._text_center_fit(
             screen, footer, (screen.get_width() // 2, screen.get_height() - 12), "label_small", screen.get_width() - 24,
         )
