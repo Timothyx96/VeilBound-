@@ -230,9 +230,10 @@ class Renderer:
         if mouse_pos is None:
             return
         hovered = None
+        hand_player = state.player(state.viewer_id) if state.viewer_id else state.active_player
         if state.phase == GamePhase.PLACEMENT and self.turn_confirmation_player_id is None:
             hovered = next((
-                card for card, rect in zip(state.active_player.hand, layout.hand_cards)
+                card for card, rect in zip(hand_player.hand, layout.hand_cards)
                 if rect.collidepoint(mouse_pos)
             ), None)
         if hovered is None:
@@ -522,7 +523,7 @@ class Renderer:
         pygame.draw.rect(screen, fill, rect, border_radius=9)
         pygame.draw.rect(screen, GOLD if row.scored else (113, 128, 151), rect, width=2, border_radius=9)
         self._text_center_fit(screen, f"ROW {row.number}", (rect.centerx, rect.y + 10), "row_label", rect.width - 8)
-        self._text_center(screen, str(row.capacity), (rect.centerx, rect.y + rect.height * 0.42), "number_capacity")
+        self._text_center(screen, str(row.point_value), (rect.centerx, rect.y + rect.height * 0.42), "number_capacity")
         display_scores = (
             self._displayed_row_scores(row)
             if row.scored
@@ -534,7 +535,7 @@ class Renderer:
         self._text_center_fit(screen, f"P2 {p2_score}", (rect.centerx, rect.bottom - 9), "label_small", rect.width - 8)
 
     def _draw_placed_card(self, screen, rect, row, slot_index, card, cards, now):
-        definition = cards[card.definition_id]
+        definition = cards.get(card.definition_id) if card.revealed else None
         reveal_time = self.flip_started.get((row.id, slot_index))
         flip_duration = max(1, self.animation_ms["card_flip_ms"]) / 1000
         progress = 1.0 if reveal_time is None and card.revealed else 0.0
@@ -543,6 +544,8 @@ class Renderer:
         face_up = card.revealed and (reveal_time is None or progress >= 0.5)
         owner_accent = P1 if card.owner_id == "player-1" else P2
         if face_up:
+            if definition is None:
+                return
             surface = self._make_card_face(definition, rect.size)
         else:
             surface = self._make_card_back_surface(rect.size, card.owner_id)
@@ -668,12 +671,13 @@ class Renderer:
     def _draw_hand(self, screen, state, cards, layout, drag_id, mouse_pos):
         if state.phase != GamePhase.PLACEMENT or self.turn_confirmation_player_id is not None:
             return
-        for card, rect in zip(state.active_player.hand, layout.hand_cards):
+        hand_player = state.player(state.viewer_id) if state.viewer_id else state.active_player
+        for card, rect in zip(hand_player.hand, layout.hand_cards):
             if card.id == drag_id:
                 continue
             screen.blit(self._make_card_face(cards[card.definition_id], rect.size), rect)
-        if drag_id and mouse_pos:
-            card = next((item for item in state.active_player.hand if item.id == drag_id), None)
+        if drag_id and mouse_pos and hand_player.id == state.active_player.id:
+            card = next((item for item in hand_player.hand if item.id == drag_id), None)
             if card:
                 drag_height = max(1, round(layout.hand_cards[0].height * 1.1))
                 drag_width = max(1, round(drag_height * CARD_WIDTH_RATIO / CARD_HEIGHT_RATIO))

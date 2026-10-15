@@ -5,7 +5,7 @@ import time
 import pygame
 
 from veilbound.shared.engine import GameEngine
-from veilbound.shared.models import GamePhase
+from veilbound.shared.models import ActionResult, GamePhase
 from .audio import AudioManager
 from .renderer import Renderer
 
@@ -20,7 +20,8 @@ class InputController:
         self.animation_deadline: float | None = None
         self.animation_stage: str | None = None
         self.turn_confirmation_player_id: str | None = None
-        if engine.state.phase == GamePhase.PLACEMENT:
+        self.remote = bool(getattr(engine, "is_remote", False))
+        if not self.remote and engine.state.phase == GamePhase.PLACEMENT:
             self._require_turn_confirmation(engine.state.active_player.id)
 
     def handle(self, event: pygame.event.Event, screen) -> bool:
@@ -50,7 +51,7 @@ class InputController:
             if state.phase == GamePhase.MATCH_RESULTS and layout.match_continue.collidepoint(event.pos):
                 self._restart()
                 return True
-            if state.phase == GamePhase.PLACEMENT and self.animation_stage is None:
+            if state.phase == GamePhase.PLACEMENT and self.animation_stage is None and not getattr(self.engine, "remote_locked", False):
                 for card, rect in zip(state.active_player.hand, layout.hand_cards):
                     if rect.collidepoint(event.pos):
                         self.drag_id = card.id
@@ -58,7 +59,7 @@ class InputController:
                         break
             return True
         if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-            if self.drag_id and self.animation_stage is None and self.engine.state.phase == GamePhase.PLACEMENT:
+            if self.drag_id and self.animation_stage is None and self.engine.state.phase == GamePhase.PLACEMENT and not getattr(self.engine, "remote_locked", False):
                 layout = self.renderer.layout(self.engine.state, screen.get_size())
                 target = next((slot for slot, rect in layout.slot_rects.items() if rect.collidepoint(event.pos)), None)
                 if target:
@@ -77,6 +78,20 @@ class InputController:
 
     def update(self, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
+        if self.remote:
+            self.engine.poll()
+            events = self.engine.drain_events()
+            if events:
+                self._apply(ActionResult(True, events=events), now)
+            notice = self.engine.drain_notice()
+            if notice:
+                self.renderer.notice = notice
+                self.renderer.notice_until = now + 4
+            if self.animation_stage == "await_reveal":
+                if self.engine.remote_locked:
+                    return
+                self.animation_stage = None
+                self.animation_deadline = None
         phase = self.engine.state.phase
         if phase == GamePhase.MATCH_RESULTS:
             self.animation_deadline = None
@@ -107,6 +122,10 @@ class InputController:
             if phase == GamePhase.REVEAL:
                 self.animation_stage = "reveal_gap"
                 self.animation_deadline = now + self._seconds("delay_between_reveals_ms")
+            elif self.remote:
+                self._reveal_next_card(now)
+                self.animation_stage = "await_reveal"
+                self.animation_deadline = None
             else:
                 self.animation_stage = None
                 self.animation_deadline = None
@@ -166,6 +185,9 @@ class InputController:
     def _reveal_next_card(self, now: float) -> None:
         result = self.engine.reveal_next_card()
         self._apply(result, now)
+        if self.remote and result.accepted and not result.events:
+            self.animation_stage = "await_reveal"
+            self.animation_deadline = None
 
     def _seconds(self, setting: str) -> float:
         milliseconds = self.renderer.animation_ms.get(setting, 0)
@@ -181,7 +203,7 @@ class InputController:
             self._apply(result)
             self.animation_stage = None
             self.animation_deadline = None
-            if self.engine.state.phase == GamePhase.PLACEMENT:
+            if not self.remote and self.engine.state.phase == GamePhase.PLACEMENT:
                 self.renderer.reset_animations()
                 self._require_turn_confirmation(self.engine.state.active_player.id)
         elif phase == GamePhase.MATCH_RESULTS:
@@ -195,7 +217,7 @@ class InputController:
         self.animation_deadline = None
         self.animation_stage = None
         self.drag_id = None
-        if self.engine.state.phase == GamePhase.PLACEMENT:
+        if not self.remote and self.engine.state.phase == GamePhase.PLACEMENT:
             self._require_turn_confirmation(self.engine.state.active_player.id)
 
     def _require_turn_confirmation(self, player_id: str | None) -> None:
@@ -221,7 +243,7 @@ class InputController:
                 animation_now = time.monotonic() if now is None else now
                 self.animation_stage = "card_flip"
                 self.animation_deadline = animation_now + self._seconds("card_flip_ms")
-            if any(event.kind == "turn" for event in result.events) and self.engine.state.phase == GamePhase.PLACEMENT:
+            if not self.remote and any(event.kind == "turn" for event in result.events) and self.engine.state.phase == GamePhase.PLACEMENT:
                 self._require_turn_confirmation(self.engine.state.active_player.id)
             elif self.engine.state.phase != GamePhase.PLACEMENT:
                 self._require_turn_confirmation(None)

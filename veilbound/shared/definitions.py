@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import random
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
@@ -74,14 +73,8 @@ def deal_player_pool(
     pool_size: int = PLAYER_POOL_SIZE,
     seed: int | None = None,
 ) -> list[str]:
-    """Choose unique character IDs for one player's fixed match pool."""
-    character_ids = list(roster.keys() if isinstance(roster, Mapping) else roster)
-    if pool_size < 0:
-        raise ValueError("Pool size cannot be negative")
-    if pool_size > len(character_ids):
-        raise ValueError(
-            f"Cannot deal a {pool_size}-card pool from a {len(character_ids)}-character roster"
-        )
-    chooser = random if seed is None else random.Random(seed)
-    return chooser.sample(character_ids, pool_size)
+    """Compatibility wrapper; deck rules live with the rest of the rules module."""
+    from .rules import deal_player_pool as deal
+
+    return deal(roster, pool_size, seed)
 

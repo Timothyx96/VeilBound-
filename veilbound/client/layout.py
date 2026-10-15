@@ -30,7 +30,8 @@ class BoardLayout:
         self.capacity_boxes: dict[str, pygame.Rect] = {}
         self.slot_rects: dict[tuple[str, int], pygame.Rect] = {}
 
-        hand_count = len(state.active_player.hand)
+        hand_player = state.player(state.viewer_id) if state.viewer_id else state.active_player
+        hand_count = len(hand_player.hand)
         target_hand_height = min(
             HAND_CARD_MAX_HEIGHT,
             max(HAND_CARD_MIN_HEIGHT, round(height * HAND_CARD_HEIGHT_RATIO)),
