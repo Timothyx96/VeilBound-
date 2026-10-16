@@ -14,7 +14,7 @@ from veilbound.client.theme import (
     SLOT_HOVER_BORDER, SLOT_HOVER_GLOW, SLOT_INVALID_BORDER, SLOT_INVALID_FILL,
     SLOT_OCCUPIED_BORDER, SLOT_OCCUPIED_FILL,
     SLOT_RADIUS, SLOT_SHADOW, SLOT_GOLD, SLOT_VALID_BORDER,
-    SLOT_VALID_FILL, SLOT_VALID_GLOW, TEXT_SHADOW,
+    SLOT_VALID_FILL, SLOT_VALID_GLOW, TEXT_MUTED_GOLD, TEXT_SHADOW,
 )
 from veilbound.client.typography import (
     FONTS,
@@ -43,6 +43,7 @@ class Renderer:
             "assets/art/card front/Antieke Perkamentachtergrond met Gouden Hoekornamenten.png"
         )
         self.card_frame_art = self._prepare_card_frame()
+        self.options_background = self.assets.load_image("assets/backgrounds/Options Background.png")
         self._background_cache_size: tuple[int, int] | None = None
         self._background_cache: tuple[pygame.Surface, pygame.Surface] | None = None
         self._render_size: tuple[int, int] | None = None
@@ -175,57 +176,127 @@ class Renderer:
 
         width, height = screen.get_size()
         screen.blit(self._overlay(screen.get_size(), (4, 8, 17, 168)), (0, 0))
-        panel_width = min(540, width - 48)
-        panel_height = min(620, height - 48)
-        panel = pygame.Rect(0, 0, panel_width, panel_height)
-        panel.center = (width // 2, height // 2)
-        screen.blit(self._card_front_surface(panel.size), panel)
-        art_rect = pygame.Rect(panel.x + 18, panel.y + 16, panel.width - 36, int(panel.height * 0.35))
-        image_path = str(self.reveal_card.get("image", ""))
-        portrait_key = (image_path, art_rect.size)
-        portrait = self._spotlight_portrait_cache.get(portrait_key)
-        if portrait is None:
-            art = self.assets.load_character(image_path)
-            portrait = self.assets.scale_to_fit(art, art_rect.size)
-            self._spotlight_portrait_cache[portrait_key] = portrait
-        screen.blit(portrait, portrait.get_rect(center=art_rect.center))
 
-        name = str(self.reveal_card.get("name", "Unknown character"))
-        name_y = art_rect.bottom + 25
-        name_lines = self._card_name_lines(name, panel.width - 36)
-        name_extra = self._draw_centered_name_lines(
-            screen, name_lines, (panel.centerx, name_y), panel.width - 36, variant="parchment",
-        )
-        base_points = int(self.reveal_card.get("base_points", 0))
-        base_points_y = name_y + 24 + name_extra
-        self._text_center(screen, "BASE POINTS", (panel.centerx, base_points_y), "label_small", variant="parchment")
-        self._text_center_fit(
-            screen, str(base_points), (panel.centerx, base_points_y + 25), "number_card", 96, shadow=True,
-        )
+        full_card_art = str(self.reveal_card.get("full_card_art", ""))
+        full_art = None
+        if full_card_art:
+            full_art = self.assets.load_image(full_card_art)
+        has_full_art = full_art is not None
 
-        ability_top = name_y + 72 + name_extra
-        ability_box = pygame.Rect(panel.x + 18, ability_top, panel.width - 36, panel.bottom - ability_top - 18)
-        if mouse_pos is not None and panel.collidepoint(mouse_pos):
-            pygame.draw.rect(screen, PANEL, ability_box, border_radius=12)
-            pygame.draw.rect(screen, (151, 139, 114), ability_box, width=2, border_radius=12)
-            effect_name = str(self.reveal_card.get("effect_name", "Effect"))
-            self._text_center_spaced(
-                screen, effect_name, (ability_box.centerx, ability_box.y + 22), "ability_title", 1,
-                ability_box.width - 24,
+        card_max_w = 340
+        card_max_h = 500
+        card_w = min(card_max_w, width - 48)
+        card_h = min(card_max_h, int(card_w * CARD_HEIGHT_RATIO / CARD_WIDTH_RATIO))
+        card_rect = pygame.Rect(0, 0, card_w, card_h)
+
+        effect_name = str(self.reveal_card.get("effect_name", "Effect"))
+        description = str(self.reveal_card.get("effect_text", ""))
+        name_font = get_font("ability_title")
+        desc_font = get_font("ability_desc")
+
+        name_lines = wrap_text(effect_name.upper(), "ability_title", 260)
+        name_line_h = name_font.get_linesize()
+        name_block_h = len(name_lines) * name_line_h
+
+        desc_lines = wrap_text(description, "ability_desc", 260)
+        desc_line_h = desc_font.get_linesize()
+        desc_block_h = len(desc_lines) * desc_line_h
+
+        panel_pad = 24
+        panel_top_pad = 20
+        panel_bottom_pad = 20
+        name_max_w = max((name_font.size(line)[0] for line in name_lines), default=0)
+        desc_max_w = max((desc_font.size(line)[0] for line in desc_lines), default=0)
+        ability_w = min(320, max(260, panel_pad * 2 + max(name_max_w, desc_max_w)))
+        ability_h = panel_top_pad + name_block_h + 20 + desc_block_h + panel_bottom_pad
+        ability_h = min(420, max(170, ability_h))
+        ability_rect = pygame.Rect(0, 0, ability_w, ability_h)
+
+        gap = 24
+        combined_w = ability_w + gap + card_w
+        combined_h = max(ability_h, card_h)
+
+        if combined_w > width - 48:
+            combined_w = max(card_w, ability_w)
+            combined_h = card_h + gap + ability_h
+            side_by_side = False
+        else:
+            side_by_side = True
+
+        group_rect = pygame.Rect(0, 0, combined_w, combined_h)
+        group_rect.center = (width // 2, height // 2)
+
+        card_rect.x = group_rect.x
+        card_rect.y = group_rect.y + (combined_h - card_h) // 2
+        if side_by_side:
+            ability_rect.x = card_rect.right + gap
+            ability_rect.y = group_rect.y + (combined_h - ability_h) // 2
+        else:
+            card_rect.y = group_rect.y
+            ability_rect.x = group_rect.x
+            ability_rect.y = card_rect.bottom + gap
+
+        panel_surface = pygame.Surface((ability_w, ability_h), pygame.SRCALPHA)
+        panel_surface.fill(PANEL)
+        pygame.draw.rect(
+            panel_surface, TEXT_MUTED_GOLD, panel_surface.get_rect(), width=2, border_radius=8,
+        )
+        screen.blit(panel_surface, ability_rect)
+
+        name_y = ability_rect.y + 20
+        for line in name_lines:
+            name_surf = name_font.render(line.upper(), True, GOLD)
+            screen.blit(name_surf, name_surf.get_rect(centerx=ability_rect.centerx, y=name_y))
+            name_y += name_line_h
+
+        divider_y = name_y + 10
+        divider_rect = pygame.Rect(
+            ability_rect.x + 24, divider_y, ability_w - 48, 1,
+        )
+        pygame.draw.rect(screen, TEXT_MUTED_GOLD, divider_rect)
+
+        desc_y = divider_y + 16
+        max_desc_lines = max(1, (ability_rect.bottom - desc_y - 10) // desc_line_h)
+        if len(desc_lines) > max_desc_lines:
+            desc_lines = desc_lines[:max_desc_lines]
+            desc_lines[-1] = desc_lines[-1].rstrip(" .") + "..."
+        for line in desc_lines:
+            desc_surf = desc_font.render(line, True, CREAM)
+            screen.blit(desc_surf, desc_surf.get_rect(centerx=ability_rect.centerx, y=desc_y))
+            desc_y += desc_line_h
+
+        if has_full_art:
+            key = ("full_card", full_card_art, card_rect.size)
+            cached_full_art = self._spotlight_portrait_cache.get(key)
+            if cached_full_art is None:
+                cached_full_art = self.assets.scale_to_fit(full_art, card_rect.size)
+                self._spotlight_portrait_cache[key] = cached_full_art
+            screen.blit(cached_full_art, card_rect)
+        else:
+            screen.blit(self._card_front_surface(card_rect.size), card_rect)
+            art_rect = pygame.Rect(card_rect.x + 10, card_rect.y + 10, card_w - 20, int(card_h * 0.45))
+            image_path = str(self.reveal_card.get("image", ""))
+            portrait_key = (image_path, art_rect.size)
+            portrait = self._spotlight_portrait_cache.get(portrait_key)
+            if portrait is None:
+                art = self.assets.load_character(image_path)
+                portrait = self.assets.scale_to_fit(art, art_rect.size)
+                self._spotlight_portrait_cache[portrait_key] = portrait
+            screen.blit(portrait, portrait.get_rect(center=art_rect.center))
+            name = str(self.reveal_card.get("name", "Unknown character"))
+            portrait_bottom = art_rect.bottom
+            name_y = portrait_bottom + 24
+            name_lines = self._card_name_lines(name, card_w - 20)
+            name_extra = self._draw_centered_name_lines(
+                screen, name_lines, (card_rect.centerx, name_y), card_w - 20,
+                variant="black",
             )
-            description = str(self.reveal_card.get("effect_text", ""))
-            lines = wrap_text(description, "ability_desc", ability_box.width - 28)
-            line_height = get_font("ability_desc").get_linesize()
-            description_top = ability_box.y + 46
-            max_lines = max(1, (ability_box.bottom - description_top - 8) // line_height)
-            if len(lines) > max_lines and max_lines:
-                lines = lines[:max_lines]
-                lines[-1] = lines[-1].rstrip(" .") + "..."
-            for index, line in enumerate(lines):
-                self._text_center_fit(
-                    screen, line, (ability_box.centerx, description_top + index * line_height),
-                    "ability_desc", ability_box.width - 28,
-                )
+            base_points = int(self.reveal_card.get("base_points", 0))
+            base_points_y = name_y + name_extra + 20
+            self._text_center(screen, "BASE POINTS", (card_rect.centerx, base_points_y), "label_small")
+            self._text_center_fit(
+                screen, str(base_points), (card_rect.centerx, base_points_y + 22), "number_card", 96, shadow=True,
+            )
 
     def _draw_effect_tooltip(self, screen, state, cards, layout, mouse_pos):
         if mouse_pos is None:
@@ -589,6 +660,19 @@ class Renderer:
         if cached is not None:
             return cached
         width, height = size
+
+        # Full card artwork takes priority and replaces the entire card face.
+        full_art = None
+        if definition.full_card_art:
+            full_art = self.assets.load_image(definition.full_card_art)
+        if full_art is not None:
+            face = pygame.Surface(size, pygame.SRCALPHA)
+            fitted = self.assets.scale_to_fit(full_art, size)
+            face.blit(fitted, fitted.get_rect(center=(width // 2, height // 2)))
+            self._card_face_cache[key] = face
+            return face
+
+        # Fallback: existing card front + anime image system.
         face = self._card_front_surface(size).copy()
         pygame.draw.rect(face, (151, 139, 114), face.get_rect(), width=2, border_radius=6)
         compact = height < 100
@@ -720,7 +804,7 @@ class Renderer:
         )
 
     def _draw_footer(self, screen, layout):
-        footer = "Drag cards to slots  -  F11: fullscreen  -  Esc: quit"
+        footer = "Drag cards to slots  -  F11: fullscreen  -  Esc: Menu"
         room_label = getattr(self, "room_label", None)
         if room_label:
             footer += f"  -  {room_label}"

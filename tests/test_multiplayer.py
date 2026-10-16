@@ -124,8 +124,8 @@ def test_remote_engine_rebuilds_masked_state_and_gates_input():
 
     own_hand = remote.state.player("player-1").hand
     opponent_hand = remote.state.player("player-2").hand
-    # The opening player receives a start-of-turn draw on top of the 5-card hand.
-    assert len(own_hand) == 6
+    # Each player starts with exactly 5 cards; replacement is drawn only after placing.
+    assert len(own_hand) == 5
     assert [card.definition_id for card in own_hand]  # own definitions are visible
     assert opponent_hand == []  # opponent hand is masked
 
@@ -301,3 +301,79 @@ def test_two_peer_room_plays_a_full_match_to_results():
         update.get("notice") and "new match" in str(update.get("notice")).lower()
         for update in final_updates
     )
+
+
+class StubRenderer:
+    """Minimal renderer stand-in for controller animation-stage tests."""
+
+    animation_ms = {
+        "card_flip_ms": 10,
+        "delay_between_reveals_ms": 10,
+        "card_information_ms": 10,
+        "score_count_ms": 10,
+        "row_result_ms": 10,
+        "row_transition_ms": 10,
+        "final_round_result_ms": 100,
+    }
+
+    def __init__(self):
+        self.events = []
+        self.notice = ""
+        self.notice_until = 0.0
+        self.turn_confirmation_player_id = None
+
+    def note_events(self, events):
+        self.events.extend(events)
+
+    def reset_animations(self):
+        pass
+
+
+def _engine_at_round_results() -> GameEngine:
+    engine = fixed_engine()
+    while engine.state.phase == GamePhase.PLACEMENT:
+        player = engine.state.active_player
+        row_id, slot_index = engine.legal_slots()[0]
+        assert engine.play_card(player.id, player.hand[0].id, row_id, slot_index).accepted
+    while engine.state.phase == GamePhase.REVEAL:
+        assert engine.reveal_next_card().accepted
+    while engine.state.phase != GamePhase.ROUND_RESULTS:
+        if engine.state.phase == GamePhase.ROW_SCORING:
+            assert engine.score_current_row().accepted
+        elif engine.state.phase == GamePhase.ROW_RESULTS:
+            assert engine.advance_after_row_result().accepted
+        else:
+            raise AssertionError(f"Unexpected phase: {engine.state.phase}")
+    return engine
+
+
+def test_remote_controller_clears_results_stage_when_round_two_begins():
+    """Regression: ROUND_RESULTS re-arms while awaiting the server, and the
+    stale stage must not survive into round-2 PLACEMENT (it blocks dragging)."""
+    from veilbound.client.input import InputController
+
+    engine = _engine_at_round_results()
+    connection = StubConnection(player_id="player-1", room_code="ABC123")
+    remote = RemoteGameEngine(connection)
+    controller = InputController(remote, StubRenderer(), None)
+
+    push_update(connection, engine, "player-1", locked=False)
+    controller.update(1000.0)
+    assert controller.animation_stage == "round_results"
+
+    # Deadline passes: continue is sent once, then re-armed while the server
+    # round-trips (phase is still ROUND_RESULTS on the next frame).
+    controller.update(1000.0 + 0.2)
+    assert [m for m in connection.sent if m.get("type") == "continue_round"]
+    controller.update(1000.0 + 0.3)
+    assert controller.animation_stage == "round_results"
+
+    # The server advances to round 2; the client must drop the stale stage so
+    # placement input works again.
+    assert engine.continue_after_round_results().accepted
+    assert engine.state.phase == GamePhase.PLACEMENT
+    push_update(connection, engine, "player-1", locked=False)
+    controller.update(1000.0 + 0.4)
+    assert remote.state.phase == GamePhase.PLACEMENT
+    assert controller.animation_stage is None
+    assert remote.remote_locked is False

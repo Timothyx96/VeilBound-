@@ -30,7 +30,7 @@ FONTS = {
         "file": "Cinzel-Bold.otf",
         "size": 16,
         "color": TEXT_IVORY,
-        "variants": {"parchment": TEXT_PARCHMENT_INK},
+        "variants": {"parchment": TEXT_PARCHMENT_INK, "black": (0, 0, 0)},
     },
     "number_card": {"file": "OSWALD.otf", "size": 28, "color": TEXT_WHITE},
     "number_row_score": {"file": "OSWALD.otf", "size": 56, "color": TEXT_TITLE_GOLD},

@@ -49,6 +49,8 @@ class AppSettings:
     card_frame_size: tuple[float, float]
     background_name: str | None
     background_path: str | None
+    music_volume: float
+    sfx_volume: float
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -128,6 +130,21 @@ def load_settings(path: Path | None = None) -> AppSettings:
     if not isinstance(background_name, str) or background_name not in valid_backgrounds:
         background_name = next(iter(valid_backgrounds), None)
 
+    audio_raw = raw.get("audio", {})
+    if not isinstance(audio_raw, dict):
+        audio_raw = {}
+    music = audio_raw.get("background_music", {})
+    if not isinstance(music, dict):
+        music = {}
+    try:
+        music_volume = min(1.0, max(0.0, float(music.get("volume", 0.35))))
+    except (TypeError, ValueError):
+        music_volume = 0.35
+    try:
+        sfx_volume = min(1.0, max(0.0, float(audio_raw.get("sfx_volume", 0.8))))
+    except (TypeError, ValueError):
+        sfx_volume = 0.8
+
     return AppSettings(
         animation_preset=preset_name,
         animation_ms=animation_ms,
@@ -135,4 +152,6 @@ def load_settings(path: Path | None = None) -> AppSettings:
         card_frame_size=card_frame_size,
         background_name=background_name,
         background_path=valid_backgrounds.get(background_name),
+        music_volume=music_volume,
+        sfx_volume=sfx_volume,
     )

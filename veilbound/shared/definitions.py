@@ -42,6 +42,7 @@ def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]
             base_points=int(raw["base_points"]),
             effect_name=str(raw.get("effect_name", "")),
             effect_text=str(raw.get("effect_text", "")),
+            full_card_art=str(raw.get("full_card_art", "")),
         )
         if not definition.name or not definition.image:
             raise ValueError(f"Character {definition.id} needs a name and image path")

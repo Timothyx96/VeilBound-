@@ -22,7 +22,9 @@ If PowerShell blocks venv activation, use `.\.venv\Scripts\python.exe` in place 
 python -m veilbound.client
 ```
 
-Choose **Local Game** in the menu. Two players share the window. On each turn, the active player must drag a card from their hand into the next empty slot of a row; turns alternate until every slot in all four rows is filled. Players cannot pass or skip placement. The opening player gets the existing start-of-turn draw after the initial five-card hand. Press **Esc** to quit.
+Choose **Local Game** in the menu. Two players share the window. On each turn, the active player must drag a card from their hand into the next empty slot of a row; turns alternate until every slot in all four rows is filled. Players cannot pass or skip placement. The opening player gets the existing start-of-turn draw after the initial five-card hand.
+
+Press **Esc** during a match to open the pause menu, which offers **Options** and **Quit Game**. Choose **Options** to adjust **SFX volume** and **Music volume** with +/- buttons (changes apply immediately). Press **Esc** again from the pause menu or choose **Back** on the audio screen to resume the game. Choose **Quit Game** to exit the application.
 
 ### Online game
 
@@ -43,6 +45,15 @@ python -m veilbound.client --host 192.168.1.10 --port 8765
 Choose **Host Online Room** on one client and share the six-character room code it shows. Choose **Join Online Room** on the other client and enter the code (Tab switches between the host, port, and code fields). The match starts when both players are connected. Gameplay, animations, and sounds are identical to local play; each player sees only their own hand, the room code stays in the footer, and the status line shows when it is the opponent's turn. If a player disconnects, the room pauses until they reconnect with the same credentials, and missed reveals are replayed automatically.
 
 Press **F11** or **Alt+Enter** to toggle fullscreen. Press the same shortcut again to return to the previous window size.
+
+### Pause menu
+
+Press **Esc** during any match (local or online) to open the pause overlay. It shows:
+
+- **Options** — opens the audio settings screen where you can raise or lower **SFX volume** and **Music volume** in 10% steps. Changes take effect immediately.
+- **Quit Game** — exits the application entirely.
+
+Press **Esc** again on the pause screen, or **Back** on the audio screen, to return to the match. Game state, turn order, and sounds are preserved while paused.
 
 Each row fills from left to right; only its next empty slot accepts a card. Placing a card reveals the previous card in that row, leaving the newest card face down. Once every slot is filled, the remaining face-down cards are revealed one at a time from Row 1 through Row 4 before scoring begins. Row totals count revealed cards only. A row winner gains points equal to that row's capacity. A tied row has no winner and awards no points. A Continue button can advance the round-result screen early; otherwise it advances after the configured presentation time. Match points carry forward across two rounds.
 

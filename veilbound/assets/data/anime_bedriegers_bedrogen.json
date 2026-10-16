@@ -14,7 +14,8 @@
       "base_points": 7,
       "effect_name": "Eternal Rival",
       "effect_text": "Samen met Itachi krijgt Sasuke +3 punten. Als Naruto ook in dezelfde ronde wordt gespeeld, krijgt het duo nog eens +1 punt.",
-      "image": "assets/art/characters/Naruto/Sasuke Uchiha .png"
+      "image": "assets/art/characters/Naruto/Sasuke Uchiha .png",
+      "full_card_art": "assets/art/card front/Naruto/Sasuke_Uchiha.png"
     },
     {
       "id": "naruto_03",
@@ -22,7 +23,8 @@
       "base_points": 6,
       "effect_name": "Tsukuyomi",
       "effect_text": "Samen met Sasuke krijgt Itachi +3 punten. Daarnaast mag je één tegenstander verplichten zijn effect vóór dat van jou te activeren, waardoor je zijn strategie kunt verstoren.",
-      "image": "assets/art/characters/Naruto/Itachi Uchiha.jfif"
+      "image": "assets/art/characters/Naruto/Itachi Uchiha.jfif",
+      "full_card_art": "assets/art/card front/Naruto/Itachi_Uchiha.png"
     },
     {
       "id": "naruto_04",
@@ -38,7 +40,8 @@
       "base_points": 7,
       "effect_name": "Copy Ninja",
       "effect_text": "Kopieert één positief effect van een andere gespeelde kaart, maar niet diens punten, GOAT-status of duo-bonus.",
-      "image": "assets/art/characters/Naruto/Kakashi Hatake.png"
+      "image": "assets/art/characters/Naruto/Kakashi Hatake.png",
+      "full_card_art": "assets/art/card front/Naruto/Kakashi.png"
     },
     {
       "id": "naruto_06",
@@ -54,7 +57,8 @@
       "base_points": 4,
       "effect_name": "Het Was Allemaal Deel van Mijn Plan",
       "effect_text": "Kies vóór de puntentelling één andere kaart. Tobi verwisselt zijn punten met die kaart. De kaart die eerst 9 punten had, kan dus plotseling 4 punten waard zijn, of andersom. Effecten blijven bij hun oorspronkelijke kaart.",
-      "image": "assets/art/characters/Naruto/Tobi.jpeg"
+      "image": "assets/art/characters/Naruto/Tobi.jpeg",
+      "full_card_art": "assets/art/card front/Naruto/Tobi.png"
     },
     {
       "id": "naruto_08",
@@ -70,7 +74,8 @@
       "base_points": 5,
       "effect_name": "Power of Youth",
       "effect_text": "Als je deze ronde geen GOAT speelt, krijgt Rock Lee +3 punten. Een beloning voor spelers die hun sterkste kaart durven te bewaren.",
-      "image": "assets/art/characters/Naruto/Rock_Lee.jpg"
+      "image": "assets/art/characters/Naruto/Rock_Lee.jpg",
+      "full_card_art": "assets/art/card front/Naruto/Rock_Lee.png"
     },
     {
       "id": "naruto_10",
@@ -78,7 +83,8 @@
       "base_points": 4,
       "effect_name": "Ik Geloof in Jou",
       "effect_text": "Als Naruto door een effect punten verliest, mag Hinata maximaal 2 van die verloren punten aan hem teruggeven.",
-      "image": "assets/art/characters/Naruto/Hinata Hyuga.jpg"
+      "image": "assets/art/characters/Naruto/Hinata Hyuga.jpg",
+      "full_card_art": "assets/art/card front/Naruto/Hinata_Hyuga.png"
     },
     {
       "id": "mha_01",
@@ -166,7 +172,8 @@
       "base_points": 10,
       "effect_name": "Jajanken — Rock!",
       "effect_text": "Gon krijgt +3 punten als jouw team geen andere GOAT bevat. Als je een andere GOAT speelt, blijft Gon op zijn basiswaarde van 10 punten. Een sterke keuze voor een team dat op één held vertrouwt.",
-      "image": "assets/art/characters/Hunter x Hunter/Gon_Freecss.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Gon_Freecss.jpg",
+      "full_card_art": "assets/art/card front/HxH/Gon Freecss_ Gouden GOAT-kaart.png"
     },
     {
       "id": "hxh_02",
@@ -174,7 +181,8 @@
       "base_points": 7,
       "effect_name": "Godspeed",
       "effect_text": "Samen met Alluka krijgt Killua +3 punten. Killua's effect wordt als eerste geactiveerd, waardoor hij één kaart kan beschermen tegen een negatief effect.",
-      "image": "assets/art/characters/Hunter x Hunter/Killua_Zoldyck.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Killua_Zoldyck.jpg",
+      "full_card_art": "assets/art/card front/HxH/Killua_Zoldyck.png"
     },
     {
       "id": "hxh_03",
@@ -182,7 +190,8 @@
       "base_points": 5,
       "effect_name": "Nanika's Wens",
       "effect_text": "Samen met Killua krijgt Alluka +3 punten. Daarnaast mag je één kaart 2 punten geven of afnemen. Je moet de keuze maken voordat de puntentelling begint.",
-      "image": "assets/art/characters/Hunter x Hunter/Alluka_Zoldyck.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Alluka_Zoldyck.jpg",
+      "full_card_art": "assets/art/card front/HxH/Alluka_Zoldyck.png"
     },
     {
       "id": "hxh_04",
@@ -190,7 +199,8 @@
       "base_points": 8,
       "effect_name": "Bungee Gum",
       "effect_text": "Hisoka kopieert één bonus van maximaal +3 punten van een andere kaart naar zichzelf. Bungee Gum heeft zowel de eigenschappen van rubber als kauwgom, en blijkbaar ook van een diefstalverzekering.",
-      "image": "assets/art/characters/Hunter x Hunter/Hisoka.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Hisoka.jpg",
+      "full_card_art": "assets/art/card front/HxH/Hisoka.png"
     },
     {
       "id": "hxh_05",
@@ -210,11 +220,12 @@
     },
     {
       "id": "hxh_07",
-      "name": "Tonpa",
-      "base_points": 2,
+      "name": "Kite",
+      "base_points": 5,
       "effect_name": "Rookie Crusher",
       "effect_text": "Tonpa geeft één vijandelijke kaart een drankje. Die kaart verliest 4 punten, tenzij het een GOAT is: die herkent de truc en krijgt juist +2 punten. Als de tegenstander geen GOAT speelt, kan Tonpa een sterke Fighter volledig onderuit halen.",
-      "image": "assets/art/characters/Hunter x Hunter/Tonpa.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Tonpa.jpg",
+      "full_card_art": "assets/art/card front/HxH/Kite.png"
     },
     {
       "id": "hxh_08",
@@ -222,12 +233,13 @@
       "base_points": 6,
       "effect_name": "Chain Jail",
       "effect_text": "Als de tegenstander een Fighter speelt, mag Kurapika die kaart 2 punten laten verliezen. Tegen andere kaarttypen heeft hij geen bonus.",
-      "image": "assets/art/characters/Hunter x Hunter/Kurapika.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Kurapika.jpg",
+      "full_card_art": "assets/art/card front/HxH/Kurapika.png"
     },
     {
       "id": "hxh_09",
       "name": "Biscuit Krueger",
-      "base_points": 5,
+      "base_points": 3,
       "effect_name": "Training From Hell",
       "effect_text": "Kies één eigen kaart. Die krijgt +2 punten, maar Bisky zelf verliest 1 punt. Een goede trainer maakt haar team sterker.",
       "image": "assets/art/characters/Hunter x Hunter/Biscuit_Krueger.jpg"
@@ -246,7 +258,8 @@
       "base_points": 10,
       "effect_name": "Gear 5 — Warrior of Liberation",
       "effect_text": "Luffy krijgt +2 punten als jouw team minstens één andere kaart met een effect heeft dat punten verandert. Als hij wordt verzwakt, mag hij één keer 2 punten terugwinnen. Vrijheid laat zich niet zomaar tegenhouden!",
-      "image": "assets/art/characters/One Piece/Monkey_D_Luffy.jpg"
+      "image": "assets/art/characters/One Piece/Monkey_D_Luffy.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Monkey_D_Luffy.png"
     },
     {
       "id": "onepiece_02",
@@ -254,7 +267,8 @@
       "base_points": 7,
       "effect_name": "Santoryu",
       "effect_text": "Samen met Sanji krijgt Zoro +3 punten. Als je tegenstander een GOAT speelt, krijgt Zoro nog +1 punt. Hij wil altijd bewijzen dat hij de sterkste is.",
-      "image": "assets/art/characters/One Piece/Roronoa_Zoro.jpg"
+      "image": "assets/art/characters/One Piece/Roronoa_Zoro.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Roronoa_zoro.png"
     },
     {
       "id": "onepiece_03",
@@ -262,7 +276,8 @@
       "base_points": 7,
       "effect_name": "Mr. Prince",
       "effect_text": "Samen met Zoro krijgt Sanji +3 punten. Daarnaast mag Sanji één kaart met een negatief effect beschermen, maar hij doet het alleen als Zoro ook meedoet.",
-      "image": "assets/art/characters/One Piece/Sanji.jpg"
+      "image": "assets/art/characters/One Piece/Sanji.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Sanji.png"
     },
     {
       "id": "onepiece_04",
@@ -270,7 +285,8 @@
       "base_points": 8,
       "effect_name": "Conqueror's Haki",
       "effect_text": "Eén vijandelijke kaart met maximaal 5 basispunten mag deze ronde geen effect activeren. Shanks intimideert de zwakkere kaarten voordat het gevecht begint.",
-      "image": "assets/art/characters/One Piece/Shanks.jpg"
+      "image": "assets/art/characters/One Piece/Shanks.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Shanks.png"
     },
     {
       "id": "onepiece_05",
@@ -302,7 +318,8 @@
       "base_points": 4,
       "effect_name": "8000 Mannen",
       "effect_text": "Usopp bluft: kies één vijandelijke kaart. Als die kaart meer basispunten heeft dan Usopp, verliest ze 2 punten door zijn intimidatie.",
-      "image": "assets/art/characters/One Piece/Usopp.jpg"
+      "image": "assets/art/characters/One Piece/Usopp.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Usopp.png"
     },
     {
       "id": "onepiece_09",
@@ -342,7 +359,8 @@
       "base_points": 8,
       "effect_name": "Fusion Reborn",
       "effect_text": "Gogeta krijgt +2 punten als zowel Goku als Vegeta deze ronde worden gespeeld. Hij is geen onderdeel van hun duo: hij is de alternatieve beloning voor spelers die allebei hun Saiyans inzetten.",
-      "image": "assets/art/characters/Dragon Ball/Gogeta (Super Saiyan Blue).jpg"
+      "image": "assets/art/characters/Dragon Ball/Gogeta (Super Saiyan Blue).jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Gogeta.png"
     },
     {
       "id": "dragonball_04",

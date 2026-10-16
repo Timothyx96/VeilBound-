@@ -35,6 +35,7 @@ class CardDefinition:
     base_points: int
     effect_name: str
     effect_text: str
+    full_card_art: str = ""
 
 
 class CardInstance(StateRecord):

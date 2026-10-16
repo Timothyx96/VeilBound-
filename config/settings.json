@@ -1,6 +1,6 @@
 {
   "animation": {
-    "preset": "Normal",
+    "preset": "Fast",
     "presets": {
       "Slow": {
         "card_flip_ms": 6200,
@@ -40,7 +40,7 @@
   "audio": {
     "background_music": {
       "enabled": true,
-      "sound": "assets/sounds/Background_music/Background_Music.mp3",
+      "sound": "assets/sounds/Background_music/Intro_Lobby_music.mp3",
       "volume": 0.1,
       "loop": true
     },

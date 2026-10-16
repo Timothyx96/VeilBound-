@@ -24,12 +24,12 @@ class InputController:
         if not self.remote and engine.state.phase == GamePhase.PLACEMENT:
             self._require_turn_confirmation(engine.state.active_player.id)
 
-    def handle(self, event: pygame.event.Event, screen) -> bool:
+    def handle(self, event: pygame.event.Event, screen) -> bool | str:
         if event.type == pygame.QUIT:
             return False
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                return False
+                return "pause"
             if event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 if not self._confirm_turn():
                     self._continue_results()
@@ -132,6 +132,11 @@ class InputController:
             return
 
         if phase == GamePhase.PLACEMENT:
+            # Fresh round: drop presentation stages left over from an earlier
+            # results screen (they block drag input and are no longer valid).
+            if self.animation_stage in {"round_results", "row_result", "row_transition", "score_count"}:
+                self.animation_stage = None
+                self.animation_deadline = None
             return
 
         if self.animation_stage == "reveal_gap":

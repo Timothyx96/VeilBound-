@@ -1,8 +1,8 @@
 """Main-menu flow: local hot-seat, host a room, or join a room.
 
-The game loop itself is unchanged; this screen only decides which engine the
-client plays with. Network handshakes run on the connection worker thread, so
-the menu polls thread-safe events and never blocks the Pygame frame loop.
+Also drives the in-game pause menu (Options / Quit) and the audio settings
+screen (SFX / music volume). Network handshakes run on the connection worker
+thread, so the menu polls thread-safe events and never blocks the Pygame frame loop.
 """
 
 from __future__ import annotations
@@ -15,6 +15,9 @@ from veilbound.client.theme import BG, GOLD, PANEL, PANEL_LIGHT
 CODE_LENGTH = 6
 _EDITABLE_FIELDS = ("host", "port", "code")
 
+# Volume step per button press (0-100 scale).
+_VOLUME_STEP = 10
+
 
 def normalize_room_code(value: str) -> str:
     """Uppercase alphanumeric room code, trimmed to the server format."""
@@ -22,9 +25,20 @@ def normalize_room_code(value: str) -> str:
 
 
 class MenuScreen:
-    """Clickable title screen that yields a local or online game outcome."""
+    """Clickable title screen that yields a local or online game outcome.
 
-    def __init__(self, default_host: str = "127.0.0.1", default_port: int = 8765):
+    Also renders the pause (Options/Quit) and audio (volume) overlays used
+    during a match. When ``screen`` is ``pause`` or ``audio`` no outcome is
+    produced; the caller reads ``action`` instead.
+    """
+
+    def __init__(
+        self,
+        default_host: str = "127.0.0.1",
+        default_port: int = 8765,
+        music_volume: float = 0.35,
+        sfx_volume: float = 0.8,
+    ):
         self.default_host = default_host
         self.default_port = default_port
         self.screen = "root"
@@ -40,6 +54,9 @@ class MenuScreen:
         self.mouse_pos: tuple[int, int] | None = None
         self._outcome: tuple | None = None
         self._buttons: dict[str, pygame.Rect] = {}
+        self.music_volume = min(1.0, max(0.0, float(music_volume)))
+        self.sfx_volume = min(1.0, max(0.0, float(sfx_volume)))
+        self.action: str | None = None
 
     def take_outcome(self) -> tuple | None:
         outcome, self._outcome = self._outcome, None
@@ -60,6 +77,15 @@ class MenuScreen:
             buttons["back"] = pygame.Rect(center + 10, height // 2 + 130, 220, 58)
         elif self.screen == "waiting":
             buttons["cancel"] = pygame.Rect(center - 150, height // 2 + 150, 300, 58)
+        elif self.screen == "pause":
+            buttons["options"] = pygame.Rect(center - 150, height // 2 - 10, 300, 58)
+            buttons["quit"] = pygame.Rect(center - 150, height // 2 + 70, 300, 58)
+        elif self.screen == "audio":
+            buttons["sfx_down"] = pygame.Rect(center - 340, height // 2 - 40, 56, 44)
+            buttons["sfx_up"] = pygame.Rect(center + 284, height // 2 - 40, 56, 44)
+            buttons["music_down"] = pygame.Rect(center - 340, height // 2 + 20, 56, 44)
+            buttons["music_up"] = pygame.Rect(center + 284, height // 2 + 20, 56, 44)
+            buttons["back"] = pygame.Rect(center - 150, height // 2 + 100, 300, 58)
         self._buttons = buttons
         return buttons
 
@@ -108,6 +134,24 @@ class MenuScreen:
             self._cancel_connection()
             self.screen = "root"
             self.status = "Connection cancelled."
+        elif self.screen == "pause":
+            if name == "options":
+                self.screen = "audio"
+                self.action = None
+            elif name == "quit":
+                self.action = "quit"
+        elif self.screen == "audio":
+            if name == "sfx_down":
+                self.sfx_volume = max(0.0, self.sfx_volume - _VOLUME_STEP / 100.0)
+            elif name == "sfx_up":
+                self.sfx_volume = min(1.0, self.sfx_volume + _VOLUME_STEP / 100.0)
+            elif name == "music_down":
+                self.music_volume = max(0.0, self.music_volume - _VOLUME_STEP / 100.0)
+            elif name == "music_up":
+                self.music_volume = min(1.0, self.music_volume + _VOLUME_STEP / 100.0)
+            elif name == "back":
+                self.screen = "pause"
+                self.action = None
 
     def _key(self, event: pygame.event.Event) -> None:
         if event.key == pygame.K_ESCAPE:
@@ -118,8 +162,12 @@ class MenuScreen:
             elif self.screen == "join":
                 self.screen = "root"
                 self.error = None
-            else:
-                self._outcome = ("quit",)
+            elif self.screen == "audio":
+                self.screen = "pause"
+                self.action = None
+            elif self.screen == "pause":
+                self.action = "resume"
+            # On the root menu Esc no longer quits; it simply does nothing.
             return
         if self.screen == "root":
             if event.key == pygame.K_1:
@@ -257,15 +305,25 @@ class MenuScreen:
     # ------------------------------------------------------------------ drawing
     def draw(self, screen: pygame.Surface, renderer) -> None:
         screen.fill(BG)
-        renderer._draw_background(screen)
+        if self.screen in {"pause", "audio"} and renderer.options_background is not None:
+            screen.blit(
+                renderer.options_background,
+                renderer.options_background.get_rect(center=screen.get_rect().center),
+            )
+        else:
+            renderer._draw_background(screen)
         self.layout(screen.get_size())
         self._draw_title(screen)
         if self.screen == "root":
             self._draw_root(screen)
         elif self.screen == "join":
             self._draw_join(screen)
-        else:
+        elif self.screen == "waiting":
             self._draw_waiting(screen)
+        elif self.screen == "pause":
+            self._draw_pause(screen)
+        elif self.screen == "audio":
+            self._draw_audio(screen)
         self._draw_status_line(screen)
 
     def _draw_title(self, screen: pygame.Surface) -> None:
@@ -284,7 +342,7 @@ class MenuScreen:
             "local": ("1 - Local Game", "Both players share this screen"),
             "host": ("2 - Host Online Room", "Get a code and let a friend join"),
             "join": ("3 - Join Online Room", "Enter a room code from the host"),
-            "quit": ("Esc - Quit", ""),
+            "quit": ("Quit", ""),
         }
         for name, rect in self._buttons.items():
             headline, detail = labels[name]
@@ -335,6 +393,51 @@ class MenuScreen:
         state_text = render_text(self.status, "label_small", panel.width - 60)
         screen.blit(state_text, state_text.get_rect(center=(panel.centerx, panel.y + 185)))
         self._draw_button(screen, self._buttons["cancel"], "Cancel (Esc)", "")
+
+    def _draw_pause(self, screen: pygame.Surface) -> None:
+        from veilbound.client.typography import render_text
+
+        width, height = screen.get_size()
+        panel = pygame.Rect(width // 2 - 220, height // 2 - 90, 440, 200)
+        pygame.draw.rect(screen, PANEL, panel, border_radius=16)
+        pygame.draw.rect(screen, GOLD, panel, width=2, border_radius=16)
+        heading = render_text("PAUSED", "title", panel.width - 40)
+        screen.blit(heading, heading.get_rect(center=(panel.centerx, panel.y + 35)))
+        self._draw_button(screen, self._buttons["options"], "Options", "")
+        self._draw_button(screen, self._buttons["quit"], "Quit Game", "")
+
+    def _draw_audio(self, screen: pygame.Surface) -> None:
+        from veilbound.client.typography import render_text
+
+        width, height = screen.get_size()
+        panel = pygame.Rect(width // 2 - 300, height // 2 - 110, 600, 260)
+        pygame.draw.rect(screen, PANEL, panel, border_radius=16)
+        pygame.draw.rect(screen, GOLD, panel, width=2, border_radius=16)
+        heading = render_text("AUDIO SETTINGS", "title", panel.width - 40)
+        screen.blit(heading, heading.get_rect(center=(panel.centerx, panel.y + 30)))
+
+        def volume_label(volume: float) -> str:
+            return f"{int(round(volume * 100))}%"
+
+        # SFX row
+        sfx_label = render_text("SFX Volume", "ui", 120)
+        screen.blit(sfx_label, (panel.x + 40, panel.y + 80))
+        sfx_value = render_text(volume_label(self.sfx_volume), "ui", 80)
+        screen.blit(sfx_value, sfx_value.get_rect(center=(panel.centerx, panel.y + 102)))
+        self._draw_button(screen, self._buttons["sfx_down"], "-", "")
+        self._draw_button(screen, self._buttons["sfx_up"], "+", "")
+
+        # Music row
+        music_label = render_text("Music Volume", "ui", 120)
+        screen.blit(music_label, (panel.x + 40, panel.y + 140))
+        music_value = render_text(volume_label(self.music_volume), "ui", 80)
+        screen.blit(music_value, music_value.get_rect(center=(panel.centerx, panel.y + 162)))
+        self._draw_button(screen, self._buttons["music_down"], "-", "")
+        self._draw_button(screen, self._buttons["music_up"], "+", "")
+
+        hint = render_text("Esc goes back", "label_small", panel.width - 40)
+        screen.blit(hint, hint.get_rect(center=(panel.centerx, panel.bottom - 30)))
+        self._draw_button(screen, self._buttons["back"], "Back", "")
 
     def _draw_status_line(self, screen: pygame.Surface) -> None:
         from veilbound.client.typography import render_text

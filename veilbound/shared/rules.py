@@ -108,7 +108,6 @@ class GameEngine:
         for player in state.players:
             player.round_points = 0
         self._emit("round_started", f"Round {state.round_number} begins. Fill every slot in the four rows.", {"round": state.round_number})
-        self._draw_for_active_player()
 
     def legal_slots(self, player_id: str | None = None) -> list[tuple[str, int]]:
         state = self.state
@@ -160,6 +159,7 @@ class GameEngine:
             previous = row.slots[slot_index - 1]
             if previous is not None:
                 self._reveal_card(row, slot_index - 1, previous)
+        self._draw_for_active_player()
         if all(item.is_full for item in state.rows):
             state.row_index = 0
             state.reveal_card_index = 0
@@ -392,7 +392,6 @@ class GameEngine:
     def _advance_turn(self) -> None:
         self.state.active_player_index = (self.state.active_player_index + 1) % len(self.state.players)
         self.state.turn_number += 1
-        self._draw_for_active_player()
         self._emit("turn", f"It is {self.state.active_player.name}'s turn.", {
             "player_id": self.state.active_player.id, "turn": self.state.turn_number,
         })
@@ -413,6 +412,7 @@ class GameEngine:
             "player_id": owner.id,
             "name": definition.name,
             "image": definition.image,
+            "full_card_art": definition.full_card_art,
             "base_points": definition.base_points,
             "effect_name": definition.effect_name,
             "effect_text": definition.effect_text,
