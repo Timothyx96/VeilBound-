@@ -278,6 +278,9 @@ def _state_from_view(view: dict) -> GameState:
                 slots.append(CardInstance(
                     str(card_view["id"]), str(card_view["definition_id"]),
                     str(card_view["owner_id"]), revealed=True,
+                    # Runtime ability state mirrors the authority's view.
+                    current_points=card_view.get("current_points"),
+                    activated_abilities=list(card_view.get("activated_abilities") or []),
                 ))
         rows.append(BattleRow(
             id=str(row_view["id"]), number=int(row_view["number"]),

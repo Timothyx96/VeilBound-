@@ -5,6 +5,7 @@ import logging
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from .abilities import parse_ability, validate_ability_references
 from .config import PLAYER_POOL_SIZE
 from .models import CardDefinition
 
@@ -35,6 +36,7 @@ def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]
         if card_id in definitions:
             duplicate_ids.add(card_id)
             continue
+        ability_raw = raw.get("ability")
         definition = CardDefinition(
             id=card_id,
             name=str(raw["name"]),
@@ -43,6 +45,12 @@ def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]
             effect_name=str(raw.get("effect_name", "")),
             effect_text=str(raw.get("effect_text", "")),
             full_card_art=str(raw.get("full_card_art", "")),
+            # Malformed/unsupported abilities fail loudly with the card named.
+            ability=(
+                parse_ability(ability_raw, context=f"Character {card_id}")
+                if ability_raw is not None
+                else None
+            ),
         )
         if not definition.name or not definition.image:
             raise ValueError(f"Character {definition.id} needs a name and image path")
@@ -66,6 +74,9 @@ def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]
         )
     if not definitions:
         raise ValueError("At least one card definition is required")
+    # Character references and duplicate ability ids can only be checked once
+    # the complete roster is known.
+    validate_ability_references(definitions)
     return definitions
 
 

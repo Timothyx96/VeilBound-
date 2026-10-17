@@ -21,13 +21,13 @@
         "final_round_result_ms": 5000
       },
       "Fast": {
-        "card_flip_ms": 300,
-        "delay_between_reveals_ms": 200,
-        "card_information_ms": 600,
-        "score_count_ms": 750,
-        "row_result_ms": 900,
-        "row_transition_ms": 250,
-        "final_round_result_ms": 1500
+        "card_flip_ms": 100,
+        "delay_between_reveals_ms": 100,
+        "card_information_ms": 100,
+        "score_count_ms": 100,
+        "row_result_ms": 100,
+        "row_transition_ms": 100,
+        "final_round_result_ms": 100
       }
     }
   },

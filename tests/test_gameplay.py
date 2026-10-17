@@ -6,6 +6,7 @@ import pygame
 
 from veilbound.client.layout import BoardLayout
 from veilbound.client.renderer import Renderer
+from veilbound.shared.abilities import AbilityDefinition
 from veilbound.shared.config import GameConfig
 from veilbound.shared.definitions import DATA_DIR, deal_player_pool, load_card_definitions
 from veilbound.shared.engine import GameEngine
@@ -385,7 +386,8 @@ def test_scores_are_owner_sums_and_capacity_points_are_awarded_once():
 
     finish_row(engine)
     first_row = engine.state.rows[0]
-    assert first_row.scores == {p1.id: 10, p2.id: 8}
+    # p1's Naruto (10) beats p2's Sakura (base 6 after the roster rebalance).
+    assert first_row.scores == {p1.id: 10, p2.id: 6}
     assert first_row.winner_id == p1.id
     assert first_row.awarded_points == first_row.capacity == 2
     assert p1.match_points == 2
@@ -547,5 +549,7 @@ def test_character_definitions_use_new_source_fields_and_link_images():
         assert isinstance(definition.base_points, int)
         assert definition.effect_name
         assert definition.effect_text
-        assert not hasattr(definition, "ability")
+        # Abilities are optional character data now: only characters that
+        # declare one (currently Sasuke) carry a parsed AbilityDefinition.
+        assert definition.ability is None or isinstance(definition.ability, AbilityDefinition)
 

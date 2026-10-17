@@ -6,7 +6,8 @@
       "base_points": 10,
       "effect_name": "Will of Fire",
       "effect_text": "Als Naruto de enige GOAT in jouw team is, krijgt hij +2 punten. Als je team achterstaat aan het einde van de ronde, krijgt hij in plaats daarvan +3. Beide bonussen stapelen niet.",
-      "image": "assets/art/characters/Naruto/Naruto Uzumaki .png"
+      "image": "assets/art/characters/Naruto/Naruto Uzumaki .png",
+      "full_card_art": "assets/art/card front/Naruto/Naruto.png"
     },
     {
       "id": "naruto_02",
@@ -14,6 +15,24 @@
       "base_points": 7,
       "effect_name": "Eternal Rival",
       "effect_text": "Samen met Itachi krijgt Sasuke +3 punten. Als Naruto ook in dezelfde ronde wordt gespeeld, krijgt het duo nog eens +1 punt.",
+      "ability": {
+        "id": "sasuke_shared_row_bonus",
+        "name": "Shared Row Bonus",
+        "description": "Gain 3 points when Sasuke and Itachi are both revealed in the same row.",
+        "trigger": "on_reveal",
+        "conditions": [
+          { "type": "character_revealed", "character": "naruto_03" },
+          { "type": "same_row", "character": "naruto_03" }
+        ],
+        "effects": [
+          { "type": "add_current_points", "amount": 3 }
+        ],
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "+3",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Naruto/Sasuke Uchiha .png",
       "full_card_art": "assets/art/card front/Naruto/Sasuke_Uchiha.png"
     },
@@ -29,10 +48,11 @@
     {
       "id": "naruto_04",
       "name": "Sakura Haruno",
-      "base_points": 8,
+      "base_points": 6,
       "effect_name": "Monsterlijke Kracht",
       "effect_text": "Sakura krijgt +2 punten als jouw team minder punten heeft dan de tegenstander op het moment dat ze wordt gespeeld. Een comebackkaart dus.",
-      "image": "assets/art/characters/Naruto/Sakura Haruno.png"
+      "image": "assets/art/characters/Naruto/Sakura Haruno.png",
+      "full_card_art": "assets/art/card front/Naruto/Sakura_Haruno.png"
     },
     {
       "id": "naruto_05",
@@ -49,7 +69,8 @@
       "base_points": 8,
       "effect_name": "Ghost of the Uchiha",
       "effect_text": "Madara kan niet worden verzwakt door de eerste negatieve kaarteffecten die hem raken. Een tweede effect werkt wel.",
-      "image": "assets/art/characters/Naruto/Madara Uchiha.png"
+      "image": "assets/art/characters/Naruto/Madara Uchiha.png",
+      "full_card_art": "assets/art/card front/Naruto/Madara Uchiha.png"
     },
     {
       "id": "naruto_07",
@@ -66,7 +87,8 @@
       "base_points": 5,
       "effect_name": "Wat Een Gedoe",
       "effect_text": "Kies één kaart van een tegenstander. Die kaart mag deze ronde geen bonuspunten ontvangen. De basispunten blijven behouden.",
-      "image": "assets/art/characters/Naruto/Shikamaru_Nara.jpg"
+      "image": "assets/art/characters/Naruto/Shikamaru_Nara.jpg",
+      "full_card_art": "assets/art/card front/Naruto/Shikamaru_Nara.png"
     },
     {
       "id": "naruto_09",
@@ -89,10 +111,11 @@
     {
       "id": "mha_01",
       "name": "Izuku Midoriya (Deku)",
-      "base_points": 10,
+      "base_points": 8,
       "effect_name": "One For All — 100%",
       "effect_text": "Deku krijgt +1 punt voor iedere gespeelde Fighter in jouw team, tot maximaal +3. Hij wordt sterker door de helden om hem heen.",
-      "image": "assets/art/characters/My Hero Academia/Izuku_Midoriya_Deku.jpg"
+      "image": "assets/art/characters/My Hero Academia/Izuku_Midoriya_Deku.jpg",
+      "full_card_art": "assets/art/card front/MHA/Midoriya.png"
     },
     {
       "id": "mha_02",
@@ -100,23 +123,26 @@
       "base_points": 7,
       "effect_name": "Explosieve Rivaliteit",
       "effect_text": "Samen met Kirishima krijgt Bakugo +3 punten. Als je achterstaat, krijgt hij nog eens +1 punt. Bakugo doet het niet graag rustig aan.",
-      "image": "assets/art/characters/My Hero Academia/Katsuki_Bakugo.jpg"
+      "image": "assets/art/characters/My Hero Academia/Katsuki_Bakugo.jpg",
+      "full_card_art": "assets/art/card front/MHA/Bakugo.png"
     },
     {
       "id": "mha_03",
-      "name": "Eijiro Kirishima",
+      "name": "Dabi",
       "base_points": 6,
       "effect_name": "Manliness!",
       "effect_text": "Samen met Bakugo krijgt Kirishima +3 punten. Bovendien voorkomt hij dat Bakugo door één negatief effect wordt uitgeschakeld of onder 1 punt zakt.",
-      "image": "assets/art/characters/My Hero Academia/Eijiro_Kirishima.jpg"
+      "image": "assets/art/characters/My Hero Academia/Eijiro_Kirishima.jpg",
+      "full_card_art": "assets/art/card front/MHA/Dabi.png"
     },
     {
       "id": "mha_04",
       "name": "All Might",
-      "base_points": 8,
+      "base_points": 10,
       "effect_name": "I AM HERE!",
       "effect_text": "Als jouw team minder basispunten heeft dan de tegenstander, krijgt All Might +2 punten. Hij maakt de achterstand kleiner, maar wint niet automatisch.",
-      "image": "assets/art/characters/My Hero Academia/All_Might.jpg"
+      "image": "assets/art/characters/My Hero Academia/All_Might.jpg",
+      "full_card_art": "assets/art/card front/MHA/All_Might.png"
     },
     {
       "id": "mha_05",
@@ -124,47 +150,53 @@
       "base_points": 8,
       "effect_name": "Hellflame",
       "effect_text": "Kies één vijandelijke kaart. Die verliest 2 punten. Endeavor is sterk, maar niet bepaald subtiel.",
-      "image": "assets/art/characters/My Hero Academia/Endeavor.jpg"
+      "image": "assets/art/characters/My Hero Academia/Endeavor.jpg",
+      "full_card_art": "assets/art/card front/MHA/Endeavor.png"
     },
     {
       "id": "mha_06",
       "name": "Shoto Todoroki",
-      "base_points": 7,
+      "base_points": 8,
       "effect_name": "Half-Cold Half-Hot",
       "effect_text": "Kies vuur of ijs. Vuur geeft Todoroki +2 punten; ijs voorkomt dat één vijandelijke kaart een effect activeert. Kies één van beide.",
-      "image": "assets/art/characters/My Hero Academia/Shoto_Todoroki.jpg"
+      "image": "assets/art/characters/My Hero Academia/Shoto_Todoroki.jpg",
+      "full_card_art": "assets/art/card front/MHA/Shoto.png"
     },
     {
       "id": "mha_07",
-      "name": "Minoru Mineta",
-      "base_points": 3,
+      "name": "Lady_Nagant",
+      "base_points": 4,
       "effect_name": "Sticky Situation",
       "effect_text": "Kies één vijandelijke kaart. Die kaart zit vast en mag geen effect activeren. Maar als de tegenstander een kaart met minder dan 5 punten heeft, mislukt Mineta's truc en verliest hij zelf 2 punten. Risico en beloning!",
-      "image": "assets/art/characters/My Hero Academia/Minoru_Mineta.jpg"
+      "image": "assets/art/characters/My Hero Academia/Minoru_Mineta.jpg",
+      "full_card_art": "assets/art/card front/MHA/Lady_Nagant.png"
     },
     {
       "id": "mha_08",
-      "name": "Ochaco Uraraka",
+      "name": "Keigo",
       "base_points": 5,
       "effect_name": "Zero Gravity",
       "effect_text": "Verwijder maximaal 3 bonuspunten van één vijandelijke kaart. De basispunten blijven gewoon staan.",
-      "image": "assets/art/characters/My Hero Academia/Ochaco_Uraraka.jpg"
+      "image": "assets/art/characters/My Hero Academia/Ochaco_Uraraka.jpg",
+      "full_card_art": "assets/art/card front/MHA/Keigo.png"
     },
     {
       "id": "mha_09",
-      "name": "Tenya Iida",
-      "base_points": 5,
+      "name": "Toga",
+      "base_points": 2,
       "effect_name": "Recipro Turbo",
       "effect_text": "Iida's effect wordt als eerste geactiveerd. Hij mag één kaart beschermen tegen een negatief effect deze ronde.",
-      "image": "assets/art/characters/My Hero Academia/Tenya_Iida.jpg"
+      "image": "assets/art/characters/My Hero Academia/Tenya_Iida.jpg",
+      "full_card_art": "assets/art/card front/MHA/Toga.png"
     },
     {
       "id": "mha_10",
-      "name": "Denki Kaminari",
-      "base_points": 4,
+      "name": "Star_And_Stripes",
+      "base_points": 5,
       "effect_name": "Brain Off!",
       "effect_text": "Gooi een muntje op. Kop: één vijandelijke kaart verliest 3 punten. Munt: Kaminari verliest zelf 2 punten. Hij kan geniaal zijn, of zichzelf kortsluiten.",
-      "image": "assets/art/characters/My Hero Academia/Denki_Kaminari.jpg"
+      "image": "assets/art/characters/My Hero Academia/Denki_Kaminari.jpg",
+      "full_card_art": "assets/art/card front/MHA/Star_And_Stripes.png"
     },
     {
       "id": "hxh_01",
@@ -182,7 +214,7 @@
       "effect_name": "Godspeed",
       "effect_text": "Samen met Alluka krijgt Killua +3 punten. Killua's effect wordt als eerste geactiveerd, waardoor hij één kaart kan beschermen tegen een negatief effect.",
       "image": "assets/art/characters/Hunter x Hunter/Killua_Zoldyck.jpg",
-      "full_card_art": "assets/art/card front/HxH/Killua_Zoldyck.png"
+      "full_card_art": "assets/art/card front/HxH/Killua.png"
     },
     {
       "id": "hxh_03",
@@ -208,7 +240,8 @@
       "base_points": 7,
       "effect_name": "Skill Hunter",
       "effect_text": "Kopieert het effect van één reguliere kaart die deze ronde is gespeeld. Je kopieert alleen het effect, niet de punten of de unieke duo-bonus.",
-      "image": "assets/art/characters/Hunter x Hunter/Chrollo_Lucilfer.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Chrollo_Lucilfer.jpg",
+      "full_card_art": "assets/art/card front/HxH/Chrollo_Lucilfer.png"
     },
     {
       "id": "hxh_06",
@@ -216,7 +249,9 @@
       "base_points": 8,
       "effect_name": "100-Type Guanyin Bodhisattva",
       "effect_text": "Netero verlaagt de punten van één vijandelijke kaart met 2. Als de tegenstander meer Fighters heeft dan jij, verlaagt hij die kaart met 3 in plaats daarvan.",
-      "image": "assets/art/characters/Hunter x Hunter/Isaac_Netero.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Isaac_Netero.jpg",
+      "full_card_art": "assets/art/card front/HxH/Isaac_Netero.png"
+
     },
     {
       "id": "hxh_07",
@@ -239,10 +274,11 @@
     {
       "id": "hxh_09",
       "name": "Biscuit Krueger",
-      "base_points": 3,
+      "base_points": 5,
       "effect_name": "Training From Hell",
       "effect_text": "Kies één eigen kaart. Die krijgt +2 punten, maar Bisky zelf verliest 1 punt. Een goede trainer maakt haar team sterker.",
-      "image": "assets/art/characters/Hunter x Hunter/Biscuit_Krueger.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Biscuit_Krueger.jpg",
+      "full_card_art": "assets/art/card front/HxH/Biscuit Krueger.png"
     },
     {
       "id": "hxh_10",
@@ -250,7 +286,8 @@
       "base_points": 4,
       "effect_name": "Dokter in Opleiding",
       "effect_text": "Als een eigen kaart door een effect punten verliest, mag Leorio 2 punten herstellen. Als er niets te genezen valt, blijft hij gewoon 4 punten waard.",
-      "image": "assets/art/characters/Hunter x Hunter/Leorio_Paradinight.jpg"
+      "image": "assets/art/characters/Hunter x Hunter/Leorio_Paradinight.jpg",
+      "full_card_art": "assets/art/card front/HxH/Leorio.png"
     },
     {
       "id": "onepiece_01",
@@ -290,11 +327,12 @@
     },
     {
       "id": "onepiece_05",
-      "name": "Kaido",
-      "base_points": 8,
+      "name": "Nico Robin",
+      "base_points": 4,
       "effect_name": "Thunder Bagua",
       "effect_text": "Kaido haalt 2 punten weg bij één vijandelijke Fighter. Tegen een reguliere kaart werkt de aanval niet: die is te onbeduidend om zijn aandacht te trekken.",
-      "image": "assets/art/characters/One Piece/Kaido.jpg"
+      "image": "assets/art/characters/One Piece/Nico_Robin",
+      "full_card_art": "assets/art/card front/One_Piece/Nico_Robin.png"
     },
     {
       "id": "onepiece_06",
@@ -302,7 +340,8 @@
       "base_points": 7,
       "effect_name": "ROOM",
       "effect_text": "Wissel de punten van twee andere kaarten om. Hun effecten en kaarttypen blijven hetzelfde. Ideaal om een krachtige vijandelijke kaart in een zwakke kaart te veranderen.",
-      "image": "assets/art/characters/One Piece/Trafalgar_D_Water_Law.jpg"
+      "image": "assets/art/characters/One Piece/Trafalgar_D_Water_Law.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Trafalgar_Law.png"
     },
     {
       "id": "onepiece_07",
@@ -310,7 +349,8 @@
       "base_points": 3,
       "effect_name": "Per Ongeluk Yonko",
       "effect_text": "Kies een vijandelijke kaart. Gooi een muntje op. Kop: Buggy steelt 3 punten van die kaart. Munt: de tegenstander raakt in paniek en Buggy krijgt zelf +4 punten. Hoe hij ook wint, iedereen vraagt zich af hoe het mogelijk was.",
-      "image": "assets/art/characters/One Piece/Buggy_the_Clown.jpg"
+      "image": "assets/art/characters/One Piece/Buggy_the_Clown.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Buggy.png"
     },
     {
       "id": "onepiece_08",
@@ -327,7 +367,8 @@
       "base_points": 5,
       "effect_name": "Navigator en Geldwolf",
       "effect_text": "Kies één vijandelijke kaart en steel 2 van haar bonuspunten. Als de kaart geen bonuspunten heeft, gebeurt er niets.",
-      "image": "assets/art/characters/One Piece/Nami.jpg"
+      "image": "assets/art/characters/One Piece/Nami.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Nami.png"
     },
     {
       "id": "onepiece_10",
@@ -335,15 +376,17 @@
       "base_points": 4,
       "effect_name": "Rumble Ball",
       "effect_text": "Chopper krijgt +4 punten als jouw team minstens één andere kaart heeft die deze ronde punten heeft verloren. Een kleine dokter met een enorme comeback.",
-      "image": "assets/art/characters/One Piece/Tony_Tony_Chopper.jpg"
+      "image": "assets/art/characters/One Piece/Tony_Tony_Chopper.jpg",
+      "full_card_art": "assets/art/card front/One_Piece/Tony_tony_Chopper.png"
     },
     {
       "id": "dragonball_01",
       "name": "Goku (Ultra Instinct)",
-      "base_points": 10,
+      "base_points": 9,
       "effect_name": "Mastered Ultra Instinct",
       "effect_text": "Goku krijgt +2 punten als het effect van een andere kaart deze ronde punten verandert. Als Goku zelf door een effect punten verliest, mag hij één keer 2 punten terugwinnen. Zijn lichaam reageert voordat zijn tegenstander kan toeslaan.",
-      "image": "assets/art/characters/Dragon Ball/Goku_Ultra_Instinct.jpg"
+      "image": "assets/art/characters/Dragon Ball/Goku_Ultra_Instinct.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Goku.png"
     },
     {
       "id": "dragonball_02",
@@ -351,7 +394,8 @@
       "base_points": 7,
       "effect_name": "Saiyan Pride",
       "effect_text": "Samen met Goku krijgt Vegeta +3 punten. Als Goku meer bonuspunten ontvangt dan Vegeta, krijgt Vegeta nog +1 punt. Hij zal nooit accepteren dat Kakarot hem overtreft!",
-      "image": "assets/art/characters/Dragon Ball/Vegeta.jpg"
+      "image": "assets/art/characters/Dragon Ball/Vegeta.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Vegeta.png"
     },
     {
       "id": "dragonball_03",
@@ -368,7 +412,8 @@
       "base_points": 8,
       "effect_name": "Death Beam",
       "effect_text": "Kies één vijandelijke kaart. Die verliest 2 punten. Als de kaart een GOAT is, werkt het effect niet: Frieza weet wanneer hij beter een stap terug kan doen.",
-      "image": "assets/art/characters/Dragon Ball/Frieza_Golden.jpg"
+      "image": "assets/art/characters/Dragon Ball/Frieza_Golden.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Frieza.png"
     },
     {
       "id": "dragonball_05",
@@ -376,7 +421,8 @@
       "base_points": 8,
       "effect_name": "Legendary Super Saiyan",
       "effect_text": "Broly krijgt +1 punt voor iedere vijandelijke kaart die deze ronde bonuspunten ontvangt, tot maximaal +3. Hoe sterker de tegenstander wordt, hoe gevaarlijker Broly wordt.",
-      "image": "assets/art/characters/Dragon Ball/Broly.jpg"
+      "image": "assets/art/characters/Dragon Ball/Broly.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Broly.png"
     },
     {
       "id": "dragonball_06",
@@ -384,7 +430,8 @@
       "base_points": 5,
       "effect_name": "Tijdlijn Veranderd",
       "effect_text": "Kies twee kaarten die deze ronde zijn gespeeld. Verwissel hun uiteindelijke punten, inclusief bonussen, maar niet hun effecten. Trunks herschrijft de uitkomst van de ronde. Zelfs een kaart van 13 punten kan hierdoor op 3 eindigen.",
-      "image": "assets/art/characters/Dragon Ball/Future_Trunks.jpg"
+      "image": "assets/art/characters/Dragon Ball/Future_Trunks.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Trunks.png"
     },
     {
       "id": "dragonball_07",
@@ -392,31 +439,35 @@
       "base_points": 8,
       "effect_name": "Potential Unleashed",
       "effect_text": "Als jouw team achterstaat bij het begin van de puntentelling, krijgt Gohan +3 punten. Hij laat zijn verborgen potentieel pas zien wanneer het echt nodig is.",
-      "image": "assets/art/characters/Dragon Ball/Gohan_Beast.jpg"
+      "image": "assets/art/characters/Dragon Ball/Gohan_Beast.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Gohan.png"
     },
     {
       "id": "dragonball_08",
-      "name": "Piccolo (Orange)",
+      "name": "Hit",
       "base_points": 7,
       "effect_name": "Namekian Power",
       "effect_text": "Kies één eigen kaart. Als die kaart deze ronde punten verliest, mag Piccolo 2 punten aan die kaart teruggeven. Hij is de beschermer van zijn team.",
-      "image": "assets/art/characters/Dragon Ball/Piccolo_Orange.jpg"
+      "image": "assets/art/characters/Dragon Ball/Piccolo_Orange.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Hit.png"
     },
     {
       "id": "dragonball_09",
-      "name": "Android 18",
-      "base_points": 5,
+      "name": "Zeno",
+      "base_points": 4,
       "effect_name": "Oneindige Energie",
       "effect_text": "Android 18 mag één eigen kaart beschermen tegen een negatief effect deze ronde. Geen energieverlies, geen paniek.",
-      "image": "assets/art/characters/Dragon Ball/Android_18.jpg"
+      "image": "assets/art/characters/Dragon Ball/Android_18.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Zeno.png"
     },
     {
       "id": "dragonball_10",
-      "name": "Yamcha",
+      "name": "Whis",
       "base_points": 4,
       "effect_name": "Wolf Fang Fist",
       "effect_text": "Kies één vijandelijke kaart. Bij een succesvolle muntworp verliest die kaart 3 punten. Bij een mislukte worp verliest Yamcha zelf 2 punten. Het blijft Yamcha…",
-      "image": "assets/art/characters/Dragon Ball/Yamcha.jpg"
+      "image": "assets/art/characters/Dragon Ball/Yamcha.jpg",
+      "full_card_art": "assets/art/card front/Dragon_Ball/Whis.png"
     }
   ]
 }

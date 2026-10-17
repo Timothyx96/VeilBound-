@@ -28,6 +28,11 @@ from veilbound.shared.models import BattleRow, CardDefinition, GameEvent, GamePh
 from veilbound.shared.scoring import calculate_row_scores
 
 
+# Floating ability text (e.g. "+3") rises and fades above the target card.
+FLOATING_TEXT_SECONDS = 1.4
+FLOATING_TEXT_RISE_PX = 46
+
+
 class Renderer:
     def __init__(self, assets: AssetLoader | None = None, settings: AppSettings | None = None):
         preload_fonts()
@@ -66,6 +71,10 @@ class Renderer:
         self.reveal_card_until = 0.0
         self.score_animation_row_id: str | None = None
         self.score_animation_started = 0.0
+        # Timed floating ability texts; presentation only, never mutates points.
+        self.floating_texts: list[dict] = []
+        # Dedupe key -> start time, so a duplicated event cannot replay text.
+        self.floating_texts_started: dict[tuple[str, str, int], float] = {}
 
     def layout(self, state: GameState, size: tuple[int, int]) -> BoardLayout:
         return BoardLayout(size, state)
@@ -73,6 +82,8 @@ class Renderer:
     def reset_animations(self) -> None:
         self.flip_started.clear()
         self.last_card_reveal = ""
+        self.floating_texts.clear()
+        self.floating_texts_started.clear()
         self.reveal_card = None
         self.reveal_card_visible_after = 0.0
         self.reveal_card_until = 0.0
@@ -93,6 +104,25 @@ class Renderer:
             elif event.kind == "row_scored":
                 self.score_animation_row_id = event.data["row_id"]
                 self.score_animation_started = time.monotonic()
+            elif event.kind == "ability_activated":
+                # Pure presentation: points already changed in the authority.
+                # A duplicated event (replay/reconnect) must not replay text.
+                now = time.monotonic()
+                key = (
+                    str(event.data.get("ability_id", "")),
+                    str(event.data.get("owner_card_id", "")),
+                    int(event.data.get("current_points", 0)),
+                )
+                started = self.floating_texts_started.get(key)
+                if started is not None and now - started < FLOATING_TEXT_SECONDS:
+                    continue
+                self.floating_texts_started[key] = now
+                self.floating_texts.append({
+                    "row_id": event.data.get("row_id"),
+                    "slot_index": event.data.get("slot_index"),
+                    "text": str(event.data.get("floating_text", "")),
+                    "started": now,
+                })
             self.notice = event.message
             self.notice_until = time.monotonic() + 3.5
 
@@ -119,6 +149,7 @@ class Renderer:
         self._draw_row_comparison(screen, state)
         self._draw_status(screen, state, layout)
         self._draw_hand(screen, state, cards, layout, drag_id, mouse_pos)
+        self._draw_floating_texts(screen, layout)
         self._draw_footer(screen, layout)
         if not reveal_view_active:
             self._draw_effect_tooltip(screen, state, cards, layout, mouse_pos)
@@ -159,6 +190,37 @@ class Renderer:
             overlay.fill(color)
             self._overlay_cache[key] = overlay
         return overlay
+
+    def _draw_floating_texts(self, screen, layout) -> None:
+        """Draw timed floating ability text (e.g. "+3") above its target card.
+
+        Presentation only: the authority already applied the point change when
+        the event fired. Expired entries are pruned during drawing and each
+        entry has an independent lifetime, so future overlaps stack cleanly.
+        """
+        if not self.floating_texts:
+            return
+        now = time.monotonic()
+        self.floating_texts = [
+            item for item in self.floating_texts
+            if now - item["started"] < FLOATING_TEXT_SECONDS
+        ]
+        for item in self.floating_texts:
+            rect = layout.slot_rects.get((item["row_id"], item["slot_index"]))
+            if rect is None:
+                continue
+            progress = min(1.0, (now - item["started"]) / FLOATING_TEXT_SECONDS)
+            rise = int(FLOATING_TEXT_RISE_PX * progress)
+            if progress < 0.55:
+                alpha = 255
+            else:
+                alpha = max(0, int(255 * (1.0 - (progress - 0.55) / 0.45)))
+            rendered = render_text(item["text"], "number_capacity", shadow=True)
+            if alpha < 255:
+                layer = pygame.Surface(rendered.get_size(), pygame.SRCALPHA)
+                layer.fill((255, 255, 255, alpha))
+                rendered.blit(layer, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+            screen.blit(rendered, rendered.get_rect(center=(rect.centerx, rect.y - 20 - rise)))
 
     def _reveal_view_active(self, state) -> bool:
         return (
@@ -632,6 +694,26 @@ class Renderer:
         pygame.draw.rect(screen, owner_accent, rect, width=2, border_radius=6)
         if not card.revealed:
             self._draw_card_frame(screen, draw_rect)
+            return
+        # Persistent per-instance boost indicator: the cached face underneath
+        # keeps showing immutable base points, while this overlay shows the
+        # live current total after an ability (for example, "10 (+3)").
+        flip_finished = reveal_time is None or progress >= 1.0
+        if flip_finished and definition is not None:
+            current = getattr(card, "current_points", None)
+            base = getattr(definition, "base_points", None)
+            if isinstance(current, bool) or isinstance(base, bool):
+                return
+            if isinstance(current, (int, float)) and isinstance(base, (int, float)):
+                boost = int(current) - int(base)
+                if boost > 0:
+                    badge_font = get_font("label_small")
+                    badge_text = badge_font.render(f"{int(current)} (+{boost})", True, BG)
+                    badge_rect = badge_text.get_rect()
+                    pill = pygame.Rect(0, 0, badge_rect.width + 12, badge_rect.height + 6)
+                    pill.topright = (rect.right - 4, rect.y + 4)
+                    pygame.draw.rect(screen, GOLD, pill, border_radius=8)
+                    screen.blit(badge_text, badge_text.get_rect(center=pill.center))
 
     @staticmethod
     def _portrait_card_rect(slot_rect: pygame.Rect) -> pygame.Rect:

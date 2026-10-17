@@ -4,6 +4,7 @@ import logging
 import random
 from collections.abc import Iterable, Mapping
 
+from .abilities import AbilityActivation, AbilityManager
 from .config import MATCH_ROUNDS, PLAYER_POOL_SIZE, GameConfig
 from .definitions import load_card_definitions
 from .models import (
@@ -30,12 +31,19 @@ def deal_player_pool(roster: Mapping[str, object] | Iterable[str], pool_size: in
 
 
 def calculate_row_scores(row, player_ids: tuple[str, str], cards) -> dict[str, int]:
-    """Score revealed cards only; future scoring effects plug in after base totals."""
+    """Score revealed cards only, using each instance's current points.
+
+    ``current_points`` starts at the character's immutable ``base_points`` and
+    is the only value ability effects modify, so row scoring always reflects
+    bonuses granted during reveals. Instances without runtime points (masked
+    proxies built by remote views) fall back to the definition's base value.
+    """
     scores = {player_id: 0 for player_id in player_ids}
     for card in row.slots:
         if card is not None and card.revealed:
-            scores[card.owner_id] += cards[card.definition_id].base_points
-    # Future ability scoring effects belong here and operate on the resolved row state.
+            definition = cards[card.definition_id]
+            current = card.get("current_points")
+            scores[card.owner_id] += definition.base_points if current is None else int(current)
     return scores
 
 
@@ -45,6 +53,8 @@ class GameEngine:
     def __init__(self, config: GameConfig | None = None, seed: int | None = None):
         self.config = config or GameConfig()
         self.cards = load_card_definitions()
+        # Single authority for ability registration and resolution.
+        self.abilities = AbilityManager(self.cards)
         if self.config.deck_size != PLAYER_POOL_SIZE:
             raise ValueError(f"Each player must have a {PLAYER_POOL_SIZE}-card pool")
         if self.config.initial_hand_size < 0 or self.config.draw_per_turn < 0:
@@ -61,7 +71,13 @@ class GameEngine:
 
     def _new_card(self, definition_id: str, owner_id: str) -> CardInstance:
         self._card_serial += 1
-        return CardInstance(f"card-{self._card_serial:05d}", definition_id, owner_id)
+        # Fresh instances per match: runtime points start at the base value.
+        return CardInstance(
+            f"card-{self._card_serial:05d}",
+            definition_id,
+            owner_id,
+            current_points=self.cards[definition_id].base_points,
+        )
 
     def start_new_match(self, seed: int | None = None) -> GameState:
         if seed is not None:
@@ -69,6 +85,8 @@ class GameEngine:
         players = [PlayerState("player-1", "Player 1"), PlayerState("player-2", "Player 2")]
         self.state = GameState(players=players, rows=[], rounds_per_match=self.config.rounds_per_match)
         self._empty_draw_piles_warned.clear()
+        # Pending ability registrations never carry across matches.
+        self.abilities.reset()
         for player in players:
             pool = deal_player_pool(
                 self.cards,
@@ -83,6 +101,10 @@ class GameEngine:
 
     def _prepare_round(self, starter_index: int) -> None:
         state = self.state
+        # A new round rebuilds the board, so pending ability registrations tied
+        # to the previous round's card positions are discarded. Per-instance
+        # activation records live on the cards themselves and are unaffected.
+        self.abilities.reset()
         state.rows = [
             BattleRow(
                 id=f"round-{state.round_number}-row-{number}",
@@ -372,6 +394,8 @@ class GameEngine:
             "effect_text": definition.effect_text,
             "owner_id": card.owner_id,
             "revealed": card.revealed,
+            "current_points": card.get("current_points"),
+            "activated_abilities": list(card.get("activated_abilities") or []),
         }
 
     def _draw_for_active_player(self) -> None:
@@ -397,11 +421,16 @@ class GameEngine:
         })
 
     def _reveal_card(self, row: BattleRow, slot_index: int, card: CardInstance) -> None:
-        """Reveal one card and emit the single event used by audio and animation."""
+        """Reveal one card, resolve abilities, then queue presentation events.
+
+        Order matters: the authoritative reveal flag flips first, the reveal
+        presentation is queued (so flips and audio start immediately), then
+        ability phases A/B resolve with each activation's presentation queued
+        right after that ability's effects apply.
+        """
         if card.revealed:
             return
         card.revealed = True
-        self._resolve_reveal_triggers(card, row, slot_index)
         definition = self.cards[card.definition_id]
         owner = self.state.player(card.owner_id)
         self._emit("card_revealed", f"{owner.name} reveals {definition.name} (base {definition.base_points}).", {
@@ -417,11 +446,26 @@ class GameEngine:
             "effect_name": definition.effect_name,
             "effect_text": definition.effect_text,
         })
+        self._resolve_reveal_triggers(card, row, slot_index)
 
     def _resolve_reveal_triggers(self, card: CardInstance, row: BattleRow, slot_index: int) -> None:
-        """Future ability hook: resolve registered reveal effects in deterministic order."""
-        # Character effect text is descriptive only; no ability handlers are installed.
-        return None
+        """Run the central ability manager: Phase A pending, Phase B this card."""
+        self.abilities.on_card_revealed(
+            self.state, card, row, slot_index, emit=self._emit_ability_activation,
+        )
+
+    def _emit_ability_activation(self, activation: AbilityActivation) -> None:
+        """Queue presentation for an ability whose effects have just applied."""
+        self._emit(
+            "ability_activated",
+            (
+                f"{activation.owner_name}'s {activation.ability.name} activates: "
+                f"{activation.ability.presentation.floating_text} "
+                f"({activation.current_points - activation.delta} -> "
+                f"{activation.current_points} points)."
+            ),
+            activation.event_data(),
+        )
 
     def _emit(self, kind: str, message: str, data: dict) -> None:
         self.state.events.append(GameEvent(kind, message, data))

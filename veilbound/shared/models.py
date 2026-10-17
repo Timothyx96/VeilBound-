@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .abilities import AbilityDefinition
+
 
 class GamePhase(str, Enum):
     PLACEMENT = "placement"
@@ -36,11 +38,37 @@ class CardDefinition:
     effect_name: str
     effect_text: str
     full_card_art: str = ""
+    # Optional JSON-declared ability; None for characters without one.
+    ability: AbilityDefinition | None = None
 
 
 class CardInstance(StateRecord):
-    def __init__(self, id: str, definition_id: str, owner_id: str, revealed: bool = False):
-        super().__init__(id=id, definition_id=definition_id, owner_id=owner_id, revealed=revealed)
+    """One dealt/played card.
+
+    ``base_points`` lives on the frozen definition and never changes;
+    ``current_points`` is this instance's runtime value, initialized from the
+    definition when the match deals the card and only ever modified by
+    ability effects. ``activated_abilities`` records which abilities this
+    specific instance has already used during the match.
+    """
+
+    def __init__(
+        self,
+        id: str,
+        definition_id: str,
+        owner_id: str,
+        revealed: bool = False,
+        current_points: int | None = None,
+        activated_abilities: list[str] | None = None,
+    ):
+        super().__init__(
+            id=id,
+            definition_id=definition_id,
+            owner_id=owner_id,
+            revealed=revealed,
+            current_points=current_points,
+            activated_abilities=list(activated_abilities or []),
+        )
 
 
 class PlayerState(StateRecord):
