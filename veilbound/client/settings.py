@@ -19,6 +19,7 @@ DEFAULT_PRESETS: dict[str, dict[str, int]] = {
         "row_result_ms": 25000,
         "row_transition_ms": 7200,
         "final_round_result_ms": 25000,
+        "duo_energy_ms": 800,
     },
     "Normal": {
         "card_flip_ms": 1500,
@@ -28,6 +29,7 @@ DEFAULT_PRESETS: dict[str, dict[str, int]] = {
         "row_result_ms": 2500,
         "row_transition_ms": 1000,
         "final_round_result_ms": 5000,
+        "duo_energy_ms": 800,
     },
     "Fast": {
         "card_flip_ms": 300,
@@ -37,6 +39,7 @@ DEFAULT_PRESETS: dict[str, dict[str, int]] = {
         "row_result_ms": 900,
         "row_transition_ms": 250,
         "final_round_result_ms": 1500,
+        "duo_energy_ms": 800,
     },
 }
 

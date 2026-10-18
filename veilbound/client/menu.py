@@ -10,6 +10,7 @@ from __future__ import annotations
 import pygame
 
 from veilbound.client.network import NetworkConnection, RemoteGameEngine
+from veilbound.shared.engine import GameEngine
 from veilbound.client.theme import BG, GOLD, PANEL, PANEL_LIGHT
 
 CODE_LENGTH = 6
@@ -68,10 +69,10 @@ class MenuScreen:
         center = width // 2
         buttons: dict[str, pygame.Rect] = {}
         if self.screen == "root":
-            top = height // 2 - 30
-            for index, name in enumerate(("local", "host", "join")):
+            top = height // 2 - 70
+            for index, name in enumerate(("local", "debug", "host", "join")):
                 buttons[name] = pygame.Rect(center - 230, top + index * 78, 460, 62)
-            buttons["quit"] = pygame.Rect(center - 230, top + 3 * 78, 460, 62)
+            buttons["quit"] = pygame.Rect(center - 230, top + 4 * 78, 460, 62)
         elif self.screen == "join":
             buttons["connect"] = pygame.Rect(center - 230, height // 2 + 130, 220, 58)
             buttons["back"] = pygame.Rect(center + 10, height // 2 + 130, 220, 58)
@@ -117,6 +118,8 @@ class MenuScreen:
         if self.screen == "root":
             if name == "local":
                 self._outcome = ("local",)
+            elif name == "debug":
+                self.start_debug()
             elif name == "host":
                 self._start_host()
             elif name == "join":
@@ -173,8 +176,10 @@ class MenuScreen:
             if event.key == pygame.K_1:
                 self._outcome = ("local",)
             elif event.key == pygame.K_2:
-                self._start_host()
+                self.start_debug()
             elif event.key == pygame.K_3:
+                self._start_host()
+            elif event.key == pygame.K_4:
                 self.screen = "join"
                 self.error = None
             return
@@ -230,6 +235,15 @@ class MenuScreen:
             self.error = "Enter a valid port (1-65535)."
             return
         self._open_connection("join", code, port)
+
+    def start_debug(self) -> None:
+        """Switch to Debug Mode: local 50-card roster game with scrollable hands."""
+        self._cancel_connection()
+        self.mode = "debug"
+        self.engine = GameEngine(debug_mode=True)
+        self.screen = "root"
+        self.status = "Debug Mode: scroll the 50-card strip to select a card."
+        self._outcome = ("debug", None, self.engine)
 
     def _open_connection(self, mode: str, code: str | None, port: int) -> None:
         self._cancel_connection()
@@ -340,8 +354,10 @@ class MenuScreen:
 
         labels = {
             "local": ("1 - Local Game", "Both players share this screen"),
-            "host": ("2 - Host Online Room", "Get a code and let a friend join"),
-            "join": ("3 - Join Online Room", "Enter a room code from the host"),
+            "debug": ("2 - Debug Mode", "All 50 cards, scrollable hand"),
+            "host": ("3 - Host Online Room", "Get a code and let a friend join"),
+            "join": ("4 - Join Online Room", "Enter a room code from the host"),
+            "quit": ("5 - Quit", "Exit to desktop"),
             "quit": ("Quit", ""),
         }
         for name, rect in self._buttons.items():

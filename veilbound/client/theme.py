@@ -7,6 +7,11 @@ GOLD = (244, 194, 99)
 CREAM = (235, 228, 208)
 P1 = (95, 159, 215)
 P2 = (222, 125, 101)
+# Stronger, more vibrant red used only for the outline drawn around cards
+# placed on the board, so player-2's cards stand out against player-1's blue.
+# Kept separate from P2 so the player bar, card back, and results colours are
+# unchanged.
+P2_CARD_OUTLINE = (237, 45, 55)
 
 # Slot palette and geometry.
 SLOT_INK = (11, 14, 26)  # #0B0E1A
@@ -15,6 +20,9 @@ SLOT_GOLD = (201, 164, 76)  # #C9A44C
 SLOT_VIOLET = (123, 95, 196)  # #7B5FC4
 SLOT_CRIMSON = (181, 56, 74)  # #B5384A
 SLOT_PARCHMENT = (230, 217, 184)  # #E6D9B8
+# Dynamic Duo energy arc: bright purple core with a dimmer trail/glow.
+DUO_ENERGY = (160, 90, 255)   # #A05AFF
+DUO_ENERGY_DIM = (70, 35, 110)  # #46236E
 SLOT_EMPTY_FILL = (*SLOT_PANEL, 179)
 SLOT_EMPTY_BORDER = (*SLOT_GOLD, 235)
 SLOT_HOVER_BORDER = (*SLOT_VIOLET, 255)

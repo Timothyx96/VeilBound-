@@ -18,6 +18,7 @@ class RecordingRenderer:
         "row_result_ms": 100,
         "row_transition_ms": 100,
         "final_round_result_ms": 100,
+        "duo_energy_ms": 100,
     }
 
     def __init__(self):
@@ -28,6 +29,14 @@ class RecordingRenderer:
 
     def reset_animations(self):
         pass
+
+    @property
+    def duo_animation_pending(self) -> bool:
+        return False
+
+    @property
+    def duo_animation_deadline(self) -> float:
+        return 0.0
 
 
 def test_animation_flow_advances_by_deadlines_without_blocking():

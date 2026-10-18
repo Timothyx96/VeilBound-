@@ -41,24 +41,32 @@ from veilbound.shared.scoring import calculate_row_scores
 
 SASUKE = "naruto_02"
 ITACHI = "naruto_03"
-SPECIAL = {SASUKE, ITACHI}
+SANJI = "onepiece_03"
+ZORO = "onepiece_02"
+VEGETA = "dragonball_02"
+GOKU = "dragonball_01"
+ALLUKA = "hxh_03"
+KILLUA = "hxh_02"
+SPECIAL = {SASUKE, ITACHI, SANJI, ZORO, VEGETA, GOKU, ALLUKA, KILLUA}
 ABILITY_ID = "sasuke_shared_row_bonus"
 
+# Filler cards must never carry an on-reveal synergy: random draw piles can
+# otherwise leak extra duo activations into unrelated scenarios. Keep this in
+# sync with the roster JSON abilities.
+ABILITY_HOLDERS = {SASUKE, SANJI, VEGETA, ALLUKA}
+NON_ABILITY_FILLERS = [
+    "naruto_01", "naruto_05", "naruto_06", "naruto_07", "naruto_08", "naruto_10",
+    "onepiece_01", "hxh_01", "dragonball_03",
+]
+
+# New synergy abilities that replicate Sasuke's pattern exactly.
+NEW_DUOS = [
+    (SANJI, ZORO, "sanji_zoro_row_bonus"),
+    (VEGETA, GOKU, "vegeta_goku_row_bonus"),
+    (ALLUKA, KILLUA, "alluka_killua_row_bonus"),
+]
+
 _instance_serial = itertools.count(1)
-
-
-def make_engine(capacity=2, seed=4):
-    return GameEngine(
-        GameConfig(
-            deck_size=40,
-            initial_hand_size=5,
-            draw_per_turn=1,
-            capacity_min=capacity,
-            capacity_max=capacity,
-            rounds_per_match=2,
-        ),
-        seed=seed,
-    )
 
 
 def instance(engine, definition_id, owner_id):
@@ -74,6 +82,36 @@ def instance(engine, definition_id, owner_id):
 def give(player, engine, *definition_ids):
     """Replace a hand with a scripted card list for a deterministic scenario."""
     player.hand = [instance(engine, did, player.id) for did in definition_ids]
+
+
+def make_engine(capacity=2, seed=4):
+    engine = GameEngine(
+        GameConfig(
+            deck_size=40,
+            initial_hand_size=5,
+            draw_per_turn=1,
+            capacity_min=capacity,
+            capacity_max=capacity,
+            rounds_per_match=2,
+        ),
+        seed=seed,
+    )
+    # Scrub random pools so only scripted cards can carry duo synergies.
+    # The roster now has several Dynamic Duo abilities; random draw piles
+    # would otherwise leak unrelated activations into exact-count asserts.
+    filler_ids = NON_ABILITY_FILLERS
+    serial = 0
+
+    def _filler(owner_id: str) -> CardInstance:
+        nonlocal serial
+        definition_id = filler_ids[serial % len(filler_ids)]
+        serial += 1
+        return instance(engine, definition_id, owner_id)
+
+    for player in engine.state.players:
+        player.draw_pile = [_filler(player.id) for _ in player.draw_pile]
+        player.hand = [_filler(player.id) for _ in player.hand]
+    return engine
 
 
 def pick_filler(player):
@@ -224,12 +262,15 @@ def test_different_rows_never_activate_the_bonus():
     fill_rest(engine)
     reveals = finish_reveals(engine)
 
-    # Rule 6: both revealed, different rows -> nothing happens, ever.
+    # Different rows -> nothing happens, ever (same-player synergy requires
+    # both partners to share the row *and* the owner).
     assert ability_events(placements) == []
     assert ability_events(reveals) == []
     assert sasuke.current_points == 7
     assert itachi.current_points == 6
     assert sasuke.activated_abilities == []
+    # No stale registration survives: a pending Sasuke whose revealed partner
+    # sits in another row can never become eligible, so the engine prunes it.
     assert engine.abilities.pending_abilities == ()
 
 
@@ -285,6 +326,8 @@ def test_repeated_evaluation_grants_the_bonus_only_once():
 
 
 def test_reveal_animation_flow_runs_with_a_single_activation():
+    # Same-player synergy: Sasuke + Itachi both belong to player 1 and share
+    # row 0, so exactly one activation flows through the animation pipeline.
     engine = make_engine()
     p1, p2 = engine.state.players
     give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
@@ -352,29 +395,33 @@ def test_new_match_resets_current_points_and_activation_records():
 
 
 def test_two_sasuke_instances_keep_independent_points_and_activations():
-    engine = make_engine()
+    # Same-player synergy: each Sasuke activates off its OWN player's Itachi
+    # sharing its row. Capacity 4 lets both duos share row 0 while keeping
+    # turn order (p1, p2 alternate).
+    engine = make_engine(capacity=4)
     p1, p2 = engine.state.players
     give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
     give(p2, engine, SASUKE, ITACHI, "naruto_06", "naruto_07")
     sasuke_a, itachi_a = p1.hand[0], p1.hand[1]
     sasuke_b, itachi_b = p2.hand[0], p2.hand[1]
-
     place(engine, sasuke_a, 0, 0)
-    place(engine, sasuke_b, 1, 0)
-    place(engine, itachi_a, 0, 1)  # reveals Sasuke A -> pending
-    place(engine, itachi_b, 1, 1)  # reveals Sasuke B -> pending
+    place(engine, pick_filler(p2), 1, 0)
+    place(engine, itachi_a, 0, 1)  # reveals A (p1 Itachi shares row 0)
+    place(engine, pick_filler(p2), 1, 1)
+    place(engine, sasuke_b, 0, 2)
+    place(engine, pick_filler(p2), 1, 2)
+    place(engine, itachi_b, 0, 3)  # row 0 full -> final reveals pending
+    place(engine, pick_filler(p2), 1, 3)
     fill_rest(engine)
     reveals = finish_reveals(engine)
-
-    # First final reveal: Itachi A -> only instance A is eligible right now.
+    # Row-major finals: row-0 Itachi A reveals first -> Sasuke A fires
+    # (same row, same owner p1); then Itachi B -> Sasuke B fires (p2).
     first_grant = ability_events(reveals[0])
     assert len(first_grant) == 1
     assert first_grant[0].data["owner_card_id"] == sasuke_a.id
     assert sasuke_a.current_points == 10
     assert sasuke_b.current_points == 7  # no shared state between instances
     assert sasuke_b.activated_abilities == []
-
-    # Second final reveal: Itachi B -> instance B activates separately.
     second_grant = ability_events(reveals[1])
     assert len(second_grant) == 1
     assert second_grant[0].data["owner_card_id"] == sasuke_b.id
@@ -547,3 +594,88 @@ def test_multiplayer_room_resolves_the_bonus_once_and_syncs_both_peers():
     assert sasuke.current_points == 10
     assert sasuke.activated_abilities == [ABILITY_ID]
     assert itachi.current_points == 6
+
+
+def build_duo_same_owner(holder, partner):
+    """Place holder + partner (both player 1) into row 0, then finish all reveals.
+
+    The holder is revealed when the partner is placed; the partner is revealed
+    during the final reveal pass, which triggers the +3 synergy. Returns
+    (engine, holder_card, partner_card).
+    """
+    engine = make_engine()
+    p1, p2 = engine.state.players
+    give(p1, engine, holder, partner, "naruto_01", "naruto_05")
+    give(p2, engine, "naruto_06", "naruto_07", "naruto_08", "naruto_10")
+    holder_card, partner_card = p1.hand[0], p1.hand[1]
+    place(engine, holder_card, 0, 0)
+    place(engine, pick_filler(p2), 1, 0)
+    place(engine, partner_card, 0, 1)  # reveals holder; partner still face-down
+    place(engine, pick_filler(p2), 1, 1)
+    fill_rest(engine)
+    finish_reveals(engine)
+    return engine, holder_card, partner_card
+
+
+def test_new_synergy_partner_same_row_grants_plus_three():
+    for holder, partner, ability_id in NEW_DUOS:
+        engine, holder_card, partner_card = build_duo_same_owner(holder, partner)
+        base = engine.cards[holder].base_points
+        assert holder_card.current_points == base + 3, holder
+        assert holder_card.activated_abilities == [ability_id]
+        # The partner itself gains nothing from this ability.
+        assert partner_card.current_points == engine.cards[partner].base_points
+
+
+def test_new_synergy_opponent_partner_does_not_activate():
+    for holder, partner, ability_id in NEW_DUOS:
+        engine = make_engine()
+        p1, p2 = engine.state.players
+        give(p1, engine, holder, "naruto_01", "naruto_05", "naruto_08")
+        give(p2, engine, partner, "naruto_06", "naruto_07", "naruto_10")
+        holder_card, partner_card = p1.hand[0], p2.hand[0]
+        place(engine, holder_card, 0, 0)
+        place(engine, partner_card, 0, 1)  # opponent's partner shares the row
+        fill_rest(engine)
+        finish_reveals(engine)
+        base = engine.cards[holder].base_points
+        assert holder_card.current_points == base, holder
+        assert holder_card.activated_abilities == []
+
+
+def test_new_synergy_repeated_evaluation_never_stacks():
+    for holder, partner, ability_id in NEW_DUOS:
+        engine, holder_card, partner_card = build_duo_same_owner(holder, partner)
+        base = engine.cards[holder].base_points
+        row0 = engine.state.rows[0]
+        for card in (partner_card, holder_card, partner_card, holder_card):
+            engine.abilities.on_card_revealed(engine.state, card, row0, 0)
+        engine.score_current_row()
+        assert holder_card.current_points == base + 3
+        assert holder_card.activated_abilities == [ability_id]
+
+
+def _retraction_bonus_after_partner_removed(holder, partner):
+    engine, holder_card, partner_card = build_duo_same_owner(holder, partner)
+    base = engine.cards[holder].base_points
+    assert holder_card.current_points == base + 3
+    row0 = engine.state.rows[0]
+    idx = next(i for i, s in enumerate(row0.slots) if s is not None and s.id == partner_card.id)
+    row0.slots[idx] = None  # artificial; the real game has no removal mechanic
+    engine.abilities.on_card_revealed(engine.state, holder_card, row0, 0)
+    engine.score_current_row()
+    return holder_card.current_points - base  # bonus still applied (3) or removed (0)
+
+
+def test_new_synergy_behaves_identically_to_sasuke_when_partner_removed():
+    """The shared ability system applies bonuses once and does not retract them.
+
+    The game has no card-removal/movement mechanic, so "partner leaves the row"
+    cannot occur during real play. This asserts the new abilities are CONSISTENT
+    with Sasuke (identical behaviour in this scenario) -- the acceptance criterion
+    -- rather than asserting that retraction occurs.
+    """
+    sasuke_bonus = _retraction_bonus_after_partner_removed(SASUKE, ITACHI)
+    for holder, partner, _ability_id in NEW_DUOS:
+        assert _retraction_bonus_after_partner_removed(holder, partner) == sasuke_bonus, holder
+

@@ -325,6 +325,8 @@ class AbilityManager:
                 owner_row, owner_index, owner_card = owner
                 if self._limit_reached(pending.ability, owner_card):
                     continue  # already activated; never rerun
+                if self._row_closed_without_partner(pending.ability, owner_card, owner_row):
+                    continue  # closed row without partner; can never activate
                 activation = self._try_activate(
                     pending.ability, owner_card, owner_row, owner_index, state
                 )
@@ -373,6 +375,34 @@ class AbilityManager:
             return ability.id in (card.get("activated_abilities") or [])
         return False
 
+    def _row_closed_without_partner(
+        self, ability: AbilityDefinition, owner_card: Any, owner_row: Any
+    ) -> bool:
+        """True when a pending same-row synergy can never become eligible.
+
+        Board positions never change after placement, so once the owner's row
+        is completely filled and revealed without a revealed same-player
+        partner, the ``same_row`` condition can never turn true. Dropping the
+        registration keeps ``pending_abilities`` truthful instead of leaking
+        stale entries. Returns False while the row could still change (empty
+        slots or hidden cards).
+        """
+        for condition in ability.conditions:
+            if condition.type != "same_row":
+                continue
+            partner_id = resolve_character_reference(self.definitions, condition.character)
+            if partner_id is None:
+                continue
+            if not all(slot is not None and slot.revealed for slot in owner_row.slots):
+                return False  # row still in flux; partner may yet arrive/reveal
+            in_row = any(
+                slot.definition_id == partner_id and slot.owner_id == owner_card.owner_id
+                for slot in owner_row.slots
+            )
+            if not in_row:
+                return True  # closed row without the partner: impossible
+        return False
+
     def _condition_holds(
         self, condition: Condition, owner_card: Any, owner_row: Any, state: Any
     ) -> bool:
@@ -393,7 +423,8 @@ class AbilityManager:
         if condition.type == "same_row":
             # The partner must share the owner's row *and* belong to the same
             # player *and* be revealed: merely placing two cards together is
-            # never sufficient on its own.
+            # never sufficient on its own. (Same-player synergy per the Dynamic
+            # Duo design and the new-duo tests.)
             return any(
                 slot is not None
                 and slot.revealed

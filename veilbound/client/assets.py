@@ -57,6 +57,21 @@ class AssetLoader:
         return pygame.transform.smoothscale(image, (width, height))
 
     @staticmethod
+    def scale_cover(image: pygame.Surface, bounds: tuple[int, int]) -> pygame.Surface:
+        """Scale to cover the bounds without distortion, then center-crop to fit."""
+        max_width, max_height = bounds
+        if max_width < 1 or max_height < 1:
+            raise ValueError("Image bounds must be positive")
+        source_width, source_height = image.get_size()
+        scale = max(max_width / source_width, max_height / source_height)
+        width = max(max_width, round(source_width * scale))
+        height = max(max_height, round(source_height * scale))
+        scaled = pygame.transform.smoothscale(image, (width, height))
+        left = (width - max_width) // 2
+        top = (height - max_height) // 2
+        return scaled.subsurface(pygame.Rect(left, top, max_width, max_height)).copy()
+
+    @staticmethod
     def _make_fallback() -> pygame.Surface:
         image = pygame.Surface((256, 320), pygame.SRCALPHA)
         image.fill((31, 42, 66))

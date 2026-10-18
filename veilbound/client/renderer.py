@@ -1,20 +1,22 @@
 from __future__ import annotations
 
+import math
 import time
 
 import pygame
 
 from veilbound.client.assets import AssetLoader
-from veilbound.client.layout import CARD_HEIGHT_RATIO, CARD_WIDTH_RATIO, BoardLayout
+from veilbound.client.layout import CARD_HEIGHT_RATIO, CARD_WIDTH_RATIO, BoardLayout, DEBUG_HOVER_SCALE, DEBUG_HOVER_NEIGHBOR_PUSH, DEBUG_HOVER_SECOND_PUSH
 from veilbound.client.settings import AppSettings, load_settings
 from veilbound.client.theme import (
-    BG, CREAM, DEBUG, GOLD, P1, P2, PANEL, PANEL_LIGHT,
+    BG, CREAM, DEBUG, GOLD, P1, P2, P2_CARD_OUTLINE, PANEL, PANEL_LIGHT,
+    DUO_ENERGY, DUO_ENERGY_DIM,
     SLOT_BORDER_WIDTH, SLOT_CARD_MARGIN, SLOT_CORNER_ORNAMENTS_ENABLED,
     SLOT_EMPTY_BORDER, SLOT_EMPTY_FILL, SLOT_GLOW_PADDING, SLOT_GLOW_STEPS,
     SLOT_HOVER_BORDER, SLOT_HOVER_GLOW, SLOT_INVALID_BORDER, SLOT_INVALID_FILL,
     SLOT_OCCUPIED_BORDER, SLOT_OCCUPIED_FILL,
     SLOT_RADIUS, SLOT_SHADOW, SLOT_GOLD, SLOT_VALID_BORDER,
-    SLOT_VALID_FILL, SLOT_VALID_GLOW, TEXT_MUTED_GOLD, TEXT_SHADOW,
+    SLOT_VALID_FILL, SLOT_VALID_GLOW, TEXT_MUTED_GOLD, TEXT_SHADOW, TEXT_WHITE,
 )
 from veilbound.client.typography import (
     FONTS,
@@ -24,6 +26,7 @@ from veilbound.client.typography import (
     render_text_with_spacing,
     wrap_text,
 )
+from veilbound.shared.abilities import resolve_character_reference
 from veilbound.shared.models import BattleRow, CardDefinition, GameEvent, GamePhase, GameState
 from veilbound.shared.scoring import calculate_row_scores
 
@@ -54,6 +57,7 @@ class Renderer:
         self._render_size: tuple[int, int] | None = None
         self._overlay_cache: dict[tuple[int, int, int, int, int, int], pygame.Surface] = {}
         self._row_backplates: dict[tuple[int, int], pygame.Surface] = {}
+        self._row_panel_cache: dict[tuple[int, int], pygame.Surface | None] = {}
         self._slot_surface_cache: dict[tuple[str, tuple[int, int], bool], pygame.Surface] = {}
         self._card_frame_cache: dict[tuple[int, int], pygame.Surface] = {}
         self._card_front_cache: dict[tuple[int, int], pygame.Surface] = {}
@@ -75,9 +79,25 @@ class Renderer:
         self.floating_texts: list[dict] = []
         # Dedupe key -> start time, so a duplicated event cannot replay text.
         self.floating_texts_started: dict[tuple[str, str, int], float] = {}
+        # Dynamic Duo energy arc animation; one shot per genuine same-player
+        # pair activation. Populated by note_events for an ability_activated
+        # event and resolved against live state during draw so the arc
+        # endpoints always derive from actual card screen positions.
+        # ``duo_queue`` holds activations waiting their turn; ``duo_animation``
+        # holds the one currently playing.
+        # Shape: {"owner_key": (row_id, slot_index),
+        #         "partner_key": (row_id, slot_index) | None,
+        #         "started": float}
+        self.duo_animation: dict | None = None
+        self.duo_queue: list[dict] = []
+        # Debug Mode: horizontally scrollable full-roster hand. The scroll
+        # offset lives here so input, tooltips, and drawing share one value.
+        self.debug_mode = False
+        self.debug_scroll = 0.0
 
-    def layout(self, state: GameState, size: tuple[int, int]) -> BoardLayout:
-        return BoardLayout(size, state)
+    def layout(self, state: GameState, size: tuple[int, int], debug_mode: bool | None = None) -> BoardLayout:
+        active_debug = self.debug_mode if debug_mode is None else debug_mode
+        return BoardLayout(size, state, debug_mode=active_debug)
 
     def reset_animations(self) -> None:
         self.flip_started.clear()
@@ -88,6 +108,32 @@ class Renderer:
         self.reveal_card_visible_after = 0.0
         self.reveal_card_until = 0.0
         self.score_animation_row_id = None
+        self.duo_animation = None
+        self.duo_queue.clear()
+
+    @property
+    def duo_duration(self) -> float:
+        """Duration of the one-shot Dynamic Duo energy arc, in seconds."""
+        return max(0, self.animation_ms.get("duo_energy_ms", 0)) / 1000
+
+    @property
+    def duo_animation_pending(self) -> bool:
+        """True while a Dynamic Duo activation has not yet finished animating.
+
+        The input controller uses this to gate the next character reveal until
+        the arc has played out. Includes queued activations waiting their turn.
+        """
+        return self.duo_animation is not None or bool(self.duo_queue)
+
+    @property
+    def duo_animation_deadline(self) -> float:
+        """Absolute time at which the pending Dynamic Duo animation finishes."""
+        anim = self.duo_animation
+        if anim is not None:
+            return anim["started"] + self.duo_duration
+        if self.duo_queue:
+            return self.duo_queue[0]["started"] + self.duo_duration
+        return 0.0
 
     def note_events(self, events: tuple[GameEvent, ...]) -> None:
         for event in events:
@@ -123,8 +169,194 @@ class Renderer:
                     "text": str(event.data.get("floating_text", "")),
                     "started": now,
                 })
+                # Dynamic Duo energy arc: schedule a one-shot arc between the
+                # activating card and its same-row partner. The partner is
+                # resolved against live state during draw so the arc endpoints
+                # always derive from actual card screen positions. An owner
+                # activates at most once per match, so duplicate/replayed
+                # events for the same owner are ignored.
+                owner_key = (
+                    str(event.data.get("row_id", "")),
+                    int(event.data.get("slot_index", -1)),
+                )
+                owner_id = str(event.data.get("owner_card_id", ""))
+                already_queued = any(
+                    item["owner_key"] == owner_key for item in self.duo_queue
+                ) or (
+                    self.duo_animation is not None
+                    and self.duo_animation.get("owner_key") == owner_key
+                )
+                if owner_id and owner_key[1] >= 0 and not already_queued:
+                    self.duo_queue.append(
+                        {"owner_key": owner_key, "partner_key": None, "started": now}
+                    )
             self.notice = event.message
             self.notice_until = time.monotonic() + 3.5
+
+    def _resolve_duo_animation(self, state: GameState, cards: dict[str, CardDefinition]) -> None:
+        """Advance the Dynamic Duo queue and resolve the next partner.
+
+        The current animation expires after ``duo_duration``; once it does, the
+        next queued activation is resolved against live state so its arc
+        endpoints come from actual card screen positions. Activations that are
+        not genuine same-player Dynamic Duo pairs are discarded silently.
+        """
+        while self.duo_animation is not None:
+            if time.monotonic() < self.duo_animation["started"] + self.duo_duration:
+                return  # current animation still playing
+            self.duo_animation = None  # expired
+        while self.duo_queue:
+            anim = self.duo_queue.pop(0)
+            row_id, slot_index = anim["owner_key"]
+            partner_key = self._find_duo_partner(state, cards, row_id, slot_index)
+            if partner_key is not None:
+                anim["partner_key"] = partner_key
+                self.duo_animation = anim
+                return
+            # Not a genuine Dynamic Duo activation: discard and try the next.
+
+    def _find_duo_partner(
+        self, state: GameState, cards: dict[str, CardDefinition], row_id: str, slot_index: int
+    ) -> tuple[str, int] | None:
+        """Locate the activating card's Dynamic Duo partner in the same row.
+
+        A Dynamic Duo ability references another character via a
+        ``character_revealed`` condition. The partner must be revealed, share
+        the owner's row and player, and match that referenced definition.
+        """
+        target_row = None
+        for row in state.rows:
+            if row.id == row_id:
+                target_row = row
+                break
+        if target_row is None or not 0 <= slot_index < len(target_row.slots):
+            return None
+        owner_slot = target_row.slots[slot_index]
+        if owner_slot is None:
+            return None
+        definition = cards.get(owner_slot.definition_id) if owner_slot.revealed else None
+        if definition is None:
+            return None
+        ability = getattr(definition, "ability", None)
+        if ability is None:
+            return None
+        partner_def_id = None
+        for condition in ability.conditions:
+            if getattr(condition, "type", None) == "character_revealed":
+                partner_def_id = resolve_character_reference(cards, condition.character)
+                break
+        if partner_def_id is None:
+            return None
+        for index, slot in enumerate(target_row.slots):
+            if (
+                index == slot_index
+                or slot is None
+                or not slot.revealed
+                or slot.owner_id != owner_slot.owner_id
+                or slot.definition_id != partner_def_id
+            ):
+                continue
+            return (row_id, index)
+        return None
+
+    def _draw_duo_energy(self, screen, layout: BoardLayout, now: float) -> None:
+        """Draw the timed purple energy arc for the active Dynamic Duo pair.
+
+        Sequence: both cards glow purple → a glowing energy ball travels along
+        a curved arc from the owner card toward the partner → a flash at the
+        target card → fade out. Expired animations are cleared here.
+        """
+        anim = self.duo_animation
+        if anim is None:
+            return
+        duration = self.duo_duration
+        if duration <= 0:
+            self.duo_animation = None
+            return
+        elapsed = now - anim["started"]
+        if elapsed >= duration:
+            self.duo_animation = None
+            return
+        progress = elapsed / duration  # 0 .. 1
+        fade = 1.0
+        if progress >= 0.90:
+            fade = max(0.0, (1.0 - progress) / 0.10)
+
+        owner_rect = layout.slot_rects.get(anim["owner_key"])
+        partner_key = anim.get("partner_key")
+        partner_rect = layout.slot_rects.get(partner_key) if partner_key else None
+        if owner_rect is None or partner_rect is None:
+            self.duo_animation = None
+            return
+
+        ox, oy = owner_rect.center
+        px, py = partner_rect.center
+        size = screen.get_size()
+        layer = pygame.Surface(size, pygame.SRCALPHA)
+
+        # 1. Purple card highlights pulse for the whole duration, fading out at
+        #    the very end.
+        highlight_alpha = int(110 * fade * (0.6 + 0.4 * math.sin(elapsed * 14.0)))
+        if highlight_alpha > 0:
+            for rect in (owner_rect, partner_rect):
+                glow = rect.inflate(16, 16)
+                surf = pygame.Surface(glow.size, pygame.SRCALPHA)
+                pygame.draw.rect(
+                    surf, (*DUO_ENERGY, highlight_alpha), surf.get_rect(),
+                    width=5, border_radius=10,
+                )
+                layer.blit(surf, glow.topleft)
+
+        if progress < 0.72:
+            # 2. Curved arc travel: faint full arc plus a glowing energy ball
+            #    moving from the owner card toward the partner card.
+            t = progress / 0.72
+            mid_x = (ox + px) / 2.0
+            mid_y = (oy + py) / 2.0
+            arc_height = max(70.0, abs(px - ox) * 0.55)
+            cx, cy = mid_x, mid_y - arc_height  # arc bows upward
+            bx = (1 - t) ** 2 * ox + 2 * (1 - t) * t * cx + t ** 2 * px
+            by = (1 - t) ** 2 * oy + 2 * (1 - t) * t * cy + t ** 2 * py
+
+            points = []
+            for i in range(0, 17):
+                ti = i / 16.0
+                ax = (1 - ti) ** 2 * ox + 2 * (1 - ti) * ti * cx + ti ** 2 * px
+                ay = (1 - ti) ** 2 * oy + 2 * (1 - ti) * ti * cy + ti ** 2 * py
+                points.append((ax, ay))
+            arc_alpha = max(0, int(90 * fade * (1.0 - progress)))
+            if arc_alpha > 0 and len(points) > 1:
+                arc_layer = pygame.Surface(size, pygame.SRCALPHA)
+                pygame.draw.lines(arc_layer, (*DUO_ENERGY, arc_alpha), False, points, 5)
+                layer.blit(arc_layer, (0, 0))
+
+            glow = pygame.Surface((52, 52), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*DUO_ENERGY, int(60 * fade)), (26, 26), 22)
+            layer.blit(glow, glow.get_rect(center=(round(bx), round(by))))
+            ball = pygame.Surface((20, 20), pygame.SRCALPHA)
+            pygame.draw.circle(ball, (*DUO_ENERGY, 255), (10, 10), 8)
+            pygame.draw.circle(ball, (255, 255, 255, 220), (10, 10), 4)
+            layer.blit(ball, ball.get_rect(center=(round(bx), round(by))))
+        elif progress < 0.90:
+            # 3. Flash at the target card.
+            flash = (progress - 0.72) / 0.18
+            alpha = max(0, int(180 * fade * (1.0 - flash)))
+            radius = int(36 + flash * 70)
+            surf = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(surf, (*DUO_ENERGY, alpha), (radius, radius), radius)
+            layer.blit(surf, surf.get_rect(center=(px, py)))
+            flash_alpha = int(160 * fade * (1.0 - flash * 0.5))
+            if flash_alpha > 0:
+                glow = partner_rect.inflate(20, 20)
+                surf = pygame.Surface(glow.size, pygame.SRCALPHA)
+                pygame.draw.rect(
+                    surf, (*DUO_ENERGY, flash_alpha), surf.get_rect(),
+                    width=4, border_radius=10,
+                )
+                layer.blit(surf, glow.topleft)
+        # 4. Fade out: handled by ``fade`` above as progress approaches 1.0.
+
+        screen.blit(layer, (0, 0))
 
     def draw(self, screen, state: GameState, cards: dict[str, CardDefinition], legal_slots: list[tuple[str, int]], drag_id: str | None = None, mouse_pos: tuple[int, int] | None = None, fps: float = 0.0):
         if self._render_size != screen.get_size():
@@ -140,6 +372,8 @@ class Renderer:
         screen.fill(BG)
         self._draw_background(screen)
         layout = self.layout(state, screen.get_size())
+        now = time.monotonic()
+        self._resolve_duo_animation(state, cards)
         self._draw_header(screen, state)
         if DEBUG:
             self._draw_fps(screen, fps)
@@ -157,6 +391,7 @@ class Renderer:
             self._draw_round_results(screen, state, layout)
         elif state.phase == GamePhase.MATCH_RESULTS:
             self._draw_match_results(screen, state, layout)
+        self._draw_duo_energy(screen, layout, now)
         return layout
 
     def _draw_background(self, screen) -> None:
@@ -366,10 +601,15 @@ class Renderer:
         hovered = None
         hand_player = state.player(state.viewer_id) if state.viewer_id else state.active_player
         if state.phase == GamePhase.PLACEMENT and self.turn_confirmation_player_id is None:
-            hovered = next((
-                card for card, rect in zip(hand_player.hand, layout.hand_cards)
-                if rect.collidepoint(mouse_pos)
-            ), None)
+            if getattr(layout, "debug_mode", False) and self.debug_mode:
+                _, hover_index = layout.debug_visible_cards(self.debug_scroll, mouse_pos)
+                if hover_index is not None and 0 <= hover_index < len(hand_player.hand):
+                    hovered = hand_player.hand[hover_index]
+            else:
+                hovered = next((
+                    card for card, rect in zip(hand_player.hand, layout.hand_cards)
+                    if rect.collidepoint(mouse_pos)
+                ), None)
         if hovered is None:
             for row in state.rows:
                 for slot_index, card in enumerate(row.slots):
@@ -652,21 +892,89 @@ class Renderer:
             pygame.draw.line(surface, SLOT_GOLD, (x, y), (x + dx * length, y), 1)
             pygame.draw.line(surface, SLOT_GOLD, (x, y), (x, y + dy * length), 1)
 
+    ROW_PANEL_TEXTURE = "assets/art/ui/Row/Square Row Art.png"
+    ROW_PANEL_RADIUS = 9
+
+    def _row_panel_surface(self, size: tuple[int, int]) -> pygame.Surface | None:
+        """Load, cover-crop, and round the dark-marble texture for a square panel."""
+        cached = self._row_panel_cache.get(size)
+        if cached is not None:
+            return cached
+        image = self.assets.load_image(self.ROW_PANEL_TEXTURE)
+        if image is None:
+            self._row_panel_cache[size] = None
+            return None
+        panel = AssetLoader.scale_cover(image, size)
+        radius = self.ROW_PANEL_RADIUS
+        if radius > 0:
+            rounded = pygame.Surface(size, pygame.SRCALPHA)
+            rounded.blit(panel, (0, 0))
+            mask = pygame.Surface(size, pygame.SRCALPHA)
+            pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, *size), border_radius=radius)
+            rounded.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+            panel = rounded
+        self._row_panel_cache[size] = panel
+        return panel
+
     def _draw_row_box(self, screen, row: BattleRow, rect: pygame.Rect, state: GameState, cards):
-        fill = PANEL_LIGHT if not row.scored else (47, 59, 80)
-        pygame.draw.rect(screen, fill, rect, border_radius=9)
-        pygame.draw.rect(screen, GOLD if row.scored else (113, 128, 151), rect, width=2, border_radius=9)
-        self._text_center_fit(screen, f"ROW {row.number}", (rect.centerx, rect.y + 10), "row_label", rect.width - 8)
-        self._text_center(screen, str(row.point_value), (rect.centerx, rect.y + rect.height * 0.42), "number_capacity")
+        panel = self._row_panel_surface(rect.size)
+        if panel is not None:
+            screen.blit(panel, rect.topleft)
+        else:
+            fill = PANEL_LIGHT if not row.scored else (47, 59, 80)
+            pygame.draw.rect(screen, fill, rect, border_radius=self.ROW_PANEL_RADIUS)
+        # Keep the scored/active border affordance on top of the texture.
+        pygame.draw.rect(
+            screen,
+            GOLD if row.scored else (113, 128, 151),
+            rect,
+            width=2,
+            border_radius=self.ROW_PANEL_RADIUS,
+        )
+
+        self._text_center_fit(
+            screen, f"ROW {row.number}", (rect.centerx, rect.y + round(rect.height * 0.10)), "row_label", rect.width - 8
+        )
+        self._text_center(
+            screen, str(row.point_value), (rect.centerx, rect.y + round(rect.height * 0.32)), "number_capacity"
+        )
+
         display_scores = (
             self._displayed_row_scores(row)
             if row.scored
             else calculate_row_scores(row, tuple(player.id for player in state.players), cards)
         )
-        p1_score = display_scores[state.players[0].id]
-        p2_score = display_scores[state.players[1].id]
-        self._text_center_fit(screen, f"P1 {p1_score}", (rect.centerx, rect.bottom - 25), "label_small", rect.width - 8)
-        self._text_center_fit(screen, f"P2 {p2_score}", (rect.centerx, rect.bottom - 9), "label_small", rect.width - 8)
+        number_size = max(16, round(rect.height * 0.20))
+        square_size = max(9, round(rect.height * 0.10))
+        first_row_y = rect.y + round(rect.height * 0.58)
+        row_spacing = max(16, round(rect.height * 0.22))
+        for index, player in enumerate(state.players):
+            accent = P1 if index == 0 else P2_CARD_OUTLINE
+            self._draw_player_score(
+                screen,
+                rect,
+                first_row_y + index * row_spacing,
+                accent,
+                str(display_scores[player.id]),
+                f"P{index + 1}",
+                number_size,
+                square_size,
+            )
+
+    def _draw_player_score(self, screen, rect, center_y, accent, value, label, number_size, square_size):
+        """Draw a colored square, a large white number, and a small player label."""
+        number = get_font("number_card", number_size).render(value, True, TEXT_WHITE)
+        label_surface = render_text(label, "label_small")
+        gap = max(3, square_size // 2)
+        total_width = square_size + gap + number.get_width() + gap + label_surface.get_width()
+        x = rect.centerx - total_width // 2
+        square = pygame.Rect(x, center_y - square_size // 2, square_size, square_size)
+        pygame.draw.rect(screen, accent, square, border_radius=2)
+        screen.blit(number, (square.right + gap, center_y - number.get_height() // 2))
+        screen.blit(
+            label_surface,
+            (square.right + gap + number.get_width() + gap, center_y - label_surface.get_height() // 2),
+        )
 
     def _draw_placed_card(self, screen, rect, row, slot_index, card, cards, now):
         definition = cards.get(card.definition_id) if card.revealed else None
@@ -676,7 +984,7 @@ class Renderer:
         if reveal_time is not None:
             progress = min(1.0, max(0.0, (now - reveal_time) / flip_duration))
         face_up = card.revealed and (reveal_time is None or progress >= 0.5)
-        owner_accent = P1 if card.owner_id == "player-1" else P2
+        owner_accent = P1 if card.owner_id == "player-1" else P2_CARD_OUTLINE
         if face_up:
             if definition is None:
                 return
@@ -691,7 +999,7 @@ class Renderer:
         else:
             draw_rect = rect
         screen.blit(surface, draw_rect)
-        pygame.draw.rect(screen, owner_accent, rect, width=2, border_radius=6)
+        pygame.draw.rect(screen, owner_accent, rect, width=3, border_radius=6)
         if not card.revealed:
             self._draw_card_frame(screen, draw_rect)
             return
@@ -835,11 +1143,22 @@ class Renderer:
         self._card_back_cache[key] = back
         return back
 
-    def _draw_hand(self, screen, state, cards, layout, drag_id, mouse_pos):
+    def _draw_hand(self, screen, state, cards, layout, drag_id, mouse_pos, hover_index: int | None = None):
         if state.phase != GamePhase.PLACEMENT or self.turn_confirmation_player_id is not None:
             return
         hand_player = state.player(state.viewer_id) if state.viewer_id else state.active_player
-        for card, rect in zip(hand_player.hand, layout.hand_cards):
+        if getattr(layout, "debug_mode", False) and self.debug_mode:
+            self._draw_debug_hand(screen, state, cards, layout, hand_player, drag_id, mouse_pos, hover_index)
+            return
+        from veilbound.client.layout import debug_shifted_rects, debug_hover_index
+
+        if hover_index is None:
+            hover_index = debug_hover_index(layout.hand_cards, mouse_pos)
+        shifted_rects = debug_shifted_rects(
+            list(layout.hand_cards), hover_index, scale=DEBUG_HOVER_SCALE
+        )
+        for index, card in enumerate(hand_player.hand):
+            rect = shifted_rects[index]
             if card.id == drag_id:
                 continue
             screen.blit(self._make_card_face(cards[card.definition_id], rect.size), rect)
@@ -851,6 +1170,136 @@ class Renderer:
                 surface = self._make_card_face(cards[card.definition_id], (drag_width, drag_height))
                 rect = surface.get_rect(center=mouse_pos)
                 screen.blit(surface, rect)
+
+    def _draw_debug_hand(
+        self,
+        screen,
+        state,
+        cards,
+        layout,
+        hand_player,
+        drag_id,
+        mouse_pos,
+        hover_index: int | None = None,
+    ):
+        """Single-row scrollable strip with dock-style hover magnification.
+
+        The hovered card enlarges to approximately 2× its normal size, bottom
+        anchored, while its nearest neighbors shift aside to make room. The
+        dragged card returns to normal size immediately so the board stays
+        fully visible. Ability name and description are shown above the
+        hovered card.
+        """
+        from veilbound.client.layout import clamp_hand_scroll, debug_shifted_rects
+
+        scroll = clamp_hand_scroll(self.debug_scroll, layout.debug_max_scroll)
+        self.debug_scroll = scroll
+        viewport = layout.debug_viewport
+        hand = hand_player.hand
+        # Full shifted geometry (scroll + hover); drawing and hit-testing use
+        # the same rects so the enlarged card is what the mouse sees.
+        if hover_index is None:
+            _, hover_index = layout.debug_visible_cards(scroll, mouse_pos)
+        # Selection overrides hover: the selected card is drawn at normal size
+        # so the player can clearly see what they are placing.
+        if hover_index is not None and drag_id is not None:
+            dragged = next((item for item in hand if item.id == drag_id), None)
+            if dragged is not None and hand.index(dragged) == hover_index:
+                hover_index = None
+        shifted_origin = [
+            pygame.Rect(rect.x - round(scroll), rect.y, rect.width, rect.height)
+            for rect in layout.hand_cards
+        ]
+        drawn_rects = debug_shifted_rects(shifted_origin, hover_index, scale=DEBUG_HOVER_SCALE)
+        previous_clip = screen.get_clip()
+        screen.set_clip(viewport)
+        try:
+            for index, card in enumerate(hand):
+                if index >= len(drawn_rects):
+                    break
+                rect = drawn_rects[index]
+                if rect.right <= viewport.x or rect.x >= viewport.right:
+                    continue
+                if card.id == drag_id:
+                    continue
+                screen.blit(self._make_card_face(cards[card.definition_id], rect.size), rect)
+        finally:
+            screen.set_clip(previous_clip)
+        # Edge fades hint that more cards lie off-screen in that direction.
+        self._draw_debug_edge_fades(screen, layout, scroll)
+        self._draw_debug_scrollbar(screen, layout, scroll)
+        # Draw the dragged card as a normal-sized ghost at the cursor so the
+        # player can see exactly what they are placing.
+        if drag_id and mouse_pos and hand_player.id == state.active_player.id:
+            card = next((item for item in hand if item.id == drag_id), None)
+            if card and layout.hand_cards:
+                base = layout.hand_cards[0]
+                surface = self._make_card_face(cards[card.definition_id], base.size)
+                rect = surface.get_rect(center=mouse_pos)
+                screen.blit(surface, rect)
+        # Draw the hover tooltip for the non-selected card under the cursor.
+        if hover_index is not None and hover_index < len(hand) and hand[hover_index].id != drag_id:
+            card = hand[hover_index]
+            card_def = cards[card.definition_id]
+            tooltip_rect = drawn_rects[hover_index]
+            # Ability name: render above the card.
+            if card_def.effect_name:
+                name_surface = get_font("name", 16).render(card_def.effect_name, True, P1 if state.players[0].id == hand_player.id else P2)
+                name_w, name_h = name_surface.get_size()
+                screen.blit(
+                    name_surface,
+                    pygame.Rect(
+                        tooltip_rect.x + round(tooltip_rect.width / 2) - round(name_w / 2),
+                        tooltip_rect.y - 4 - name_h,
+                        name_w,
+                        name_h,
+                    ),
+                )
+            # Ability description: render below the card.
+            if card_def.effect_text:
+                desc_font = get_font("text", 13)
+                desc_lines = wrap_text(card_def.effect_text, max(20, int(tooltip_rect.width * 0.6)))
+                desc_y = tooltip_rect.bottom + 6
+                for line in desc_lines:
+                    desc_surface = desc_font.render(line, True, TEXT_WHITE)
+                    desc_w, desc_h = desc_surface.get_size()
+                    screen.blit(
+                        desc_surface,
+                        pygame.Rect(
+                            tooltip_rect.x + round(tooltip_rect.width / 2) - round(desc_w / 2),
+                            desc_y,
+                            desc_w,
+                            desc_h,
+                        ),
+                    )
+                    desc_y += desc_h + 4
+
+    def _draw_debug_scrollbar(self, screen, layout, scroll) -> None:
+        track = layout.debug_track
+        if track.width <= 0:
+            return
+        pygame.draw.rect(screen, (26, 34, 52), track, border_radius=4)
+        pygame.draw.rect(screen, (78, 91, 116), track, width=1, border_radius=4)
+        pygame.draw.rect(screen, GOLD, layout.debug_thumb_rect(scroll), border_radius=4)
+
+    def _draw_debug_edge_fades(self, screen, layout, scroll) -> None:
+        from veilbound.client.layout import clamp_hand_scroll
+
+        viewport = layout.debug_viewport
+        fade_width = 26
+        offset = clamp_hand_scroll(scroll, layout.debug_max_scroll)
+        if offset > 0:
+            fade = pygame.Surface((fade_width, viewport.height), pygame.SRCALPHA)
+            for x in range(fade_width):
+                alpha = round(110 * (1.0 - x / max(1, fade_width)))
+                fade.fill((8, 12, 22, alpha), pygame.Rect(x, 0, 1, viewport.height))
+            screen.blit(fade, (viewport.x, viewport.y))
+        if offset < layout.debug_max_scroll:
+            fade = pygame.Surface((fade_width, viewport.height), pygame.SRCALPHA)
+            for x in range(fade_width):
+                alpha = round(110 * (x / max(1, fade_width)))
+                fade.fill((8, 12, 22, alpha), pygame.Rect(x, 0, 1, viewport.height))
+            screen.blit(fade, (viewport.right - fade_width, viewport.y))
     def _draw_status(self, screen, state, layout):
         if state.phase == GamePhase.PLACEMENT:
             if self.turn_confirmation_player_id is not None and not self._reveal_view_active(state):

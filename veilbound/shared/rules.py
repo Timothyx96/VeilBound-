@@ -50,9 +50,12 @@ def calculate_row_scores(row, player_ids: tuple[str, str], cards) -> dict[str, i
 class GameEngine:
     """Pygame-independent authority for card placement and round scoring."""
 
-    def __init__(self, config: GameConfig | None = None, seed: int | None = None):
+    def __init__(self, config: GameConfig | None = None, seed: int | None = None, debug_mode: bool = False):
         self.config = config or GameConfig()
         self.cards = load_card_definitions()
+        # Debug Mode behaves exactly like Local Mode, except both players can
+        # access all 50 roster cards instead of the normal 5-card hand.
+        self.debug_mode = debug_mode
         # Single authority for ability registration and resolution.
         self.abilities = AbilityManager(self.cards)
         if self.config.deck_size != PLAYER_POOL_SIZE:
@@ -88,6 +91,16 @@ class GameEngine:
         # Pending ability registrations never carry across matches.
         self.abilities.reset()
         for player in players:
+            # Debug Mode: both players get all 50 roster cards directly in the
+            # hand (sorted roster order) with an empty draw pile. Standard
+            # Local Mode keeps its normal 5-card hand untouched.
+            if self.debug_mode:
+                player.draw_pile = []
+                player.hand = [
+                    self._new_card(definition_id, player.id)
+                    for definition_id in sorted(self.cards.keys())
+                ]
+                continue
             pool = deal_player_pool(
                 self.cards,
                 pool_size=self.config.deck_size,

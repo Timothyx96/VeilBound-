@@ -69,6 +69,9 @@ def main(argv: list[str] | None = None) -> None:
             engine: GameEngine | RemoteGameEngine = GameEngine()
             connection: NetworkConnection | None = None
             renderer.room_label = None
+        elif outcome[0] == "debug":
+            _, connection, engine = outcome
+            renderer.room_label = "Debug"
         else:
             _, connection, engine = outcome
             renderer.room_label = f"Room {engine.room_code or connection.room_code or 'online'}"

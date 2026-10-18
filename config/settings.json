@@ -1,6 +1,6 @@
 {
   "animation": {
-    "preset": "Fast",
+    "preset": "Normal",
     "presets": {
       "Slow": {
         "card_flip_ms": 6200,
