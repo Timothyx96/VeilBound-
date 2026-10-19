@@ -38,6 +38,9 @@ class CardDefinition:
     effect_name: str
     effect_text: str
     full_card_art: str = ""
+    # Roster classification (e.g. "Fighter", "Dynamic Duo"); used by
+    # elimination targeting's allowed_types filter.
+    type: str = ""
     # Optional JSON-declared ability; None for characters without one.
     ability: AbilityDefinition | None = None
 
@@ -60,6 +63,9 @@ class CardInstance(StateRecord):
         revealed: bool = False,
         current_points: int | None = None,
         activated_abilities: list[str] | None = None,
+        eliminated: bool = False,
+        base_points: int | None = None,
+        applied_bonuses: dict[str, int] | None = None,
     ):
         super().__init__(
             id=id,
@@ -68,6 +74,12 @@ class CardInstance(StateRecord):
             revealed=revealed,
             current_points=current_points,
             activated_abilities=list(activated_abilities or []),
+            eliminated=eliminated,
+            base_points=base_points,
+            # Dynamic bonuses granted by abilities (ability_id -> amount). Kept
+            # separate from the immutable base so removing a bonus never
+            # corrupts the character's original points.
+            applied_bonuses=dict(applied_bonuses) if applied_bonuses is not None else {},
         )
 
 
@@ -147,6 +159,7 @@ class GameState(StateRecord):
             phase=phase, row_index=row_index, reveal_card_index=reveal_card_index,
             final_reveal_active=final_reveal_active, winner_id=winner_id, round_winner_id=round_winner_id,
             scored_row_order=scored_row_order or [], events=events or [], pending_ability_choice=None,
+            pending_elimination=None,
             viewer_id=viewer_id,
         )
 

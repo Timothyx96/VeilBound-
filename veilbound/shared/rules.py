@@ -7,6 +7,7 @@ from collections.abc import Iterable, Mapping
 from .abilities import AbilityActivation, AbilityManager
 from .config import MATCH_ROUNDS, PLAYER_POOL_SIZE, GameConfig
 from .definitions import load_card_definitions
+from .elimination import EliminationManager, EliminationTargeting
 from .models import (
     ActionResult, BattleRow, CardInstance, GameEvent, GamePhase, GameState,
     PlayerState,
@@ -58,6 +59,8 @@ class GameEngine:
         self.debug_mode = debug_mode
         # Single authority for ability registration and resolution.
         self.abilities = AbilityManager(self.cards)
+        # Single authority for elimination targeting and resolution.
+        self.elimination = EliminationManager(self.cards)
         if self.config.deck_size != PLAYER_POOL_SIZE:
             raise ValueError(f"Each player must have a {PLAYER_POOL_SIZE}-card pool")
         if self.config.initial_hand_size < 0 or self.config.draw_per_turn < 0:
@@ -74,12 +77,17 @@ class GameEngine:
 
     def _new_card(self, definition_id: str, owner_id: str) -> CardInstance:
         self._card_serial += 1
+        definition = self.cards[definition_id]
         # Fresh instances per match: runtime points start at the base value.
+        # base_points is snapshotted on the instance so dynamic bonuses can be
+        # added and removed without ever corrupting the original value.
         return CardInstance(
             f"card-{self._card_serial:05d}",
             definition_id,
             owner_id,
-            current_points=self.cards[definition_id].base_points,
+            current_points=definition.base_points,
+            base_points=definition.base_points,
+            applied_bonuses={},
         )
 
     def start_new_match(self, seed: int | None = None) -> GameState:
@@ -134,6 +142,7 @@ class GameEngine:
         state.row_index = 0
         state.reveal_card_index = 0
         state.final_reveal_active = False
+        state.pending_elimination = None
         state.phase = GamePhase.PLACEMENT
         state.winner_id = None
         state.round_winner_id = None
@@ -147,6 +156,9 @@ class GameEngine:
     def legal_slots(self, player_id: str | None = None) -> list[tuple[str, int]]:
         state = self.state
         if state.phase != GamePhase.PLACEMENT:
+            return []
+        # A pending elimination pauses all placement until a target is chosen.
+        if state.get("pending_elimination"):
             return []
         player = state.active_player if player_id is None else state.player(player_id)
         if player.id != state.active_player.id or not player.hand:
@@ -163,6 +175,8 @@ class GameEngine:
         state = self.state
         if state.phase != GamePhase.PLACEMENT:
             return ActionResult(False, "Card placement is closed for this round.")
+        if state.get("pending_elimination"):
+            return ActionResult(False, "Select an elimination target before continuing.")
         try:
             player = state.player(player_id)
         except KeyError:
@@ -194,6 +208,10 @@ class GameEngine:
             previous = row.slots[slot_index - 1]
             if previous is not None:
                 self._reveal_card(row, slot_index - 1, previous)
+        # A placement reveal may trigger an elimination ability: arm the pause
+        # before turn bookkeeping so the choice resolves with this turn's
+        # events. Subsequent placements are blocked until a target is chosen.
+        self._begin_pending_elimination(event_start)
         self._draw_for_active_player()
         if all(item.is_full for item in state.rows):
             state.row_index = 0
@@ -221,6 +239,8 @@ class GameEngine:
         state = self.state
         if state.phase != GamePhase.REVEAL or not state.final_reveal_active:
             return ActionResult(False, "The game is not revealing a row.")
+        if state.get("pending_elimination"):
+            return ActionResult(False, "Select an elimination target before continuing the reveal.")
         event_start = len(state.events)
         next_card = next((
             (row, index, card)
@@ -233,16 +253,192 @@ class GameEngine:
         row, hidden, card = next_card
         self._reveal_card(row, hidden, card)
         state.reveal_card_index += 1
+
+        # A reveal may trigger an elimination ability: pause the reveal flow
+        # for player target selection (fails through when no target exists).
+        if self._begin_pending_elimination(event_start):
+            # Do not advance to the next card; wait for target selection.
+            return ActionResult(True, events=tuple(state.events[event_start:]))
+
         if all(placed is not None and placed.revealed for full_row in state.rows for placed in full_row.slots):
             state.final_reveal_active = False
             state.phase = GamePhase.ROW_SCORING
             self._emit("final_reveal_complete", "All cards are revealed. Compare scores starting with Row 1.", {})
         return ActionResult(True, events=tuple(state.events[event_start:]))
 
+    # ---------------------------------------------------------------- elimination
+
+    def _begin_pending_elimination(self, event_start: int) -> bool:
+        """Arm the pending-elimination pause when a reveal activated one.
+
+        Scans the events appended since ``event_start`` for an elimination
+        ability activation. When found, arms ``state.pending_elimination``
+        with a JSON-safe targeting payload and the current valid targets.
+        If no valid targets exist the attempt fails immediately (emitting
+        ``elimination_failed``) and False is returned so the caller continues
+        the normal flow. Returns True when the flow must pause for player
+        target selection.
+        """
+        state = self.state
+        elimination_activation = next((
+            event for event in state.events[event_start:]
+            if event.kind == "ability_activated"
+            and event.data.get("is_elimination")
+        ), None)
+        if elimination_activation is None:
+            return False
+        owner_card_id = str(elimination_activation.data.get("owner_card_id", ""))
+        owner_card = next((
+            slot for r in state.rows for slot in r.slots
+            if slot is not None and slot.id == owner_card_id
+        ), None)
+        if owner_card is None:
+            return False
+        definition = self.cards[owner_card.definition_id]
+        ability = getattr(definition, "ability", None)
+        if ability is None:
+            return False
+        targeting = EliminationTargeting(
+            target_scope=ability.target_scope,
+            target_side=ability.target_side,
+            allowed_types=ability.allowed_types,
+            max_base_points=ability.max_base_points,
+            min_base_points=ability.min_base_points,
+        )
+        valid_targets = self.elimination.get_valid_targets(state, owner_card, targeting)
+        # JSON-safe pending payload: plain scalars only, so the authority can
+        # serialize it into network views.
+        state.pending_elimination = {
+            "attacker_card_id": owner_card.id,
+            "attacker_owner_id": owner_card.owner_id,
+            "attacker_name": str(definition.name),
+            "targeting": {
+                "target_scope": targeting.target_scope,
+                "target_side": targeting.target_side,
+                "allowed_types": list(targeting.allowed_types),
+                "max_base_points": targeting.max_base_points,
+                "min_base_points": targeting.min_base_points,
+            },
+            "valid_targets": [
+                {"row_id": r.id, "slot_index": i, "card_id": c.id}
+                for r, i, c in valid_targets
+            ],
+        }
+        if not valid_targets:
+            # No legal targets: fail the elimination attempt, then continue
+            # so a fully revealed board still scores.
+            self.fail_elimination()
+            return False
+        return True
+
+    def select_elimination_target(
+        self, target_row_id: str, target_slot_index: int
+    ) -> ActionResult:
+        """Resolve a player's elimination target selection.
+
+        Validates that the chosen slot is still a legal target, eliminates it,
+        clears the pending-elimination state, and returns the resolution event.
+        Returns a rejected ActionResult if the target is no longer valid or no
+        elimination is pending.
+        """
+        state = self.state
+        pending = state.get("pending_elimination")
+        if not pending:
+            return ActionResult(False, "No elimination is awaiting target selection.")
+
+        # Locate the chosen card.
+        row = next((r for r in state.rows if r.id == target_row_id), None)
+        if row is None or not 0 <= target_slot_index < len(row.slots):
+            return ActionResult(False, "Unknown target slot.")
+        target_card = row.slots[target_slot_index]
+        if target_card is None:
+            return ActionResult(False, "That slot is empty.")
+
+        # Re-validate against live state: the card must still be a legal target.
+        attacker_card = next((
+            slot for r in state.rows for slot in r.slots
+            if slot is not None and slot.id == str(pending["attacker_card_id"])
+        ), None)
+        if attacker_card is None:
+            state.pending_elimination = None
+            return ActionResult(False, "The ability's owner card left the board.")
+
+        targeting = EliminationTargeting(
+            target_scope=str(pending["targeting"].get("target_scope", "any_row")),
+            target_side=str(pending["targeting"].get("target_side", "opposing")),
+            allowed_types=tuple(pending["targeting"].get("allowed_types") or ()),
+            max_base_points=pending["targeting"].get("max_base_points"),
+            min_base_points=pending["targeting"].get("min_base_points"),
+        )
+        valid_targets = self.elimination.get_valid_targets(state, attacker_card, targeting)
+        valid_keys = {(r.id, i) for r, i, _ in valid_targets}
+        if (target_row_id, target_slot_index) not in valid_keys:
+            return ActionResult(False, "That card is no longer a valid elimination target.")
+
+        # Resolve the elimination through the centralized elimination function.
+        attacker_name = str(pending.get("attacker_name", "Unknown character"))
+        target_definition = self.cards.get(target_card.definition_id)
+        target_name = str(getattr(target_definition, "name", "Unknown character"))
+        self.elimination.eliminate_target(state, target_card, attacker_card)
+        # Dynamic Duo bonuses that depended on the eliminated partner are
+        # removed now; every card keeps its own persistent elimination state.
+        self.abilities.recalculate_after_elimination(state, target_card)
+
+        event_start = len(state.events)
+        self._emit(
+            "elimination",
+            f"{target_name} has been eliminated by {attacker_name}.",
+            {
+                "attacker_card_id": str(pending["attacker_card_id"]),
+                "attacker_name": attacker_name,
+                "target_card_id": target_card.id,
+                "target_name": target_name,
+                "row_id": target_row_id,
+                "slot_index": target_slot_index,
+                "definition_id": target_card.definition_id,
+            },
+        )
+        state.pending_elimination = None
+        # The pause skipped the reveal-completion check; re-run it so a fully
+        # revealed board proceeds to row scoring instead of stalling.
+        if state.phase == GamePhase.REVEAL and all(
+            placed is not None and placed.revealed
+            for full_row in state.rows for placed in full_row.slots
+        ):
+            state.final_reveal_active = False
+            state.phase = GamePhase.ROW_SCORING
+            self._emit("final_reveal_complete", "All cards are revealed. Compare scores starting with Row 1.", {})
+        return ActionResult(True, events=tuple(state.events[event_start:]))
+
+    def fail_elimination(self) -> ActionResult:
+        """Call when an elimination ability has no valid targets.
+
+        Clears pending elimination state and returns a failed-elimination event
+        so the client can show the ``ELIMINATION ATTEMPT FAILED`` message.
+        """
+        state = self.state
+        pending = state.get("pending_elimination")
+        if not pending:
+            return ActionResult(False, "No elimination is awaiting target selection.")
+        attacker_name = str(pending.get("attacker_name", "Unknown character"))
+        event_start = len(state.events)
+        self._emit(
+            "elimination_failed",
+            f"{attacker_name}'s elimination attempt failed: no valid targets.",
+            {
+                "attacker_card_id": str(pending["attacker_card_id"]),
+                "attacker_name": attacker_name,
+            },
+        )
+        state.pending_elimination = None
+        return ActionResult(True, events=tuple(state.events[event_start:]))
+
     def score_current_row(self) -> ActionResult:
         state = self.state
         if state.phase != GamePhase.ROW_SCORING:
             return ActionResult(False, "A row can be scored only after all its cards are revealed.")
+        if state.get("pending_elimination"):
+            return ActionResult(False, "Select an elimination target before scoring.")
         if not all(
             row.is_full and all(card is not None and card.revealed for card in row.slots)
             for row in state.rows
@@ -378,6 +574,7 @@ class GameEngine:
                 "winner_id": row.winner_id if row.scored else None,
                 "scored": row.scored,
                 "awarded_points": row.awarded_points,
+                "eliminated_slots": list(row.get("eliminated_slots") or []),
             })
         return {
             "viewer_id": viewer.id,
@@ -393,6 +590,8 @@ class GameEngine:
             "winner_id": self.state.winner_id,
             "events": [{"kind": event.kind, "message": event.message, "data": dict(event.data)} for event in self.state.events],
             "legal_slots": [[row_id, index] for row_id, index in self.legal_slots(viewer.id)],
+            # JSON-safe pause payload; None while no elimination awaits input.
+            "pending_elimination": dict(self.state.get("pending_elimination") or {}) or None,
         }
 
     def _card_view(self, card: CardInstance) -> dict:
@@ -409,6 +608,8 @@ class GameEngine:
             "revealed": card.revealed,
             "current_points": card.get("current_points"),
             "activated_abilities": list(card.get("activated_abilities") or []),
+            "eliminated": bool(card.get("eliminated", False)),
+            "applied_bonuses": dict(card.get("applied_bonuses") or {}),
         }
 
     def _draw_for_active_player(self) -> None:

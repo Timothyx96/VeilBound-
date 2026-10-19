@@ -10,11 +10,15 @@ from __future__ import annotations
 import pygame
 
 from veilbound.client.network import NetworkConnection, RemoteGameEngine
+from veilbound.client.settings import DEFAULT_PRESETS
 from veilbound.shared.engine import GameEngine
 from veilbound.client.theme import BG, GOLD, PANEL, PANEL_LIGHT
 
 CODE_LENGTH = 6
 _EDITABLE_FIELDS = ("host", "port", "code")
+
+# In-game animation speeds (offline modes only); order defines the option row.
+_ANIMATION_PRESETS = ("Slow", "Normal", "Fast")
 
 # Volume step per button press (0-100 scale).
 _VOLUME_STEP = 10
@@ -39,6 +43,7 @@ class MenuScreen:
         default_port: int = 8765,
         music_volume: float = 0.35,
         sfx_volume: float = 0.8,
+        animation_preset: str = "Slow",
     ):
         self.default_host = default_host
         self.default_port = default_port
@@ -58,6 +63,15 @@ class MenuScreen:
         self.music_volume = min(1.0, max(0.0, float(music_volume)))
         self.sfx_volume = min(1.0, max(0.0, float(sfx_volume)))
         self.action: str | None = None
+        # Live animation speed shown in the options screen (offline modes). The
+        # app seeds this from the renderer when a match starts; clicks set
+        # ``action = "speed:<Preset>"`` and the app applies it to the renderer.
+        self.animation_preset = (
+            animation_preset if animation_preset in _ANIMATION_PRESETS else "Slow"
+        )
+        # Set by the app when a match starts ("local"/"debug"/online); the pause
+        # menu only offers a return to the main menu for the offline modes.
+        self.game_mode: str | None = None
 
     def take_outcome(self) -> tuple | None:
         outcome, self._outcome = self._outcome, None
@@ -79,14 +93,32 @@ class MenuScreen:
         elif self.screen == "waiting":
             buttons["cancel"] = pygame.Rect(center - 150, height // 2 + 150, 300, 58)
         elif self.screen == "pause":
-            buttons["options"] = pygame.Rect(center - 150, height // 2 - 10, 300, 58)
-            buttons["quit"] = pygame.Rect(center - 150, height // 2 + 70, 300, 58)
+            if self.game_mode in {"local", "debug"}:
+                # Offline modes also offer a direct return to the main menu.
+                buttons["options"] = pygame.Rect(center - 150, height // 2 - 80, 300, 58)
+                buttons["menu"] = pygame.Rect(center - 150, height // 2 - 10, 300, 58)
+                buttons["quit"] = pygame.Rect(center - 150, height // 2 + 60, 300, 58)
+            else:
+                buttons["options"] = pygame.Rect(center - 150, height // 2 - 10, 300, 58)
+                buttons["quit"] = pygame.Rect(center - 150, height // 2 + 70, 300, 58)
         elif self.screen == "audio":
             buttons["sfx_down"] = pygame.Rect(center - 340, height // 2 - 40, 56, 44)
             buttons["sfx_up"] = pygame.Rect(center + 284, height // 2 - 40, 56, 44)
             buttons["music_down"] = pygame.Rect(center - 340, height // 2 + 20, 56, 44)
             buttons["music_up"] = pygame.Rect(center + 284, height // 2 + 20, 56, 44)
-            buttons["back"] = pygame.Rect(center - 150, height // 2 + 100, 300, 58)
+            if self.game_mode in {"local", "debug"}:
+                # Game Speed: one button per preset; the renderer already reads
+                # animation_ms live, so applying is instant (see app.run_game).
+                slot = 168
+                total = slot * len(_ANIMATION_PRESETS) + 12 * (len(_ANIMATION_PRESETS) - 1)
+                left = center - total // 2
+                for index, preset in enumerate(_ANIMATION_PRESETS):
+                    buttons[f"speed_{preset.lower()}"] = pygame.Rect(
+                        left + index * (slot + 12), height // 2 + 80, slot, 44
+                    )
+                buttons["back"] = pygame.Rect(center - 150, height // 2 + 140, 300, 58)
+            else:
+                buttons["back"] = pygame.Rect(center - 150, height // 2 + 100, 300, 58)
         self._buttons = buttons
         return buttons
 
@@ -141,6 +173,8 @@ class MenuScreen:
             if name == "options":
                 self.screen = "audio"
                 self.action = None
+            elif name == "menu":
+                self.action = "menu"
             elif name == "quit":
                 self.action = "quit"
         elif self.screen == "audio":
@@ -152,6 +186,13 @@ class MenuScreen:
                 self.music_volume = max(0.0, self.music_volume - _VOLUME_STEP / 100.0)
             elif name == "music_up":
                 self.music_volume = min(1.0, self.music_volume + _VOLUME_STEP / 100.0)
+            elif name.startswith("speed_"):
+                preset = name[len("speed_"):].capitalize()
+                if preset in _ANIMATION_PRESETS:
+                    # Handled by the game loop like resume/menu/quit: it applies
+                    # the preset to the renderer and clears the action.
+                    self.animation_preset = preset
+                    self.action = f"speed:{preset}"
             elif name == "back":
                 self.screen = "pause"
                 self.action = None
@@ -319,15 +360,16 @@ class MenuScreen:
     # ------------------------------------------------------------------ drawing
     def draw(self, screen: pygame.Surface, renderer) -> None:
         screen.fill(BG)
-        if self.screen in {"pause", "audio"} and renderer.options_background is not None:
+        overlay_screen = self.screen in {"pause", "audio"}
+        if overlay_screen and renderer.options_background is not None:
             screen.blit(
                 renderer.options_background,
                 renderer.options_background.get_rect(center=screen.get_rect().center),
             )
         else:
-            renderer._draw_background(screen)
+            # Main-menu flow (root/join/waiting): dedicated cover-fit art, no tint.
+            renderer._draw_menu_background(screen)
         self.layout(screen.get_size())
-        self._draw_title(screen)
         if self.screen == "root":
             self._draw_root(screen)
         elif self.screen == "join":
@@ -338,26 +380,13 @@ class MenuScreen:
             self._draw_pause(screen)
         elif self.screen == "audio":
             self._draw_audio(screen)
-        self._draw_status_line(screen)
-
-    def _draw_title(self, screen: pygame.Surface) -> None:
-        from veilbound.client.typography import render_text
-
-        width = screen.get_width()
-        title = render_text("VEILBOUND", "title")
-        screen.blit(title, title.get_rect(center=(width // 2, 150)))
-        subtitle = render_text("Two-player card duels, side by side or across the network", "ui", width - 80)
-        screen.blit(subtitle, subtitle.get_rect(center=(width // 2, 205)))
 
     def _draw_root(self, screen: pygame.Surface) -> None:
-        from veilbound.client.typography import render_text
-
         labels = {
             "local": ("1 - Local Game", "Both players share this screen"),
             "debug": ("2 - Debug Mode", "All 50 cards, scrollable hand"),
             "host": ("3 - Host Online Room", "Get a code and let a friend join"),
             "join": ("4 - Join Online Room", "Enter a room code from the host"),
-            "quit": ("5 - Quit", "Exit to desktop"),
             "quit": ("Quit", ""),
         }
         for name, rect in self._buttons.items():
@@ -411,15 +440,24 @@ class MenuScreen:
         self._draw_button(screen, self._buttons["cancel"], "Cancel (Esc)", "")
 
     def _draw_pause(self, screen: pygame.Surface) -> None:
-        from veilbound.client.typography import render_text
-
         width, height = screen.get_size()
-        panel = pygame.Rect(width // 2 - 220, height // 2 - 90, 440, 200)
+        has_menu = self.game_mode in {"local", "debug"}
+        top_button = self._buttons["options"]
+        bottom_button = self._buttons["quit"]
+        # The panel wraps every button, so it adapts to the
+        # offline (Options / Main Menu / Quit) and online (Options / Quit) sets.
+        panel_top = top_button.y - 20
+        panel = pygame.Rect(
+            width // 2 - 220,
+            panel_top,
+            440,
+            (bottom_button.bottom + 20) - panel_top,
+        )
         pygame.draw.rect(screen, PANEL, panel, border_radius=16)
         pygame.draw.rect(screen, GOLD, panel, width=2, border_radius=16)
-        heading = render_text("PAUSED", "title", panel.width - 40)
-        screen.blit(heading, heading.get_rect(center=(panel.centerx, panel.y + 35)))
         self._draw_button(screen, self._buttons["options"], "Options", "")
+        if has_menu:
+            self._draw_button(screen, self._buttons["menu"], "Main Menu", "")
         self._draw_button(screen, self._buttons["quit"], "Quit Game", "")
 
     def _draw_audio(self, screen: pygame.Surface) -> None:
@@ -429,8 +467,6 @@ class MenuScreen:
         panel = pygame.Rect(width // 2 - 300, height // 2 - 110, 600, 260)
         pygame.draw.rect(screen, PANEL, panel, border_radius=16)
         pygame.draw.rect(screen, GOLD, panel, width=2, border_radius=16)
-        heading = render_text("AUDIO SETTINGS", "title", panel.width - 40)
-        screen.blit(heading, heading.get_rect(center=(panel.centerx, panel.y + 30)))
 
         def volume_label(volume: float) -> str:
             return f"{int(round(volume * 100))}%"
@@ -451,24 +487,31 @@ class MenuScreen:
         self._draw_button(screen, self._buttons["music_down"], "-", "")
         self._draw_button(screen, self._buttons["music_up"], "+", "")
 
-        hint = render_text("Esc goes back", "label_small", panel.width - 40)
-        screen.blit(hint, hint.get_rect(center=(panel.centerx, panel.bottom - 30)))
+        if self.game_mode in {"local", "debug"}:
+            # Game Speed row: one button per preset; the active preset renders
+            # highlighted so the current speed reads at a glance.
+            speed_label = render_text("Game Speed", "ui", 160)
+            screen.blit(speed_label, (panel.x + 40, panel.y + 200))
+            for preset in _ANIMATION_PRESETS:
+                key = f"speed_{preset.lower()}"
+                if key in self._buttons:
+                    self._draw_button(
+                        screen,
+                        self._buttons[key],
+                        preset,
+                        "",
+                        selected=(preset == self.animation_preset),
+                    )
+
         self._draw_button(screen, self._buttons["back"], "Back", "")
 
-    def _draw_status_line(self, screen: pygame.Surface) -> None:
-        from veilbound.client.typography import render_text
-
-        width, height = screen.get_size()
-        message = self.error or self.status
-        line = render_text(message, "status_banner", width - 80)
-        screen.blit(line, line.get_rect(center=(width // 2, height - 40)))
-
-    def _draw_button(self, screen: pygame.Surface, rect: pygame.Rect, headline: str, detail: str) -> None:
+    def _draw_button(self, screen: pygame.Surface, rect: pygame.Rect, headline: str, detail: str, selected: bool = False) -> None:
         from veilbound.client.typography import render_text
 
         hovered = self.mouse_pos is not None and rect.collidepoint(self.mouse_pos)
-        pygame.draw.rect(screen, PANEL_LIGHT if hovered else PANEL, rect, border_radius=10)
-        pygame.draw.rect(screen, GOLD, rect, width=3 if hovered else 2, border_radius=10)
+        highlighted = hovered or selected
+        pygame.draw.rect(screen, PANEL_LIGHT if highlighted else PANEL, rect, border_radius=10)
+        pygame.draw.rect(screen, GOLD, rect, width=3 if highlighted else 2, border_radius=10)
         head = render_text(headline, "ui", rect.width - 32)
         screen.blit(head, head.get_rect(center=(rect.centerx, rect.centery - (8 if detail else 0))))
         if detail:

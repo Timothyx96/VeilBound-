@@ -202,6 +202,18 @@ async def drive_match(room: Room, writers: dict[str, FakeWriter], limit: int = 4
                     room.peers[player_id], {"type": "reveal_ack", "reveal_id": reveal_id},
                 )
             continue
+        pending = room.engine.state.get("pending_elimination")
+        if pending:
+            # The reveal armed a Killua-style elimination; the attacker's
+            # controller picks the first valid target through the real message.
+            target = (pending.get("valid_targets") or [None])[0]
+            assert target is not None, "armed elimination must advertise targets"
+            await room.handle(room.peers[str(pending["attacker_owner_id"])], {
+                "type": "select_elimination",
+                "row_id": target["row_id"],
+                "slot_index": target["slot_index"],
+            })
+            continue
         if phase == GamePhase.PLACEMENT:
             active = state.active_player
             legal = room.engine.legal_slots(active.id)

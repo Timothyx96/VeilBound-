@@ -63,6 +63,10 @@ def main(argv: list[str] | None = None) -> None:
         outcome = run_menu(menu, renderer, clock, audio)
         if outcome is None or outcome[0] == "quit":
             break
+        # Let the pause menu know the mode (offline modes get a main-menu exit
+        # and the Game Speed row) and sync the shown preset with the renderer.
+        menu.game_mode = outcome[0]
+        menu.animation_preset = renderer.animation_preset
         # A menu outcome means the match has entered its loading state.
         audio.play_music(MUSIC_LOADING)
         if outcome[0] == "local":
@@ -149,8 +153,19 @@ def run_game(engine, controller: InputController, renderer: Renderer, clock: pyg
                 if menu.action == "resume":
                     paused = False
                     menu.action = None
+                elif menu.action == "menu":
+                    # Back to the main menu (offline modes only). main()'s outer
+                    # loop restarts at the menu and runs connection cleanup.
+                    return True
                 elif menu.action == "quit":
                     running = False
+                elif menu.action is not None and menu.action.startswith("speed:"):
+                    # Game Speed changed in the options (offline modes only).
+                    # Applies instantly: the renderer reads animation_ms live, so
+                    # in-flight and future animations pick it up; no restart.
+                    renderer.set_animation_preset(menu.action[len("speed:"):])
+                    menu.animation_preset = renderer.animation_preset
+                    menu.action = None
                 elif menu.action is None and event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     # Esc while in pause audio/submenu: handled by menu; resume only from pause root.
                     pass

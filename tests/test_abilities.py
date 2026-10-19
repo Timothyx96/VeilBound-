@@ -22,6 +22,7 @@ import pytest
 from test_input_animations import RecordingRenderer
 from test_multiplayer import FakeWriter
 
+from conftest import resolve_eliminations
 from veilbound.client.input import InputController
 from veilbound.client.network import _state_from_view
 from veilbound.client.renderer import Renderer
@@ -132,12 +133,16 @@ def fill_rest(engine):
     """Finish the placement phase with filler cards (turns alternate)."""
     results = []
     while engine.state.phase == GamePhase.PLACEMENT:
+        resolve_eliminations(engine)
+        if engine.state.phase != GamePhase.PLACEMENT:
+            break  # resolving an elimination closed the placement phase
         active = engine.state.active_player
         card = pick_filler(active)
         row_id, slot_index = engine.legal_slots()[0]
         result = engine.play_card(active.id, card.id, row_id, slot_index)
         assert result.accepted, result.reason
         results.append(result)
+    resolve_eliminations(engine)
     return results
 
 
@@ -145,9 +150,14 @@ def finish_reveals(engine):
     """Run the final reveal sequence; returns one result per revealed card."""
     results = []
     while engine.state.phase == GamePhase.REVEAL:
+        resolve_eliminations(engine)
+        if engine.state.phase != GamePhase.REVEAL:
+            # Resolving the final reveal's elimination completed the pass.
+            break
         result = engine.reveal_next_card()
         assert result.accepted, result.reason
         results.append(result)
+    resolve_eliminations(engine)
     assert engine.state.phase == GamePhase.ROW_SCORING
     return results
 
@@ -336,9 +346,11 @@ def test_reveal_animation_flow_runs_with_a_single_activation():
     controller = InputController(engine, renderer)
 
     # Mirror the app pipeline: every action result feeds renderer + audio.
+    # After Sasuke (hand[0]) is placed, Itachi shifts to hand[0]; placing it at
+    # row0/slot1 shares the row with Sasuke and reveals the already-placed card.
     controller._apply(place(engine, p1.hand[0], 0, 0), 0.0)
     controller._apply(place(engine, pick_filler(p2), 1, 0), 0.0)
-    controller._apply(place(engine, p1.hand[1], 0, 1), 0.0)  # reveals Sasuke
+    controller._apply(place(engine, p1.hand[0], 0, 1), 0.0)  # Itachi reveals Sasuke
     assert controller.animation_stage == "card_flip"
     controller._apply(place(engine, pick_filler(p2), 1, 1), 0.0)
     for result in fill_rest(engine):
@@ -535,8 +547,19 @@ def test_multiplayer_room_resolves_the_bonus_once_and_syncs_both_peers():
             "type": "place", "card_id": itachi.id,
             "row_id": rows[0].id, "slot_index": 1,
         })
-        # Fill the remaining slots with non-duo cards; turns alternate.
+        # Fill the remaining slots with non-duo cards; turns alternate. A
+        # mid-placement reveal (placing Itachi reveals Sasuke) pauses further
+        # placement until both peers ack it, so drain any pending reveal first
+        # -- the same contract `drive_match` in test_multiplayer follows.
         while engine.state.phase == GamePhase.PLACEMENT:
+            while room.pending_reveal_id is not None:
+                reveal_id = room.pending_reveal_id
+                for player_id in ("player-1", "player-2"):
+                    await room.handle(room.peers[player_id], {
+                        "type": "reveal_ack", "reveal_id": reveal_id,
+                    })
+            if engine.state.phase != GamePhase.PLACEMENT:
+                break
             active = engine.state.active_player
             card = pick_filler(active)
             row_id, slot_index = engine.legal_slots()[0]
@@ -639,8 +662,13 @@ def test_new_synergy_opponent_partner_does_not_activate():
         fill_rest(engine)
         finish_reveals(engine)
         base = engine.cards[holder].base_points
-        assert holder_card.current_points == base, holder
         assert holder_card.activated_abilities == []
+        if holder_card.eliminated:
+            # Killua's Godspeed legitimately removed the holder; the synergy
+            # itself never activated (nothing was recorded on the holder).
+            assert holder_card.current_points == 0
+        else:
+            assert holder_card.current_points == base, holder
 
 
 def test_new_synergy_repeated_evaluation_never_stacks():

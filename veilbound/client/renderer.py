@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import math
 import time
+from dataclasses import replace
 
 import pygame
 
 from veilbound.client.assets import AssetLoader
 from veilbound.client.layout import CARD_HEIGHT_RATIO, CARD_WIDTH_RATIO, BoardLayout, DEBUG_HOVER_SCALE, DEBUG_HOVER_NEIGHBOR_PUSH, DEBUG_HOVER_SECOND_PUSH
-from veilbound.client.settings import AppSettings, load_settings
+from veilbound.client.settings import AppSettings, animation_ms_for_preset, load_settings
 from veilbound.client.theme import (
     BG, CREAM, DEBUG, GOLD, P1, P2, P2_CARD_OUTLINE, PANEL, PANEL_LIGHT,
     DUO_ENERGY, DUO_ENERGY_DIM,
@@ -35,6 +36,9 @@ from veilbound.shared.scoring import calculate_row_scores
 FLOATING_TEXT_SECONDS = 1.4
 FLOATING_TEXT_RISE_PX = 46
 
+# Minimum gap (in pixels) between a hovered card and its ability tooltip panel.
+TOOLTIP_GAP = 8
+
 
 class Renderer:
     def __init__(self, assets: AssetLoader | None = None, settings: AppSettings | None = None):
@@ -52,8 +56,11 @@ class Renderer:
         )
         self.card_frame_art = self._prepare_card_frame()
         self.options_background = self.assets.load_image("assets/backgrounds/Options Background.png")
+        self.menu_background = self.assets.load_image("assets/backgrounds/Main Menu.png")
         self._background_cache_size: tuple[int, int] | None = None
         self._background_cache: tuple[pygame.Surface, pygame.Surface] | None = None
+        self._menu_bg_cache_size: tuple[int, int] | None = None
+        self._menu_bg_cache: pygame.Surface | None = None
         self._render_size: tuple[int, int] | None = None
         self._overlay_cache: dict[tuple[int, int, int, int, int, int], pygame.Surface] = {}
         self._row_backplates: dict[tuple[int, int], pygame.Surface] = {}
@@ -94,6 +101,14 @@ class Renderer:
         # offset lives here so input, tooltips, and drawing share one value.
         self.debug_mode = False
         self.debug_scroll = 0.0
+        # Elimination presentation state.
+        self.elimination_targets: list[tuple[str, int]] = []  # (row_id, slot_index) highlighted
+        self.elimination_announcement: str | None = None      # "NAME HAS BEEN ELIMINATED BY NAME"
+        self.elimination_announced_at: float = 0.0
+        self.elimination_flash_card: tuple[str, int] | None = None  # card being flipped + X'd
+        self.elimination_flash_started: float | None = None
+        self.elimination_failed_message: str | None = None
+        self.elimination_failed_at: float = 0.0
 
     def layout(self, state: GameState, size: tuple[int, int], debug_mode: bool | None = None) -> BoardLayout:
         active_debug = self.debug_mode if debug_mode is None else debug_mode
@@ -110,11 +125,39 @@ class Renderer:
         self.score_animation_row_id = None
         self.duo_animation = None
         self.duo_queue.clear()
+        self.elimination_targets = []
+        self.elimination_announcement = None
+        self.elimination_announced_at = 0.0
+        self.elimination_flash_card = None
+        self.elimination_flash_started = None
+        self.elimination_failed_message = None
+        self.elimination_failed_at = 0.0
 
     @property
     def duo_duration(self) -> float:
         """Duration of the one-shot Dynamic Duo energy arc, in seconds."""
         return max(0, self.animation_ms.get("duo_energy_ms", 0)) / 1000
+
+    @property
+    def animation_preset(self) -> str:
+        """Canonical name of the active animation preset (Slow/Normal/Fast)."""
+        return self.settings.animation_preset
+
+    def set_animation_preset(self, preset_name: str) -> None:
+        """Switch the live animation timings (in-game speed control).
+
+        Resolves the preset through the config-backed helper, so unknown names
+        fall back to the config's selected preset and can never desync the
+        game. Presentation only: swaps the timing dict the renderer and input
+        controller already read every frame. No engine state is touched.
+        """
+        canonical, timings = animation_ms_for_preset(preset_name)
+        self.settings = replace(
+            self.settings,
+            animation_preset=canonical,
+            animation_ms=dict(timings),
+        )
+        self.animation_ms = self.settings.animation_ms
 
     @property
     def duo_animation_pending(self) -> bool:
@@ -136,8 +179,30 @@ class Renderer:
         return 0.0
 
     def note_events(self, events: tuple[GameEvent, ...]) -> None:
+        now = time.monotonic()
         for event in events:
-            if event.kind == "card_revealed":
+            if event.kind == "elimination":
+                data = event.data
+                self.elimination_announcement = (
+                    f"{str(data.get('target_name', '?')).upper()} "
+                    f"HAS BEEN ELIMINATED BY "
+                    f"{str(data.get('attacker_name', '?')).upper()}"
+                )
+                self.elimination_announced_at = now
+                self.elimination_flash_card = (
+                    str(data.get("row_id", "")),
+                    int(data.get("slot_index", -1)),
+                )
+                self.elimination_flash_started = now
+                self.elimination_targets = []
+            elif event.kind == "elimination_failed":
+                self.elimination_failed_message = "ELIMINATION ATTEMPT FAILED"
+                self.elimination_failed_at = now
+                self.elimination_targets = []
+                self.elimination_announcement = None
+                self.elimination_flash_card = None
+                self.elimination_flash_started = None
+            elif event.kind == "card_revealed":
                 key = (event.data["row_id"], event.data["slot_index"])
                 if key in self.flip_started:
                     continue
@@ -378,6 +443,12 @@ class Renderer:
         if DEBUG:
             self._draw_fps(screen, fps)
         self._draw_rows(screen, state, cards, layout, set(legal_slots), drag_id, mouse_pos)
+        # Elimination visuals belong to the board-card layer: drawn with the
+        # cards themselves (after them, so they stay visible over their target)
+        # and beneath every foreground element (spotlight preview, status, hand,
+        # footer, tooltips, popups) per the game's visual hierarchy.
+        self._draw_elimination_highlights(screen, state, cards, layout)
+        self._draw_elimination_flash(screen, state, cards, layout, now)
         reveal_view_active = self._reveal_view_active(state)
         self._draw_card_spotlight(screen, state, mouse_pos)
         self._draw_row_comparison(screen, state)
@@ -385,14 +456,189 @@ class Renderer:
         self._draw_hand(screen, state, cards, layout, drag_id, mouse_pos)
         self._draw_floating_texts(screen, layout)
         self._draw_footer(screen, layout)
+        # Failed-elimination message.
+        self._draw_elimination_failed(screen, now)
+        # Card / ability popups render above the board and eliminated cards.
         if not reveal_view_active:
             self._draw_effect_tooltip(screen, state, cards, layout, mouse_pos)
+        # Elimination announcement (large, center screen).
+        self._draw_elimination_announcement(screen, now, layout)
         if state.phase == GamePhase.ROUND_RESULTS:
             self._draw_round_results(screen, state, layout)
         elif state.phase == GamePhase.MATCH_RESULTS:
             self._draw_match_results(screen, state, layout)
         self._draw_duo_energy(screen, layout, now)
         return layout
+
+    # ---------------------------------------------------------------- elimination visuals
+
+    ELIMINATION_ANNOUNCEMENT_SECONDS = 2.5
+    ELIMINATION_FLIP_SECONDS = 1.0
+    ELIMINATION_FAILED_SECONDS = 3.0
+    ELIMINATION_RED = (220, 40, 40)
+
+    def _draw_elimination_highlights(
+        self, screen, state: GameState, cards: dict[str, CardDefinition], layout: BoardLayout
+    ) -> None:
+        """Draw purple outlines on all valid elimination targets simultaneously.
+
+        Killua's elimination targets are highlighted in purple so they are
+        never confused with the red elimination cross used on eliminated cards.
+        """
+        # Prefer the engine's pending payload (local and remote both mirror it);
+        # fall back to targets staged by the input controller.
+        targets = list(self.elimination_targets)
+        pending = state.get("pending_elimination") if hasattr(state, "get") else None
+        if pending:
+            targets = [
+                (str(item.get("row_id", "")), int(item.get("slot_index", -1)))
+                for item in (pending.get("valid_targets") or [])
+            ]
+        if not targets:
+            return
+        for row_id, slot_index in targets:
+            slot_rect = layout.slot_rects.get((row_id, slot_index))
+            if slot_rect is None:
+                continue
+            # Frame the card itself (not the surrounding slot) so the outline
+            # aligns precisely with the card's outer rectangle -- the same rect
+            # _draw_placed_card uses -- including position and dimensions.
+            rect = self._portrait_card_rect(slot_rect)
+            glow_rect = rect.inflate(10, 10)
+            for spread, alpha in ((4, 120), (2, 200), (0, 255)):
+                glow = pygame.Surface(
+                    (glow_rect.width + spread * 2, glow_rect.height + spread * 2),
+                    pygame.SRCALPHA,
+                )
+                pygame.draw.rect(
+                    glow,
+                    (*DUO_ENERGY, alpha),
+                    glow.get_rect(),
+                    width=3,
+                    border_radius=SLOT_RADIUS + spread,
+                )
+                screen.blit(glow, glow.get_rect(center=rect.center))
+            pygame.draw.rect(
+                screen, DUO_ENERGY, rect, width=3, border_radius=SLOT_RADIUS
+            )
+
+    def _draw_elimination_announcement(self, screen, now: float, layout: BoardLayout) -> None:
+        """Draw the large center-screen elimination announcement."""
+        if self.elimination_announcement is None:
+            return
+        if self.elimination_announced_at is None:
+            return
+        elapsed = now - self.elimination_announced_at
+        if elapsed >= self.ELIMINATION_ANNOUNCEMENT_SECONDS:
+            self.elimination_announcement = None
+            self.elimination_announced_at = 0.0
+            return
+        fade = 1.0
+        if elapsed < 0.25:
+            fade = elapsed / 0.25
+        elif elapsed > self.ELIMINATION_ANNOUNCEMENT_SECONDS - 0.5:
+            fade = (self.ELIMINATION_ANNOUNCEMENT_SECONDS - elapsed) / 0.5
+        width, height = screen.get_size()
+        font = get_font("title", 48)
+        text = font.render(self.elimination_announcement, True, self.ELIMINATION_RED)
+        shadow = font.render(self.elimination_announcement, True, (0, 0, 0))
+        text_rect = text.get_rect(center=(width // 2, height // 3 - 40))
+        screen.blit(shadow, shadow.get_rect(center=(text_rect.centerx + 3, text_rect.centery + 3)))
+        alpha_layer = pygame.Surface(text.get_size(), pygame.SRCALPHA)
+        alpha_layer.fill((255, 255, 255, int(255 * fade)))
+        text.blit(alpha_layer, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        screen.blit(text, text_rect)
+
+    def _draw_elimination_cross(self, screen: pygame.Surface, rect: pygame.Rect) -> None:
+        """Draw the persistent red elimination cross on a turned-over card."""
+        x_thickness = max(4, rect.width // 40)
+        x_margin = max(6, rect.width // 8)
+        pygame.draw.line(
+            screen, self.ELIMINATION_RED,
+            (rect.left + x_margin, rect.top + x_margin),
+            (rect.right - x_margin, rect.bottom - x_margin),
+            x_thickness,
+        )
+        pygame.draw.line(
+            screen, self.ELIMINATION_RED,
+            (rect.right - x_margin, rect.top + x_margin),
+            (rect.left + x_margin, rect.bottom - x_margin),
+            x_thickness,
+        )
+
+    def _eliminated_card_for_slot(self, state: GameState, row_id: str, slot_index: int):
+        """Return the card instance occupying an elimination-flash slot."""
+        for row in state.rows:
+            if row.id != row_id:
+                continue
+            if 0 <= slot_index < len(row.slots):
+                return row.slots[slot_index]
+        return None
+
+    def _draw_elimination_flash(
+        self, screen, state: GameState, cards: dict[str, CardDefinition],
+        layout: BoardLayout, now: float,
+    ) -> None:
+        """Animate the eliminated card flipping to its back, then draw a red X.
+
+        The active flash slot is skipped by ``_draw_placed_card`` while this
+        animation runs, so the original face-up card is never visible behind
+        the turning card.
+        """
+        if self.elimination_flash_card is None:
+            return
+        if self.elimination_flash_started is None:
+            return
+        row_id, slot_index = self.elimination_flash_card
+        rect = layout.slot_rects.get((row_id, slot_index))
+        if rect is None:
+            return
+        card_rect = self._portrait_card_rect(rect)
+        slot = self._eliminated_card_for_slot(state, row_id, slot_index)
+        owner_id = getattr(slot, "owner_id", "player-1") if slot is not None else "player-1"
+        elapsed = now - self.elimination_flash_started
+        # Phase A: flip to back (visual mirror of card_flip).
+        if elapsed < self.ELIMINATION_FLIP_SECONDS:
+            progress = min(1.0, elapsed / self.ELIMINATION_FLIP_SECONDS)
+            flip_scale = max(0.04, abs(1.0 - progress * 2.0))
+            scaled_width = max(2, round(card_rect.width * flip_scale))
+            back = self._make_card_back_surface(card_rect.size, owner_id)
+            surface = pygame.transform.smoothscale(back, (scaled_width, card_rect.height))
+            screen.blit(surface, surface.get_rect(center=card_rect.center))
+            pygame.draw.rect(screen, self.ELIMINATION_RED, card_rect, width=3, border_radius=6)
+            return
+        # Phase B: card rests on its back with a persistent red X overlay.
+        back = self._make_card_back_surface(card_rect.size, owner_id)
+        screen.blit(back, card_rect)
+        pygame.draw.rect(screen, self.ELIMINATION_RED, card_rect, width=3, border_radius=6)
+        self._draw_elimination_cross(screen, card_rect)
+
+    def _draw_elimination_failed(self, screen, now: float) -> None:
+        """Draw the center-screen ELIMINATION ATTEMPT FAILED message."""
+        if self.elimination_failed_message is None:
+            return
+        if self.elimination_failed_at is None:
+            return
+        elapsed = now - self.elimination_failed_at
+        if elapsed >= self.ELIMINATION_FAILED_SECONDS:
+            self.elimination_failed_message = None
+            self.elimination_failed_at = 0.0
+            return
+        fade = 1.0
+        if elapsed < 0.25:
+            fade = elapsed / 0.25
+        elif elapsed > self.ELIMINATION_FAILED_SECONDS - 0.5:
+            fade = (self.ELIMINATION_FAILED_SECONDS - elapsed) / 0.5
+        width, height = screen.get_size()
+        font = get_font("title", 44)
+        text = font.render(self.elimination_failed_message, True, self.ELIMINATION_RED)
+        shadow = font.render(self.elimination_failed_message, True, (0, 0, 0))
+        text_rect = text.get_rect(center=(width // 2, height // 2))
+        screen.blit(shadow, shadow.get_rect(center=(text_rect.centerx + 3, text_rect.centery + 3)))
+        alpha_layer = pygame.Surface(text.get_size(), pygame.SRCALPHA)
+        alpha_layer.fill((255, 255, 255, int(255 * fade)))
+        text.blit(alpha_layer, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+        screen.blit(text, text_rect)
 
     def _draw_background(self, screen) -> None:
         if self.background is None:
@@ -416,6 +662,22 @@ class Renderer:
         screen.blit(cover, (0, 0))
         screen.blit(fit, fit.get_rect(center=screen.get_rect().center))
         screen.blit(self._overlay(screen.get_size(), (8, 12, 22, 145)), (0, 0))
+
+    def _draw_menu_background(self, screen) -> None:
+        """Cover-fit the dedicated Main Menu art behind the title screens.
+
+        The window is resizable/fullscreen, so the art is cover-scaled to the
+        current surface and cached per size (same approach as ``_draw_background``
+        but a single full-bleed layer with no tint).
+        """
+        if self.menu_background is None:
+            screen.fill(BG)
+            return
+        size = screen.get_size()
+        if self._menu_bg_cache_size != size or self._menu_bg_cache is None:
+            self._menu_bg_cache = self.assets.scale_cover(self.menu_background, size)
+            self._menu_bg_cache_size = size
+        screen.blit(self._menu_bg_cache, (0, 0))
 
     def _overlay(self, size: tuple[int, int], color: tuple[int, int, int, int]) -> pygame.Surface:
         key = (*size, *color)
@@ -595,22 +857,79 @@ class Renderer:
                 screen, str(base_points), (card_rect.centerx, base_points_y + 22), "number_card", 96, shadow=True,
             )
 
+    def _position_panel_away_from_card(
+        self,
+        card_rect: pygame.Rect,
+        panel_w: int,
+        panel_h: int,
+        clip_rect: pygame.Rect,
+        gap: int = TOOLTIP_GAP,
+    ) -> pygame.Rect | None:
+        """Find a non-overlapping, in-window position for a tooltip panel near a card.
+
+        Evaluates four candidate positions (right, left, above, below) with the
+        given gap. Returns the first candidate whose rect is fully inside
+        ``clip_rect`` and does not intersect ``card_rect``. Returns ``None`` if
+        no candidate fits.
+        """
+        panel = pygame.Rect(0, 0, panel_w, panel_h)
+        candidates: list[pygame.Rect] = []
+
+        # Right of card, vertically centered.
+        r = panel.copy()
+        r.x = card_rect.right + gap
+        r.y = card_rect.centery - panel_h // 2
+        candidates.append(r)
+
+        # Left of card, vertically centered.
+        r = panel.copy()
+        r.x = card_rect.left - panel_w - gap
+        r.y = card_rect.centery - panel_h // 2
+        candidates.append(r)
+
+        # Above card, horizontally centered.
+        r = panel.copy()
+        r.x = card_rect.centerx - panel_w // 2
+        r.y = card_rect.top - panel_h - gap
+        candidates.append(r)
+
+        # Below card, horizontally centered.
+        r = panel.copy()
+        r.x = card_rect.centerx - panel_w // 2
+        r.y = card_rect.bottom + gap
+        candidates.append(r)
+
+        for pos in candidates:
+            if (
+                pos.left >= clip_rect.left
+                and pos.right <= clip_rect.right
+                and pos.top >= clip_rect.top
+                and pos.bottom <= clip_rect.bottom
+                and not pos.colliderect(card_rect)
+            ):
+                return pos
+        return None
+
     def _draw_effect_tooltip(self, screen, state, cards, layout, mouse_pos):
         if mouse_pos is None:
             return
         hovered = None
+        hovered_rect: pygame.Rect | None = None
         hand_player = state.player(state.viewer_id) if state.viewer_id else state.active_player
         if state.phase == GamePhase.PLACEMENT and self.turn_confirmation_player_id is None:
             if getattr(layout, "debug_mode", False) and self.debug_mode:
-                _, hover_index = layout.debug_visible_cards(self.debug_scroll, mouse_pos)
-                if hover_index is not None and 0 <= hover_index < len(hand_player.hand):
-                    hovered = hand_player.hand[hover_index]
+                # In debug mode the hand tooltip is drawn by _draw_debug_hand;
+                # only consider row cards here.
+                pass
             else:
                 hovered = next((
                     card for card, rect in zip(hand_player.hand, layout.hand_cards)
                     if rect.collidepoint(mouse_pos)
                 ), None)
-        if hovered is None:
+                if hovered is not None:
+                    idx = hand_player.hand.index(hovered)
+                    hovered_rect = layout.hand_cards[idx]
+        if hovered is None and hovered_rect is None:
             for row in state.rows:
                 for slot_index, card in enumerate(row.slots):
                     if (
@@ -619,34 +938,41 @@ class Renderer:
                         and layout.slot_rects[(row.id, slot_index)].collidepoint(mouse_pos)
                     ):
                         hovered = card
+                        hovered_rect = layout.slot_rects[(row.id, slot_index)]
                         break
                 if hovered is not None:
                     break
-        if hovered is None:
+        if hovered is None or hovered_rect is None:
             return
 
         definition = cards[hovered.definition_id]
         width, height = screen.get_size()
-        panel_width = min(400, width - 24)
-        lines = wrap_text(definition.effect_text, "ability_desc", panel_width - 24)
-        name_lines = self._card_name_lines(definition.name, panel_width - 20)
-        name_extra = (len(name_lines) - 1) * get_font("card_name").get_linesize()
-        line_height = get_font("ability_desc").get_linesize()
-        max_lines = max(1, (height - 108) // line_height)
-        visible_lines = lines[:max_lines]
-        if len(lines) > max_lines:
-            visible_lines[-1] = visible_lines[-1].rstrip(" .") + "..."
-        panel_height = min(height - 24, 86 + name_extra + len(visible_lines) * line_height)
-        x = mouse_pos[0] + 18
-        if x + panel_width > width - 12:
-            x = mouse_pos[0] - panel_width - 18
-        x = min(max(12, x), width - panel_width - 12)
-        y = mouse_pos[1] - panel_height - 18
-        if y < 12:
-            y = mouse_pos[1] + 18
-        y = min(max(12, y), height - panel_height - 12)
 
-        panel = pygame.Rect(x, y, panel_width, panel_height)
+        # Compute panel size, shrinking width if needed until a non-overlapping
+        # position is found.
+        panel_width = min(400, width - 24)
+        panel = None
+        min_panel_width = 120
+        while panel_width >= min_panel_width:
+            lines = wrap_text(definition.effect_text, "ability_desc", panel_width - 24)
+            name_lines = self._card_name_lines(definition.name, panel_width - 20)
+            name_extra = (len(name_lines) - 1) * get_font("card_name").get_linesize()
+            line_height = get_font("ability_desc").get_linesize()
+            max_lines = max(1, (height - 108) // line_height)
+            visible_lines = lines[:max_lines]
+            if len(lines) > max_lines:
+                visible_lines[-1] = visible_lines[-1].rstrip(" .") + "..."
+            panel_height = min(height - 24, 86 + name_extra + len(visible_lines) * line_height)
+            panel = self._position_panel_away_from_card(
+                hovered_rect, panel_width, panel_height, screen.get_rect()
+            )
+            if panel is not None:
+                break
+            panel_width -= 24
+
+        if panel is None:
+            return
+
         pygame.draw.rect(screen, (20, 28, 44), panel, border_radius=9)
         pygame.draw.rect(screen, GOLD, panel, width=2, border_radius=9)
         self._draw_centered_name_lines(screen, name_lines, (panel.centerx, panel.y + 14), panel.width - 20)
@@ -977,6 +1303,22 @@ class Renderer:
         )
 
     def _draw_placed_card(self, screen, rect, row, slot_index, card, cards, now):
+        # An eliminated card stays turned over for the rest of the match: show
+        # its back plus the red elimination cross on the normal card layer.
+        # The active elimination flash owns this slot while it animates, so
+        # skip the permanent look there to avoid duplicate artwork.
+        if (
+            getattr(card, "eliminated", False)
+            and self.elimination_flash_card == (row.id, slot_index)
+            and self.elimination_flash_started is not None
+        ):
+            return
+        if getattr(card, "eliminated", False):
+            surface = self._make_card_back_surface(rect.size, card.owner_id)
+            screen.blit(surface, rect)
+            pygame.draw.rect(screen, self.ELIMINATION_RED, rect, width=3, border_radius=6)
+            self._draw_elimination_cross(screen, rect)
+            return
         definition = cards.get(card.definition_id) if card.revealed else None
         reveal_time = self.flip_started.get((row.id, slot_index))
         flip_duration = max(1, self.animation_ms["card_flip_ms"]) / 1000
@@ -1242,37 +1584,57 @@ class Renderer:
             card = hand[hover_index]
             card_def = cards[card.definition_id]
             tooltip_rect = drawn_rects[hover_index]
-            # Ability name: render above the card.
+
+            # Ability name: render away from the card with no overlap.
             if card_def.effect_name:
-                name_surface = get_font("name", 16).render(card_def.effect_name, True, P1 if state.players[0].id == hand_player.id else P2)
-                name_w, name_h = name_surface.get_size()
-                screen.blit(
-                    name_surface,
-                    pygame.Rect(
-                        tooltip_rect.x + round(tooltip_rect.width / 2) - round(name_w / 2),
-                        tooltip_rect.y - 4 - name_h,
-                        name_w,
-                        name_h,
-                    ),
+                name_surface = get_font("name", 16).render(
+                    card_def.effect_name, True,
+                    P1 if state.players[0].id == hand_player.id else P2,
                 )
-            # Ability description: render below the card.
+                name_w, name_h = name_surface.get_size()
+                name_pos = self._position_panel_away_from_card(
+                    tooltip_rect, name_w, name_h, viewport, TOOLTIP_GAP
+                )
+                if name_pos is not None:
+                    screen.blit(name_surface, name_pos)
+
+            # Ability description: render away from the card with no overlap.
             if card_def.effect_text:
-                desc_font = get_font("text", 13)
-                desc_lines = wrap_text(card_def.effect_text, max(20, int(tooltip_rect.width * 0.6)))
-                desc_y = tooltip_rect.bottom + 6
-                for line in desc_lines:
-                    desc_surface = desc_font.render(line, True, TEXT_WHITE)
-                    desc_w, desc_h = desc_surface.get_size()
-                    screen.blit(
-                        desc_surface,
-                        pygame.Rect(
-                            tooltip_rect.x + round(tooltip_rect.width / 2) - round(desc_w / 2),
-                            desc_y,
-                            desc_w,
-                            desc_h,
-                        ),
+                desc_font = get_font("ability_desc")
+                # Calculate box width based on available space.
+                box_width = max(20, int(tooltip_rect.width * 0.75))
+                # Shrink box width until a non-overlapping, in-viewport position is found.
+                box_pos = None
+                desc_lines = None
+                box_height = 0
+                min_box_width = 40
+                while box_width >= min_box_width:
+                    desc_lines = wrap_text(card_def.effect_text, "ability_desc", box_width)
+                    box_height = 0
+                    for line in desc_lines:
+                        box_height += desc_font.get_linesize() + 4
+                    box_height += 8  # padding top + bottom
+                    box_pos = self._position_panel_away_from_card(
+                        tooltip_rect, box_width, box_height, viewport, TOOLTIP_GAP
                     )
-                    desc_y += desc_h + 4
+                    if box_pos is not None:
+                        break
+                    box_width -= 12
+
+                if box_pos is not None and desc_lines:
+                    box_surface = pygame.Surface((box_width, box_height), pygame.SRCALPHA)
+                    pygame.draw.rect(box_surface, (20, 24, 36, 230), box_surface.get_rect(), border_radius=6)
+                    pygame.draw.rect(box_surface, (153, 145, 127), box_surface.get_rect(), width=1, border_radius=6)
+                    desc_y_local = 4
+                    for line in desc_lines:
+                        desc_surface = desc_font.render(line, True, TEXT_WHITE)
+                        desc_w, desc_h = desc_surface.get_size()
+                        box_surface.blit(
+                            desc_surface,
+                            ((box_width - desc_w) // 2, desc_y_local),
+                        )
+                        desc_y_local += desc_h + 4
+                    screen.blit(box_surface, box_pos)
 
     def _draw_debug_scrollbar(self, screen, layout, scroll) -> None:
         track = layout.debug_track

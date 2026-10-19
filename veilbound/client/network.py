@@ -218,6 +218,19 @@ class RemoteGameEngine:
             self.connection.send({"type": "reveal_ack", "reveal_id": self._current_reveal_id})
         return ActionResult(True)
 
+    def select_elimination_target(self, row_id: str, slot_index: int) -> ActionResult:
+        """Ask the authority to eliminate the chosen target (deduplicated)."""
+        pending = (self.state.get("pending_elimination") or {}) if self.state else {}
+        if self.remote_locked or str(pending.get("attacker_owner_id", "")) != str(self.player_id):
+            return ActionResult(False, "Wait for the elimination selection.")
+        request = ("select_elimination", row_id, str(slot_index))
+        if request not in self._sent_requests:
+            self._sent_requests.add(request)
+            self.connection.send({
+                "type": "select_elimination", "row_id": row_id, "slot_index": slot_index,
+            })
+        return ActionResult(True)
+
     def score_current_row(self) -> ActionResult:
         return self._send_progress("score")
 
@@ -280,20 +293,25 @@ def _state_from_view(view: dict) -> GameState:
                     str(card_view["owner_id"]), revealed=True,
                     # Runtime ability state mirrors the authority's view.
                     current_points=card_view.get("current_points"),
+                    base_points=card_view.get("base_points"),
                     activated_abilities=list(card_view.get("activated_abilities") or []),
+                    applied_bonuses=dict(card_view.get("applied_bonuses") or {}),
+                    eliminated=bool(card_view.get("eliminated", False)),
                 ))
-        rows.append(BattleRow(
+        row = BattleRow(
             id=str(row_view["id"]), number=int(row_view["number"]),
             capacity=int(row_view["capacity"]), point_value=int(row_view.get("point_value", row_view["capacity"])),
             slots=slots, scores=dict(row_view.get("scores") or {}), winner_id=row_view.get("winner_id"),
             scored=bool(row_view["scored"]), awarded_points=int(row_view["awarded_points"]),
-        ))
+            eliminated_slots=list(row_view.get("eliminated_slots") or []),
+        )
+        rows.append(row)
 
     player_ids = [player.id for player in players]
     active_player_id = str(view["active_player_id"])
     current_row_id = view.get("current_row_id")
     row_index = next((index for index, row in enumerate(rows) if row.id == current_row_id), 0)
-    return GameState(
+    state = GameState(
         players=players, rows=rows, rounds_per_match=int(view["rounds_per_match"]),
         active_player_index=player_ids.index(active_player_id), turn_number=int(view["turn_number"]),
         round_number=int(view["round_number"]), phase=GamePhase(view["phase"]), row_index=row_index,
@@ -301,3 +319,7 @@ def _state_from_view(view: dict) -> GameState:
         winner_id=view.get("winner_id"), scored_row_order=list(view.get("scored_row_order", [])),
         viewer_id=viewer_id,
     )
+    # Mirrors the authority's pause payload so the client can render and
+    # submit elimination target selections.
+    state.pending_elimination = dict(view.get("pending_elimination") or {}) or None
+    return state

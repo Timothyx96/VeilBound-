@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pygame
 
+from conftest import resolve_eliminations
 from veilbound.client.input import InputController
 from veilbound.client.renderer import Renderer
 from veilbound.shared.config import GameConfig
@@ -73,10 +74,16 @@ def test_animation_flow_advances_by_deadlines_without_blocking():
     for _ in range(250):
         if engine.state.phase == GamePhase.PLACEMENT:
             while engine.state.phase == GamePhase.PLACEMENT:
+                resolve_eliminations(engine)
+                if engine.state.phase != GamePhase.PLACEMENT:
+                    break
                 player = engine.state.active_player
                 row_id, slot_index = engine.legal_slots()[0]
                 assert engine.play_card(player.id, player.hand[0].id, row_id, slot_index).accepted
         controller.update(now)
+        # Godspeed arms a target-selection pause mid-reveal; settle it so the
+        # deadline-driven flow can continue without an interactive player.
+        resolve_eliminations(engine)
         now += 0.1
         if engine.state.phase == GamePhase.MATCH_RESULTS:
             break

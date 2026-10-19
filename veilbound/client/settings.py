@@ -85,6 +85,33 @@ def _valid_scale(value: Any, fallback: float = 1.0) -> float:
     return min(3.0, max(0.1, scale)) if math.isfinite(scale) else fallback
 
 
+def animation_ms_for_preset(preset_name: str, path: Path | None = None) -> tuple[str, dict[str, int]]:
+    """Resolve validated timings for an animation preset from config.
+
+    Returns ``(canonical_name, timings)``; unknown names fall back to the
+    config's selected preset so a stray click can never desync the game.
+    """
+    raw = _read_json(path or SETTINGS_PATH)
+    animation = raw.get("animation", {})
+    if not isinstance(animation, dict):
+        animation = {}
+    presets = animation.get("presets", {})
+    if not isinstance(presets, dict):
+        presets = {}
+    fallback = animation.get("preset", "Slow")
+    if not isinstance(fallback, str) or fallback not in DEFAULT_PRESETS:
+        fallback = "Slow"
+    canonical = preset_name if preset_name in DEFAULT_PRESETS else fallback
+    supplied = presets.get(canonical, {})
+    if not isinstance(supplied, dict):
+        supplied = {}
+    timings = {
+        name: _valid_duration(supplied.get(name), default)
+        for name, default in DEFAULT_PRESETS[canonical].items()
+    }
+    return canonical, timings
+
+
 def load_settings(path: Path | None = None) -> AppSettings:
     """Load settings safely; malformed optional settings fall back to Slow/no art."""
     raw = _read_json(path or SETTINGS_PATH)

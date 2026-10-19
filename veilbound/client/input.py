@@ -139,6 +139,11 @@ class InputController:
             return True
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             state = self.engine.state
+            # An armed elimination intercepts clicks: only highlighted targets
+            # are interactive until the choice resolves (or the pause clears).
+            if state is not None and state.get("pending_elimination"):
+                self._handle_elimination_click(event.pos, screen)
+                return True
             if state.phase == GamePhase.PLACEMENT and self.turn_confirmation_player_id is not None:
                 self._confirm_turn()
                 return True
@@ -249,6 +254,15 @@ class InputController:
                 self.animation_deadline = None
             return
 
+        # An armed elimination pauses reveals/scoring until a target is chosen.
+        # Remote clients keep the reveal-ack handshake moving (the server gates
+        # new reveals behind the pause); everything else idles here.
+        if self.engine.state.get("pending_elimination"):
+            if not (self.remote and self.animation_stage in {"reveal_gap", "duo_energy", "await_reveal"}):
+                self.animation_stage = None
+                self.animation_deadline = None
+                return
+
         if phase == GamePhase.PLACEMENT:
             # Fresh round: drop presentation stages left over from an earlier
             # results screen (they block drag input and are no longer valid).
@@ -321,6 +335,36 @@ class InputController:
         if self.remote and result.accepted and not result.events:
             self.animation_stage = "await_reveal"
             self.animation_deadline = None
+
+    def _handle_elimination_click(self, pos: tuple[int, int], screen) -> None:
+        """Resolve an armed elimination from a click on a highlighted target."""
+        state = self.engine.state
+        pending = state.get("pending_elimination") or {}
+        if self.remote and str(pending.get("attacker_owner_id", "")) != str(self.engine.player_id):
+            self.renderer.notice = "The opponent chooses the elimination target."
+            self.renderer.notice_until = time.monotonic() + 3
+            return
+        layout = self.renderer.layout(state, screen.get_size())
+        valid = [
+            (str(item.get("row_id", "")), int(item.get("slot_index", -1)))
+            for item in (pending.get("valid_targets") or [])
+        ]
+        hit = next(
+            (
+                key for key in valid
+                if (rect := layout.slot_rects.get(key)) is not None and rect.collidepoint(pos)
+            ),
+            None,
+        )
+        if hit is None:
+            self.renderer.notice = "Click a highlighted card to eliminate it."
+            self.renderer.notice_until = time.monotonic() + 2.5
+            return
+        row_id, slot_index = hit
+        result = self.engine.select_elimination_target(row_id, slot_index)
+        # Local engines resolve inline (events flow through _apply); remote
+        # engines send the request and the events arrive with the next update.
+        self._apply(result)
 
     def _seconds(self, setting: str) -> float:
         milliseconds = self.renderer.animation_ms.get(setting, 0)

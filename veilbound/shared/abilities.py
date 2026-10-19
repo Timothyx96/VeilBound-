@@ -36,9 +36,9 @@ logger = logging.getLogger(__name__)
 # can never silently disable an ability.
 SUPPORTED_TRIGGERS = frozenset({"on_reveal"})
 SUPPORTED_CONDITION_TYPES = frozenset({"character_revealed", "same_row"})
-SUPPORTED_EFFECT_TYPES = frozenset({"add_current_points"})
+SUPPORTED_EFFECT_TYPES = frozenset({"add_current_points", "eliminate_target"})
 SUPPORTED_ACTIVATION_LIMITS = frozenset({"once_per_card_per_match"})
-SUPPORTED_ANIMATIONS = frozenset({"points_gain"})
+SUPPORTED_ANIMATIONS = frozenset({"points_gain", "elimination"})
 
 
 class AbilityValidationError(ValueError):
@@ -85,6 +85,12 @@ class AbilityDefinition:
     effects: tuple[Effect, ...]
     activation_limit: str
     presentation: AbilityPresentation
+    # Elimination targeting; only meaningful when an effect is eliminate_target.
+    target_scope: str = "any_row"
+    target_side: str = "opposing"
+    allowed_types: tuple[str, ...] = ()
+    max_base_points: int | None = None
+    min_base_points: int | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,7 @@ class AbilityActivation:
     delta: int
     base_points: int
     current_points: int
+    is_elimination: bool = False
 
     def event_data(self) -> dict[str, Any]:
         """JSON-safe payload for the ``ability_activated`` presentation event."""
@@ -118,6 +125,7 @@ class AbilityActivation:
             "current_points": self.current_points,
             "floating_text": self.ability.presentation.floating_text,
             "animation": self.ability.presentation.animation,
+            "is_elimination": self.is_elimination,
         }
 
 
@@ -191,9 +199,14 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
                 f"{where}: unsupported effect type {effect_type!r}; "
                 f"supported effects: {sorted(SUPPORTED_EFFECT_TYPES)}."
             )
-        amount = item.get("amount")
-        if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
-            raise AbilityValidationError(f"{where}: 'amount' must be a non-zero integer.")
+        if effect_type == "add_current_points":
+            amount = item.get("amount")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
+                raise AbilityValidationError(f"{where}: 'amount' must be a non-zero integer.")
+        else:
+            # eliminate_target carries no numeric amount; target selection
+            # happens through the pending-elimination pause, not a delta.
+            amount = 0
         effects.append(Effect(type=str(effect_type), amount=int(amount)))
 
     activation_limit = raw.get("activation_limit", "once_per_card_per_match")
@@ -220,6 +233,53 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
             f"{ability_id!r}; supported animations: {sorted(SUPPORTED_ANIMATIONS)}."
         )
 
+    # Elimination targeting: only validated when an effect is eliminate_target.
+    has_elimination = any(effect.type == "eliminate_target" for effect in effects)
+    target_scope = "any_row"
+    target_side = "opposing"
+    allowed_types: tuple[str, ...] = ()
+    max_base_points: int | None = None
+    min_base_points: int | None = None
+    if has_elimination:
+        targeting_raw = raw.get("targeting", {})
+        if not isinstance(targeting_raw, dict):
+            raise AbilityValidationError(
+                f"{context}: 'targeting' must be a JSON object for eliminate_target abilities."
+            )
+        target_scope = targeting_raw.get("target_scope", "any_row")
+        if target_scope not in {"same_row", "any_row"}:
+            raise AbilityValidationError(
+                f"{context}: targeting 'target_scope' must be 'same_row' or 'any_row'."
+            )
+        target_side = targeting_raw.get("target_side", "opposing")
+        if target_side != "opposing":
+            raise AbilityValidationError(
+                f"{context}: targeting 'target_side' must be 'opposing'."
+            )
+        allowed_types_raw = targeting_raw.get("allowed_types", [])
+        if not isinstance(allowed_types_raw, list):
+            raise AbilityValidationError(
+                f"{context}: targeting 'allowed_types' must be a list."
+            )
+        allowed_types = tuple(str(t) for t in allowed_types_raw)
+        max_base_points = targeting_raw.get("max_base_points")
+        if max_base_points is not None:
+            if isinstance(max_base_points, bool) or not isinstance(max_base_points, int):
+                raise AbilityValidationError(
+                    f"{context}: targeting 'max_base_points' must be an integer or null."
+                )
+        min_base_points = targeting_raw.get("min_base_points")
+        if min_base_points is not None:
+            if isinstance(min_base_points, bool) or not isinstance(min_base_points, int):
+                raise AbilityValidationError(
+                    f"{context}: targeting 'min_base_points' must be an integer or null."
+                )
+        if (min_base_points is not None and max_base_points is not None
+                and min_base_points > max_base_points):
+            raise AbilityValidationError(
+                f"{context}: targeting 'min_base_points' cannot exceed 'max_base_points'."
+            )
+
     return AbilityDefinition(
         id=ability_id,
         name=name,
@@ -231,6 +291,11 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
         presentation=AbilityPresentation(
             floating_text=floating_text.strip(), animation=str(animation)
         ),
+        target_scope=target_scope,
+        target_side=target_side,
+        allowed_types=allowed_types,
+        max_base_points=max_base_points,
+        min_base_points=min_base_points,
     )
 
 
@@ -284,6 +349,13 @@ class AbilityManager:
         self._pending: list[_PendingAbility] = []
         self._sequence = 0
         self._resolving = False
+        # Index every ability by its id so bonus removal can look an ability up
+        # without scanning every card definition.
+        self._ability_by_id: dict[str, AbilityDefinition] = {}
+        for definition in self.definitions.values():
+            ability = getattr(definition, "ability", None)
+            if ability is not None:
+                self._ability_by_id[ability.id] = ability
 
     @property
     def pending_abilities(self) -> tuple[tuple[int, str, str], ...]:
@@ -414,20 +486,24 @@ class AbilityManager:
             )
             return False
         if condition.type == "character_revealed":
-            # Hidden cards can never satisfy a reveal condition.
+            # Hidden cards can never satisfy a reveal condition, and an
+            # eliminated partner is no longer an active ally on the board.
             return any(
-                slot is not None and slot.revealed and slot.definition_id == partner_id
+                slot is not None
+                and slot.revealed
+                and not getattr(slot, "eliminated", False)
+                and slot.definition_id == partner_id
                 for row in state.rows
                 for slot in row.slots
             )
         if condition.type == "same_row":
             # The partner must share the owner's row *and* belong to the same
-            # player *and* be revealed: merely placing two cards together is
-            # never sufficient on its own. (Same-player synergy per the Dynamic
-            # Duo design and the new-duo tests.)
+            # player *and* be revealed *and* still be in play: an eliminated
+            # partner no longer satisfies a same-row synergy.
             return any(
                 slot is not None
                 and slot.revealed
+                and not getattr(slot, "eliminated", False)
                 and slot.definition_id == partner_id
                 and slot.owner_id == owner_card.owner_id
                 for slot in owner_row.slots
@@ -454,12 +530,19 @@ class AbilityManager:
         definition = self.definitions[owner_card.definition_id]
         base_points = int(definition.base_points)
         delta = 0
+        bonuses = dict(owner_card.get("applied_bonuses") or {})
         for effect in ability.effects:
             if effect.type == "add_current_points":
-                current = self._current_points(owner_card, base_points)
-                owner_card.current_points = current + effect.amount
+                # Track each dynamic bonus by the ability that granted it so it
+                # can be removed later (for example when a Dynamic Duo partner
+                # is eliminated) without ever touching the immutable base.
+                bonuses[ability.id] = effect.amount
                 delta += effect.amount
-        after = self._current_points(owner_card, base_points)
+            # eliminate_target effects are not applied here: target selection
+            # happens in the client layer via the pending-elimination state.
+        owner_card.applied_bonuses = bonuses
+        owner_card.current_points = base_points + sum(bonuses.values())
+        after = owner_card.current_points
 
         activated = list(owner_card.get("activated_abilities") or [])
         activated.append(ability.id)
@@ -476,7 +559,62 @@ class AbilityManager:
             delta=delta,
             base_points=base_points,
             current_points=after,
+            is_elimination=any(effect.type == "eliminate_target" for effect in ability.effects),
         )
+
+    def _base_points(self, card: Any) -> int:
+        stored = card.get("base_points")
+        if isinstance(stored, (int, float)) and not isinstance(stored, bool):
+            return int(stored)
+        definition = self.definitions.get(card.definition_id)
+        return int(getattr(definition, "base_points", 0))
+
+    def recalculate_after_elimination(self, state: Any, eliminated_card: Any) -> list[Any]:
+        """Remove dynamic bonuses that depended on the eliminated card.
+
+        This is the reusable Dynamic Duo elimination system: for every card
+        that still carries dynamic bonuses, each bonus survives only while its
+        ability's conditions hold on the live board. Because an eliminated
+        partner never satisfies a reveal or same-row condition
+        (see ``_condition_holds``), losing the partner removes the bonus.
+        Eliminated cards themselves keep ``current_points == 0`` and are never
+        resurrected here. Bonuses keyed by ability id, so the same bonus can
+        never be stacked twice.
+
+        Returns the list of card instances whose points changed.
+        """
+        changed: list[Any] = []
+        for row in state.rows:
+            for slot in row.slots:
+                if slot is None or slot is eliminated_card:
+                    continue
+                if getattr(slot, "eliminated", False):
+                    # Eliminated cards score zero for the rest of the match;
+                    # never resurrect their points here.
+                    continue
+                bonuses = dict(slot.get("applied_bonuses") or {})
+                if not bonuses:
+                    continue
+                located = _find_card(state, slot.id)
+                if located is None:
+                    continue
+                owner_row, _owner_index, _owner_card = located
+                kept: dict[str, int] = {}
+                for ability_id, amount in bonuses.items():
+                    ability = self._ability_by_id.get(ability_id)
+                    if ability is None:
+                        continue
+                    if all(
+                        self._condition_holds(condition, slot, owner_row, state)
+                        for condition in ability.conditions
+                    ):
+                        kept[ability_id] = amount
+                if len(kept) == len(bonuses):
+                    continue  # every bonus still valid: nothing to remove
+                slot.applied_bonuses = kept
+                slot.current_points = self._base_points(slot) + sum(kept.values())
+                changed.append(slot)
+        return changed
 
 
 def _find_card(state: Any, card_id: str) -> tuple[Any, int, Any] | None:

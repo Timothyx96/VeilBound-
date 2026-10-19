@@ -4,6 +4,7 @@ import logging
 
 import pygame
 
+from conftest import resolve_eliminations
 from veilbound.client.layout import BoardLayout
 from veilbound.client.renderer import Renderer
 from veilbound.shared.abilities import AbilityDefinition
@@ -30,22 +31,32 @@ def fixed_engine(capacity=2, rounds=2, seed=4):
 
 def fill_board(engine):
     while engine.state.phase == GamePhase.PLACEMENT:
+        # Killua-style abilities can arm an elimination mid-placement when a
+        # reveal resolves; settle those before the next legal-slot lookup.
+        resolve_eliminations(engine)
         player = engine.state.active_player
         row_id, slot_index = engine.legal_slots()[0]
         result = engine.play_card(player.id, player.hand[0].id, row_id, slot_index)
         assert result.accepted
+    resolve_eliminations(engine)
 
 
 def finish_row(engine):
     while engine.state.phase == GamePhase.REVEAL:
+        resolve_eliminations(engine)
+        if engine.state.phase != GamePhase.REVEAL:
+            # Resolving the final reveal's elimination completed the pass.
+            break
         result = engine.reveal_next_card()
         assert result.accepted
+    resolve_eliminations(engine)
     assert engine.state.phase == GamePhase.ROW_SCORING
     return engine.score_current_row()
 
 
 def finish_round(engine):
     while engine.state.phase not in {GamePhase.ROUND_RESULTS, GamePhase.MATCH_RESULTS}:
+        resolve_eliminations(engine)
         if engine.state.phase == GamePhase.REVEAL:
             result = engine.reveal_next_card()
             assert result.accepted
@@ -57,6 +68,7 @@ def finish_round(engine):
             assert result.accepted
         else:
             raise AssertionError(f"Unexpected phase: {engine.state.phase}")
+    resolve_eliminations(engine)
 
 
 def player_pool_ids(player):

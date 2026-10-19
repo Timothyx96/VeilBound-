@@ -5,8 +5,8 @@
       "name": "Naruto Uzumaki",
       "base_points": 10,
       "type": "GOAT",
-      "effect_name": "Will of Fire",
-      "effect_text": "Als Naruto de enige GOAT in jouw team is, krijgt hij +2 punten. Als je team achterstaat aan het einde van de ronde, krijgt hij in plaats daarvan +3. Beide bonussen stapelen niet.",
+      "effect_name": "Six Paths: Rasen-Shuriken",
+      "effect_text": "Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row.",
       "image": "assets/art/characters/Naruto/Naruto Uzumaki .png",
       "full_card_art": "assets/art/card front/Naruto/Naruto.png"
     },
@@ -15,8 +15,8 @@
       "name": "Sasuke Uchiha",
       "base_points": 7,
       "type": "Dynamic Duo",
-      "effect_name": "Eternal Rival",
-      "effect_text": "Samen met Itachi krijgt Sasuke +3 punten. Als Naruto ook in dezelfde ronde wordt gespeeld, krijgt het duo nog eens +1 punt.",
+      "effect_name": "Eternal Rivalry",
+      "effect_text": "Gains +3 points if allied Itachi is in the same row.",
       "ability": {
         "id": "sasuke_shared_row_bonus",
         "name": "Shared Row Bonus",
@@ -44,7 +44,7 @@
       "base_points": 6,
       "type": "Dynamic Duo",
       "effect_name": "Tsukuyomi",
-      "effect_text": "Samen met Sasuke krijgt Itachi +3 punten. Daarnaast mag je één tegenstander verplichten zijn effect vóór dat van jou te activeren, waardoor je zijn strategie kunt verstoren.",
+      "effect_text": "Cancels all bonus points gained by one opposing card in the same row.",
       "image": "assets/art/characters/Naruto/Itachi Uchiha.jfif",
       "full_card_art": "assets/art/card front/Naruto/Itachi_Uchiha.png"
     },
@@ -53,8 +53,8 @@
       "name": "Sakura Haruno",
       "base_points": 6,
       "type": "Fighter",
-      "effect_name": "Monsterlijke Kracht",
-      "effect_text": "Sakura krijgt +2 punten als jouw team minder punten heeft dan de tegenstander op het moment dat ze wordt gespeeld. Een comebackkaart dus.",
+      "effect_name": "Cherry Blossom Impact",
+      "effect_text": "Gains +2 points if Naruto or Sasuke is in the same row.",
       "image": "assets/art/characters/Naruto/Sakura Haruno.png",
       "full_card_art": "assets/art/card front/Naruto/Sakura_Haruno.png"
     },
@@ -63,28 +63,28 @@
       "name": "Kakashi Hatake",
       "base_points": 7,
       "type": "Fighter",
-      "effect_name": "Copy Ninja",
-      "effect_text": "Kopieert één positief effect van een andere gespeelde kaart, maar niet diens punten, GOAT-status of duo-bonus.",
+      "effect_name": "Sharingan Copy",
+      "effect_text": "Copies the bonus points of one opposing character in the same row. Kakashi gains the same number of bonus points.",
       "image": "assets/art/characters/Naruto/Kakashi Hatake.png",
       "full_card_art": "assets/art/card front/Naruto/Kakashi.png"
     },
     {
       "id": "naruto_06",
-      "name": "Madara Uchiha",
+      "name": "Minato",
       "base_points": 8,
       "type": "Fighter",
-      "effect_name": "Ghost of the Uchiha",
-      "effect_text": "Madara kan niet worden verzwakt door de eerste negatieve kaarteffecten die hem raken. Een tweede effect werkt wel.",
+      "effect_name": "Flying Raijin",
+      "effect_text": "Gains +2 points for each other opposing card in his row, up to a maximum bonus of +6.",
       "image": "assets/art/characters/Naruto/Madara Uchiha.png",
-      "full_card_art": "assets/art/card front/Naruto/Madara Uchiha.png"
+      "full_card_art": "assets/art/card front/Naruto/Minato.png"
     },
     {
       "id": "naruto_07",
       "name": "Tobi",
       "base_points": 4,
       "type": "Trickster",
-      "effect_name": "Het Was Allemaal Deel van Mijn Plan",
-      "effect_text": "Kies vóór de puntentelling één andere kaart. Tobi verwisselt zijn punten met die kaart. De kaart die eerst 9 punten had, kan dus plotseling 4 punten waard zijn, of andersom. Effecten blijven bij hun oorspronkelijke kaart.",
+      "effect_name": "This Was My Plan All Along",
+      "effect_text": "The row is won by the player with the lowest total points instead of the highest. This effect does not override All Might's effect.",
       "image": "assets/art/characters/Naruto/Tobi.jpeg",
       "full_card_art": "assets/art/card front/Naruto/Tobi.png"
     },
@@ -93,8 +93,8 @@
       "name": "Shikamaru Nara",
       "base_points": 5,
       "type": "Regular",
-      "effect_name": "Wat Een Gedoe",
-      "effect_text": "Kies één kaart van een tegenstander. Die kaart mag deze ronde geen bonuspunten ontvangen. De basispunten blijven behouden.",
+      "effect_name": "Shadow Possession",
+      "effect_text": "Removes the bonus points from one card in the same row. Cannot target GOAT cards.",
       "image": "assets/art/characters/Naruto/Shikamaru_Nara.jpg",
       "full_card_art": "assets/art/card front/Naruto/Shikamaru_Nara.png"
     },
@@ -103,8 +103,8 @@
       "name": "Rock Lee",
       "base_points": 5,
       "type": "Regular",
-      "effect_name": "Power of Youth",
-      "effect_text": "Als je deze ronde geen GOAT speelt, krijgt Rock Lee +3 punten. Een beloning voor spelers die hun sterkste kaart durven te bewaren.",
+      "effect_name": "Eight Gates: First Gate",
+      "effect_text": "Gains +4 points if there are no other friendly cards in his row.",
       "image": "assets/art/characters/Naruto/Rock_Lee.jpg",
       "full_card_art": "assets/art/card front/Naruto/Rock_Lee.png"
     },
@@ -113,8 +113,8 @@
       "name": "Hinata Hyuga",
       "base_points": 4,
       "type": "Regular",
-      "effect_name": "Ik Geloof in Jou",
-      "effect_text": "Als Naruto door een effect punten verliest, mag Hinata maximaal 2 van die verloren punten aan hem teruggeven.",
+      "effect_name": "Byakugan",
+      "effect_text": "Gains +1 point for each other friendly Regular card in the same row.",
       "image": "assets/art/characters/Naruto/Hinata Hyuga.jpg",
       "full_card_art": "assets/art/card front/Naruto/Hinata_Hyuga.png"
     },
@@ -123,8 +123,8 @@
       "name": "Izuku Midoriya (Deku)",
       "base_points": 8,
       "type": "Dynamic Duo",
-      "effect_name": "One For All — 100%",
-      "effect_text": "Deku krijgt +1 punt voor iedere gespeelde Fighter in jouw team, tot maximaal +3. Hij wordt sterker door de helden om hem heen.",
+      "effect_name": "One For All: United Front",
+      "effect_text": "If Deku is placed directly next to Bakugo in the same row, he gains +5 points. He also gains +1 point for each allied Fighter in that row.",
       "image": "assets/art/characters/My Hero Academia/Izuku_Midoriya_Deku.jpg",
       "full_card_art": "assets/art/card front/MHA/Midoriya.png"
     },
@@ -133,8 +133,8 @@
       "name": "Katsuki Bakugo",
       "base_points": 7,
       "type": "Dynamic Duo",
-      "effect_name": "Explosieve Rivaliteit",
-      "effect_text": "Samen met Kirishima krijgt Bakugo +3 punten. Als je achterstaat, krijgt hij nog eens +1 punt. Bakugo doet het niet graag rustig aan.",
+      "effect_name": "I've Got Your Back!",
+      "effect_text": "If Bakugo is placed directly next to Deku in the same row, he gains +5 points.",
       "image": "assets/art/characters/My Hero Academia/Katsuki_Bakugo.jpg",
       "full_card_art": "assets/art/card front/MHA/Bakugo.png"
     },
@@ -143,8 +143,8 @@
       "name": "Dabi",
       "base_points": 6,
       "type": "Fighter",
-      "effect_name": "Manliness!",
-      "effect_text": "Samen met Bakugo krijgt Kirishima +3 punten. Bovendien voorkomt hij dat Bakugo door één negatief effect wordt uitgeschakeld of onder 1 punt zakt.",
+      "effect_name": "Blueflame Pursuit",
+      "effect_text": "Each opposing character placed behind Dabi in the same row loses 1 point.",
       "image": "assets/art/characters/My Hero Academia/Eijiro_Kirishima.jpg",
       "full_card_art": "assets/art/card front/MHA/Dabi.png"
     },
@@ -153,8 +153,8 @@
       "name": "All Might",
       "base_points": 10,
       "type": "GOAT",
-      "effect_name": "I AM HERE!",
-      "effect_text": "Als jouw team minder basispunten heeft dan de tegenstander, krijgt All Might +2 punten. Hij maakt de achterstand kleiner, maar wint niet automatisch.",
+      "effect_name": "Symbol of Peace",
+      "effect_text": "If the opposing row contains no GOAT card, you automatically win that row. All Might's automatic-win effect takes priority over all other automatic-win effects.",
       "image": "assets/art/characters/My Hero Academia/All_Might.jpg",
       "full_card_art": "assets/art/card front/MHA/All_Might.png"
     },
@@ -163,8 +163,8 @@
       "name": "Endeavor",
       "base_points": 8,
       "type": "Fighter",
-      "effect_name": "Hellflame",
-      "effect_text": "Kies één vijandelijke kaart. Die verliest 2 punten. Endeavor is sterk, maar niet bepaald subtiel.",
+      "effect_name": "Number One, No Matter What",
+      "effect_text": "If Endeavor is the first card placed in an otherwise empty row, he gains +4 points.",
       "image": "assets/art/characters/My Hero Academia/Endeavor.jpg",
       "full_card_art": "assets/art/card front/MHA/Endeavor.png"
     },
@@ -173,8 +173,8 @@
       "name": "Shoto Todoroki",
       "base_points": 8,
       "type": "Fighter",
-      "effect_name": "Half-Cold Half-Hot",
-      "effect_text": "Kies vuur of ijs. Vuur geeft Todoroki +2 punten; ijs voorkomt dat één vijandelijke kaart een effect activeert. Kies één van beide.",
+      "effect_name": "Flashfire and Frost",
+      "effect_text": "Cancels one opposing character's effect that grants additional points.",
       "image": "assets/art/characters/My Hero Academia/Shoto_Todoroki.jpg",
       "full_card_art": "assets/art/card front/MHA/Shoto.png"
     },
@@ -203,8 +203,8 @@
       "name": "Toga",
       "base_points": 2,
       "type": "Trickster",
-      "effect_name": "Recipro Turbo",
-      "effect_text": "Iida's effect wordt als eerste geactiveerd. Hij mag één kaart beschermen tegen een negatief effect deze ronde.",
+      "effect_name": "Transform",
+      "effect_text": "If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.",
       "image": "assets/art/characters/My Hero Academia/Tenya_Iida.jpg",
       "full_card_art": "assets/art/card front/MHA/Toga.png"
     },
@@ -214,7 +214,7 @@
       "base_points": 5,
       "type": "Regular",
       "effect_name": "Last-Minute Hero",
-      "effect_text": "Krijgt +3 punten als laatste kaart in de rij.",
+      "effect_text": "If Star and Stripes is the last card placed in the row, she gains +3 points.",
       "image": "assets/art/characters/My Hero Academia/Denki_Kaminari.jpg",
       "full_card_art": "assets/art/card front/MHA/Star_And_Stripes.png"
     },
@@ -223,8 +223,8 @@
       "name": "Gon Freecss",
       "base_points": 10,
       "type": "GOAT",
-      "effect_name": "Jajanken — Rock!",
-      "effect_text": "Gon krijgt +3 punten als jouw team geen andere GOAT bevat. Als je een andere GOAT speelt, blijft Gon op zijn basiswaarde van 10 punten. Een sterke keuze voor een team dat op één held vertrouwt.",
+      "effect_name": "Jajanken: Rock",
+      "effect_text": "All friendly Fighter cards on the board gain +4 points. After activating this ability, Gon's points are reduced to 1. Only characters on the board at the time of activation receive the bonus.",
       "image": "assets/art/characters/Hunter x Hunter/Gon_Freecss.jpg",
       "full_card_art": "assets/art/card front/HxH/Gon Freecss_ Gouden GOAT-kaart.png"
     },
@@ -234,7 +234,26 @@
       "base_points": 7,
       "type": "Dynamic Duo",
       "effect_name": "Godspeed",
-      "effect_text": "Samen met Alluka krijgt Killua +3 punten. Killua's effect wordt als eerste geactiveerd, waardoor hij één kaart kan beschermen tegen een negatief effect.",
+      "effect_text": "Eliminates one opposing character anywhere on the board.",
+      "ability": {
+        "id": "killua_godspeed_eliminate",
+        "name": "Godspeed",
+        "description": "Eliminates one opposing character anywhere on the board.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          { "type": "eliminate_target" }
+        ],
+        "targeting": {
+          "target_scope": "any_row",
+          "target_side": "opposing"
+        },
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "GODSPEED",
+          "animation": "elimination"
+        }
+      },
       "image": "assets/art/characters/Hunter x Hunter/Killua_Zoldyck.jpg",
       "full_card_art": "assets/art/card front/HxH/Killua.png"
     },
@@ -243,8 +262,8 @@
       "name": "Alluka Zoldyck",
       "base_points": 5,
       "type": "Dynamic Duo",
-      "effect_name": "Nanika's Wens",
-      "effect_text": "Samen met Killua krijgt Alluka +3 punten. Daarnaast mag je één kaart 2 punten geven of afnemen. Je moet de keuze maken voordat de puntentelling begint.",
+      "effect_name": "Nanika's Wish",
+      "effect_text": "Gain 3 points when Alluka and Killua are both revealed in the same row.",
       "ability": {
         "id": "alluka_killua_row_bonus",
         "name": "Shared Row Bonus",
@@ -272,7 +291,7 @@
       "base_points": 8,
       "type": "Fighter",
       "effect_name": "Bungee Gum",
-      "effect_text": "Hisoka kopieert één bonus van maximaal +3 punten van een andere kaart naar zichzelf. Bungee Gum heeft zowel de eigenschappen van rubber als kauwgom, en blijkbaar ook van een diefstalverzekering.",
+      "effect_text": "Copies the current bonus points of one opposing character in the same row.",
       "image": "assets/art/characters/Hunter x Hunter/Hisoka.jpg",
       "full_card_art": "assets/art/card front/HxH/Hisoka.png"
     },
@@ -281,8 +300,8 @@
       "name": "Chrollo Lucilfer",
       "base_points": 7,
       "type": "Fighter",
-      "effect_name": "Skill Hunter",
-      "effect_text": "Kopieert het effect van één reguliere kaart die deze ronde is gespeeld. Je kopieert alleen het effect, niet de punten of de unieke duo-bonus.",
+      "effect_name": "Master Strategist",
+      "effect_text": "The next opposing character placed in the same row cannot activate its ability or gain additional points.",
       "image": "assets/art/characters/Hunter x Hunter/Chrollo_Lucilfer.jpg",
       "full_card_art": "assets/art/card front/HxH/Chrollo_Lucilfer.png"
     },
@@ -292,7 +311,7 @@
       "base_points": 8,
       "type": "Fighter",
       "effect_name": "100-Type Guanyin Bodhisattva",
-      "effect_text": "Netero verlaagt de punten van één vijandelijke kaart met 2. Als de tegenstander meer Fighters heeft dan jij, verlaagt hij die kaart met 3 in plaats daarvan.",
+      "effect_text": "Reduces the points of every opposing character in his row by 2.",
       "image": "assets/art/characters/Hunter x Hunter/Isaac_Netero.jpg",
       "full_card_art": "assets/art/card front/HxH/Isaac_Netero.png"
 
@@ -302,8 +321,8 @@
       "name": "Kite",
       "base_points": 5,
       "type": "Trickster",
-      "effect_name": "Rookie Crusher",
-      "effect_text": "Tonpa geeft één vijandelijke kaart een drankje. Die kaart verliest 4 punten, tenzij het een GOAT is: die herkent de truc en krijgt juist +2 punten. Als de tegenstander geen GOAT speelt, kan Tonpa een sterke Fighter volledig onderuit halen.",
+      "effect_name": "Crazy Slots",
+      "effect_text": "Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.",
       "image": "assets/art/characters/Hunter x Hunter/Tonpa.jpg",
       "full_card_art": "assets/art/card front/HxH/Kite.png"
     },
@@ -313,27 +332,27 @@
       "base_points": 6,
       "type": "Fighter",
       "effect_name": "Chain Jail",
-      "effect_text": "Als de tegenstander een Fighter speelt, mag Kurapika die kaart 2 punten laten verliezen. Tegen andere kaarttypen heeft hij geen bonus.",
+      "effect_text": "Reduces the points of one opposing Fighter card in the same row by 2.",
       "image": "assets/art/characters/Hunter x Hunter/Kurapika.jpg",
       "full_card_art": "assets/art/card front/HxH/Kurapika.png"
     },
     {
       "id": "hxh_09",
-      "name": "Biscuit Krueger",
+      "name": "Illumi",
       "base_points": 5,
       "type": "Regular",
-      "effect_name": "Training From Hell",
-      "effect_text": "Kies één eigen kaart. Die krijgt +2 punten, maar Bisky zelf verliest 1 punt. Een goede trainer maakt haar team sterker.",
-      "image": "assets/art/characters/Hunter x Hunter/Biscuit_Krueger.jpg",
-      "full_card_art": "assets/art/card front/HxH/Biscuit Krueger.png"
+      "effect_name": "Needle",
+      "effect_text": "Gains +2 points if there are three other friendly characters in his row.",
+      "image": "assets/art/characters/Hunter x Hunter/Illumi.png",
+      "full_card_art": "assets/art/card front/HxH/Illumi.png"
     },
     {
       "id": "hxh_10",
       "name": "Leorio Paradinight",
-      "base_points": 4,
+      "base_points": 5,
       "type": "Regular",
-      "effect_name": "Dokter in Opleiding",
-      "effect_text": "Als een eigen kaart door een effect punten verliest, mag Leorio 2 punten herstellen. Als er niets te genezen valt, blijft hij gewoon 4 punten waard.",
+      "effect_name": "Emergency Treatment",
+      "effect_text": "Revives one eliminated friendly character in the same row, restoring its original points and ability.",
       "image": "assets/art/characters/Hunter x Hunter/Leorio_Paradinight.jpg",
       "full_card_art": "assets/art/card front/HxH/Leorio.png"
     },
@@ -342,8 +361,8 @@
       "name": "Monkey D. Luffy",
       "base_points": 10,
       "type": "GOAT",
-      "effect_name": "Gear 5 — Warrior of Liberation",
-      "effect_text": "Luffy krijgt +2 punten als jouw team minstens één andere kaart met een effect heeft dat punten verandert. Als hij wordt verzwakt, mag hij één keer 2 punten terugwinnen. Vrijheid laat zich niet zomaar tegenhouden!",
+      "effect_name": "Warrior of Liberation",
+      "effect_text": "Luffy ignores all opposing abilities that would eliminate, weaken, move, or disable him. Eliminates one opposing card in his row, regardless of card type.",
       "image": "assets/art/characters/One Piece/Monkey_D_Luffy.jpg",
       "full_card_art": "assets/art/card front/One_Piece/Monkey_D_Luffy.png"
     },
@@ -352,8 +371,8 @@
       "name": "Roronoa Zoro",
       "base_points": 7,
       "type": "Dynamic Duo",
-      "effect_name": "Santoryu",
-      "effect_text": "Samen met Sanji krijgt Zoro +3 punten. Als je tegenstander een GOAT speelt, krijgt Zoro nog +1 punt. Hij wil altijd bewijzen dat hij de sterkste is.",
+      "effect_name": "Three-Sword Style",
+      "effect_text": "Eliminates one opposing Fighter card in the same row.",
       "image": "assets/art/characters/One Piece/Roronoa_Zoro.jpg",
       "full_card_art": "assets/art/card front/One_Piece/Roronoa_zoro.png"
     },
@@ -362,8 +381,8 @@
       "name": "Sanji",
       "base_points": 7,
       "type": "Dynamic Duo",
-      "effect_name": "Mr. Prince",
-      "effect_text": "Samen met Zoro krijgt Sanji +3 punten. Daarnaast mag Sanji één kaart met een negatief effect beschermen, maar hij doet het alleen als Zoro ook meedoet.",
+      "effect_name": "Wings of the Pirate King",
+      "effect_text": "Gains +3 points if placed in the same row as Zoro.",
       "ability": {
         "id": "sanji_zoro_row_bonus",
         "name": "Shared Row Bonus",
@@ -391,7 +410,7 @@
       "base_points": 8,
       "type": "Fighter",
       "effect_name": "Conqueror's Haki",
-      "effect_text": "Eén vijandelijke kaart met maximaal 5 basispunten mag deze ronde geen effect activeren. Shanks intimideert de zwakkere kaarten voordat het gevecht begint.",
+      "effect_text": "Cancels all abilities in the row, including friendly and opposing abilities. Abilities in that row can no longer activate, and eliminated characters remain eliminated.",
       "image": "assets/art/characters/One Piece/Shanks.jpg",
       "full_card_art": "assets/art/card front/One_Piece/Shanks.png"
     },
@@ -400,8 +419,8 @@
       "name": "Nico Robin",
       "base_points": 4,
       "type": "Regular",
-      "effect_name": "Thunder Bagua",
-      "effect_text": "Kaido haalt 2 punten weg bij één vijandelijke Fighter. Tegen een reguliere kaart werkt de aanval niet: die is te onbeduidend om zijn aandacht te trekken.",
+      "effect_name": "Clutch",
+      "effect_text": "Reduces the points of one opposing card in her row by 2.",
       "image": "assets/art/characters/One Piece/Nico_Robin",
       "full_card_art": "assets/art/card front/One_Piece/Nico_Robin.png"
     },
@@ -410,28 +429,28 @@
       "name": "Trafalgar D. Water Law",
       "base_points": 7,
       "type": "Fighter",
-      "effect_name": "ROOM",
-      "effect_text": "Wissel de punten van twee andere kaarten om. Hun effecten en kaarttypen blijven hetzelfde. Ideaal om een krachtige vijandelijke kaart in een zwakke kaart te veranderen.",
+      "effect_name": "Room",
+      "effect_text": "Moves one opposing card from his row to another row chosen by the player.",
       "image": "assets/art/characters/One Piece/Trafalgar_D_Water_Law.jpg",
       "full_card_art": "assets/art/card front/One_Piece/Trafalgar_Law.png"
     },
     {
       "id": "onepiece_07",
-      "name": "Buggy the Clown",
-      "base_points": 3,
+      "name": "Whitebeard",
+      "base_points": 4,
       "type": "Regular",
-      "effect_name": "Per Ongeluk Yonko",
-      "effect_text": "Kies een vijandelijke kaart. Gooi een muntje op. Kop: Buggy steelt 3 punten van die kaart. Munt: de tegenstander raakt in paniek en Buggy krijgt zelf +4 punten. Hoe hij ook wint, iedereen vraagt zich af hoe het mogelijk was.",
+      "effect_name": "The one piece is real",
+      "effect_text": "Cannot be eliminated by an opposing ability.",
       "image": "assets/art/characters/One Piece/Buggy_the_Clown.jpg",
-      "full_card_art": "assets/art/card front/One_Piece/Buggy.png"
+      "full_card_art": "assets/art/card front/One_Piece/whitebeard.png"
     },
     {
       "id": "onepiece_08",
       "name": "Usopp",
       "base_points": 4,
       "type": "Trickster",
-      "effect_name": "8000 Mannen",
-      "effect_text": "Usopp bluft: kies één vijandelijke kaart. Als die kaart meer basispunten heeft dan Usopp, verliest ze 2 punten door zijn intimidatie.",
+      "effect_name": "God Usopp",
+      "effect_text": "Gains +3 points if there is an opposing GOAT card in his row.",
       "image": "assets/art/characters/One Piece/Usopp.jpg",
       "full_card_art": "assets/art/card front/One_Piece/Usopp.png"
     },
@@ -440,8 +459,8 @@
       "name": "Nami",
       "base_points": 5,
       "type": "Regular",
-      "effect_name": "Navigator en Geldwolf",
-      "effect_text": "Kies één vijandelijke kaart en steel 2 van haar bonuspunten. Als de kaart geen bonuspunten heeft, gebeurt er niets.",
+      "effect_name": "Cat Burglar",
+      "effect_text": "Steals up to 2 bonus points from one opposing character in the same row. Nami cannot steal a character's base points.",
       "image": "assets/art/characters/One Piece/Nami.jpg",
       "full_card_art": "assets/art/card front/One_Piece/Nami.png"
     },
@@ -450,9 +469,9 @@
       "name": "Tony Tony Chopper",
       "base_points": 4,
       "type": "Regular",
-      "effect_name": "Rumble Ball",
-      "effect_text": "Chopper krijgt +4 punten als jouw team minstens één andere kaart heeft die deze ronde punten heeft verloren. Een kleine dokter met een enorme comeback.",
-      "image": "assets/art/characters/One Piece/Tony_Tony_Chopper.jpg",
+      "effect_name": "Doctor Chopper Arrives",
+      "effect_text": "Revives one eliminated friendly character in the same row, restoring its original points and ability.",
+      "image": "assets/art/characters/One Piece/Tony_tony_Chopper.png",
       "full_card_art": "assets/art/card front/One_Piece/Tony_tony_Chopper.png"
     },
     {
@@ -460,8 +479,8 @@
       "name": "Goku (Ultra Instinct)",
       "base_points": 9,
       "type": "Dynamic Duo",
-      "effect_name": "Mastered Ultra Instinct",
-      "effect_text": "Goku krijgt +2 punten als het effect van een andere kaart deze ronde punten verandert. Als Goku zelf door een effect punten verliest, mag hij één keer 2 punten terugwinnen. Zijn lichaam reageert voordat zijn tegenstander kan toeslaan.",
+      "effect_name": "Autonomous Ultra Instinct",
+      "effect_text": "The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself.",
       "image": "assets/art/characters/Dragon Ball/Goku_Ultra_Instinct.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Goku.png"
     },
@@ -470,8 +489,8 @@
       "name": "Vegeta",
       "base_points": 7,
       "type": "Dynamic Duo",
-      "effect_name": "Saiyan Pride",
-      "effect_text": "Samen met Goku krijgt Vegeta +3 punten. Als Goku meer bonuspunten ontvangt dan Vegeta, krijgt Vegeta nog +1 punt. Hij zal nooit accepteren dat Kakarot hem overtreft!",
+      "effect_name": "Prince's Rivalry",
+      "effect_text": "Gains +3 points if Goku is in the same row.",
       "ability": {
         "id": "vegeta_goku_row_bonus",
         "name": "Shared Row Bonus",
@@ -496,10 +515,10 @@
     {
       "id": "dragonball_03",
       "name": "Gogeta (Super Saiyan Blue)",
-      "base_points": 8,
+      "base_points": 10,
       "type": "GOAT",
-      "effect_name": "Fusion Reborn",
-      "effect_text": "Gogeta krijgt +2 punten als zowel Goku als Vegeta deze ronde worden gespeeld. Hij is geen onderdeel van hun duo: hij is de alternatieve beloning voor spelers die allebei hun Saiyans inzetten.",
+      "effect_name": "Stardust Breaker",
+      "effect_text": "Gains +3 points for each opposing Fighter card in his row.",
       "image": "assets/art/characters/Dragon Ball/Gogeta (Super Saiyan Blue).jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Gogeta.png"
     },
@@ -508,8 +527,8 @@
       "name": "Frieza (Golden)",
       "base_points": 8,
       "type": "Fighter",
-      "effect_name": "Death Beam",
-      "effect_text": "Kies één vijandelijke kaart. Die verliest 2 punten. Als de kaart een GOAT is, werkt het effect niet: Frieza weet wanneer hij beter een stap terug kan doen.",
+      "effect_name": "Golden Tyrant",
+      "effect_text": "Eliminates one opposing card in his row with 5 or fewer base points.",
       "image": "assets/art/characters/Dragon Ball/Frieza_Golden.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Frieza.png"
     },
@@ -518,8 +537,8 @@
       "name": "Broly",
       "base_points": 8,
       "type": "Fighter",
-      "effect_name": "Legendary Super Saiyan",
-      "effect_text": "Broly krijgt +1 punt voor iedere vijandelijke kaart die deze ronde bonuspunten ontvangt, tot maximaal +3. Hoe sterker de tegenstander wordt, hoe gevaarlijker Broly wordt.",
+      "effect_name": "Legendary Saiyan",
+      "effect_text": "Gains +2 points for each opposing Fighter card played in his row after Broly, with no maximum bonus.",
       "image": "assets/art/characters/Dragon Ball/Broly.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Broly.png"
     },
@@ -528,8 +547,8 @@
       "name": "Future Trunks",
       "base_points": 5,
       "type": "Trickster",
-      "effect_name": "Tijdlijn Veranderd",
-      "effect_text": "Kies twee kaarten die deze ronde zijn gespeeld. Verwissel hun uiteindelijke punten, inclusief bonussen, maar niet hun effecten. Trunks herschrijft de uitkomst van de ronde. Zelfs een kaart van 13 punten kan hierdoor op 3 eindigen.",
+      "effect_name": "Hope of the Future",
+      "effect_text": "Gains +5 points if another friendly card in his row is eliminated.",
       "image": "assets/art/characters/Dragon Ball/Future_Trunks.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Trunks.png"
     },
@@ -538,8 +557,8 @@
       "name": "Gohan (Beast)",
       "base_points": 8,
       "type": "Fighter",
-      "effect_name": "Potential Unleashed",
-      "effect_text": "Als jouw team achterstaat bij het begin van de puntentelling, krijgt Gohan +3 punten. Hij laat zijn verborgen potentieel pas zien wanneer het echt nodig is.",
+      "effect_name": "Hidden Potential Unlocked",
+      "effect_text": "Gains +3 points if an opposing card in his row has more points than Gohan before ability bonuses.",
       "image": "assets/art/characters/Dragon Ball/Gohan_Beast.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Gohan.png"
     },
@@ -548,8 +567,8 @@
       "name": "Hit",
       "base_points": 7,
       "type": "Fighter",
-      "effect_name": "Namekian Power",
-      "effect_text": "Kies één eigen kaart. Als die kaart deze ronde punten verliest, mag Piccolo 2 punten aan die kaart teruggeven. Hij is de beschermer van zijn team.",
+      "effect_name": "Time Skip",
+      "effect_text": "The next opposing card played after Hit in the same row cannot activate its ability.",
       "image": "assets/art/characters/Dragon Ball/Piccolo_Orange.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Hit.png"
     },
@@ -558,8 +577,8 @@
       "name": "Zeno",
       "base_points": 4,
       "type": "Regular",
-      "effect_name": "Oneindige Energie",
-      "effect_text": "Android 18 mag één eigen kaart beschermen tegen een negatief effect deze ronde. Geen energieverlies, geen paniek.",
+      "effect_name": "Erase from Existence",
+      "effect_text": "If Zeno is the first character placed in an empty row, eliminate the next character in that row if it belongs to the opposing player.",
       "image": "assets/art/characters/Dragon Ball/Android_18.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Zeno.png"
     },
@@ -568,8 +587,8 @@
       "name": "Whis",
       "base_points": 4,
       "type": "Regular",
-      "effect_name": "Wolf Fang Fist",
-      "effect_text": "Kies één vijandelijke kaart. Bij een succesvolle muntworp verliest die kaart 3 punten. Bij een mislukte worp verliest Yamcha zelf 2 punten. Het blijft Yamcha…",
+      "effect_name": "Temporal Rewind",
+      "effect_text": "Revives one friendly card eliminated in the same row, restoring its original points and ability.",
       "image": "assets/art/characters/Dragon Ball/Yamcha.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Whis.png"
     }

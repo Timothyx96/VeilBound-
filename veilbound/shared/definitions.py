@@ -45,6 +45,8 @@ def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]
             effect_name=str(raw.get("effect_name", "")),
             effect_text=str(raw.get("effect_text", "")),
             full_card_art=str(raw.get("full_card_art", "")),
+            # Roster classification drives elimination allowed_types filters.
+            type=str(raw.get("type", "")),
             # Malformed/unsupported abilities fail loudly with the card named.
             ability=(
                 parse_ability(ability_raw, context=f"Character {card_id}")

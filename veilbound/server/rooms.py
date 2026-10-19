@@ -83,6 +83,8 @@ class Room:
             await self._place(peer, message)
         elif message_type == "reveal_ack":
             await self._reveal_ack(peer, message)
+        elif message_type == "select_elimination":
+            await self._select_elimination(peer, message)
         elif message_type in {"score", "advance_row", "continue_round", "restart"}:
             await self._progress(peer, message_type)
         else:
@@ -122,6 +124,9 @@ class Room:
             return
         if self.pending_reveal_id is not None:
             return
+        # An armed elimination pauses scoring/progress until a target is chosen.
+        if self.engine.state.get("pending_elimination"):
+            return
         if message_type == "score":
             result = self.engine.score_current_row()
         elif message_type == "advance_row":
@@ -152,6 +157,38 @@ class Room:
             await self._start_next_final_reveal()
         else:
             await self.broadcast([])
+
+    async def _select_elimination(self, peer: Peer, message: dict) -> None:
+        """Resolve the attacker owner's elimination target selection.
+
+        Only the peer whose card armed the pause may choose; the engine
+        revalidates the target against live state before eliminating it.
+        """
+        if not self.ready:
+            await peer.send({"type": "error", "message": "Waiting for the other player to reconnect."})
+            return
+        pending = self.engine.state.get("pending_elimination")
+        if not pending:
+            await peer.send({"type": "error", "message": "No elimination is awaiting target selection."})
+            return
+        if peer.player_id != str(pending.get("attacker_owner_id")):
+            await peer.send({"type": "error", "message": "Only the ability's owner chooses the elimination target."})
+            return
+        row_id = str(message.get("row_id", ""))
+        slot_index = message.get("slot_index")
+        if not isinstance(slot_index, int) or isinstance(slot_index, bool):
+            await peer.send({"type": "error", "message": "Invalid elimination target."})
+            return
+        result = self.engine.select_elimination_target(row_id, slot_index)
+        if not result.accepted:
+            await peer.send({"type": "error", "message": result.reason})
+            return
+        await self._publish_result(result)
+        # The pause interrupted the final-reveal sequence; resume it. (When
+        # the elimination completed the board, the engine already advanced to
+        # row scoring and the progress loop takes over.)
+        if self.engine.state.phase == GamePhase.REVEAL and self.pending_reveal_id is None:
+            await self._start_next_final_reveal()
 
     async def _start_next_final_reveal(self) -> None:
         if not self.ready or self.pending_reveal_id is not None:
