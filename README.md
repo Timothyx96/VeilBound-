@@ -1,10 +1,57 @@
 # Veilbound
 
-Veilbound is a two-player card game prototype built with Python and Pygame. It supports local hot-seat play on one screen and online play through an authoritative room server. The shared rules engine does not import Pygame; card definitions are JSON and the desktop client owns rendering and animation.
+> A two-player anime card dueler — outplace, out-reveal, and outscore your rival across four rows and two rounds.
 
-## Setup
+![Python](https://img.shields.io/badge/python-3.10%2B-blue) ![Pygame](https://img.shields.io/badge/pygame-2.6-green) ![Tests](https://img.shields.io/badge/tests-passing-brightgreen) ![Players](https://img.shields.io/badge/players-local%20%7C%20online-gold)
 
-Python 3.10 or newer is required. From the project directory in PowerShell:
+## Screenshots
+
+| V1.0 — Local board | V1.0 — Reveals |
+|---|---|
+| ![V1.0 local board — Round 2](Snapshots/V1.0%20Local%20Version%20.png) | ![V1.0 local board — Round 1 with revealed cards](Snapshots/V1.0%20Local%20Version%202.png) |
+
+| V2.0 — Main menu | V2.0 — Board update |
+|---|---|
+| ![V2.0 main menu](Snapshots/v2.0.png) | ![V2.0 board with reveals and elimination](Snapshots/v2.0%20version%202%20.png) |
+
+## The game
+
+**Local hot-seat or online rooms.** Two players share one window, or host a six-character room code and duel over the network — same rules, animations, and sounds either way.
+
+**How a match plays.** Alternate turns dragging cards into each row's next empty slot. Placing a card reveals the previous one in that row; the newest stays face down. Once every slot is filled, the remaining face-down cards reveal Row 1 → Row 4, then each row scores: highest revealed total wins points equal to the row's capacity, ties award nothing. Two rounds, match points carry forward.
+
+**The roster.** 50 unique anime characters. Each player draws from an independent random 40-card pool (no duplicates within your pool), persisting across both rounds — played cards stay used, undrawn cards wait in the pile. Scoring uses base points only; effect text is flavor shown on reveals and hovers.
+
+## Controls
+
+| Input | Action |
+|---|---|
+| Drag card | Place into the row's next empty slot |
+| `Esc` | Pause / resume (state and sounds preserved) |
+| `F11` or `Alt+Enter` | Toggle fullscreen |
+| `Tab` / `Enter` | Switch join fields / connect (online join) |
+
+Pause offers **Options** (live SFX + music volume, 10% steps) and **Quit Game**. Offline matches (local/debug) can also return straight to the main menu.
+
+## Customize
+
+Add portraits under `assets/art/characters/`, then register them in `veilbound/assets/data/anime_bedriegers_bedrogen.json` (`id`, `name`, `base_points`, `effect_name`, `effect_text`, `image`). Missing art falls back to a generated placeholder. Backgrounds, animation presets, and audio live in `config/settings.json`.
+
+## Project layout
+
+```text
+assets/              Character art, card backs, UI frames, backgrounds, sounds, fonts
+config/settings.json Animation, audio, and background settings
+veilbound/assets/    Character definitions (JSON)
+veilbound/client/    Pygame app, assets, renderer, layout, input
+veilbound/shared/    Rules engine (Pygame-free): models, engine, scoring
+tests/               Gameplay, networking, and asset-loading tests
+Snapshots/           Version screenshots shown above
+```
+
+## Commands
+
+Setup (PowerShell):
 
 ```powershell
 python -m venv .venv
@@ -12,93 +59,26 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-If PowerShell blocks venv activation, use `.\.venv\Scripts\python.exe` in place of `python` for the following commands.
-
-## Run
-
-### Local game
+Play locally:
 
 ```powershell
 python -m veilbound.client
 ```
 
-Choose **Local Game** in the menu. Two players share the window. On each turn, the active player must drag a card from their hand into the next empty slot of a row; turns alternate until every slot in all four rows is filled. Players cannot pass or skip placement. The opening player gets the existing start-of-turn draw after the initial five-card hand.
-
-Press **Esc** during a match to open the pause menu, which offers **Options** and **Quit Game**. Choose **Options** to adjust **SFX volume** and **Music volume** with +/- buttons (changes apply immediately). Press **Esc** again from the pause menu or choose **Back** on the audio screen to resume the game. Choose **Quit Game** to exit the application.
-
-### Online game
-
-Start the room server (default `127.0.0.1:8765`; use `--host 0.0.0.0` for LAN play):
+Host a room (default `127.0.0.1:8765`; `--host 0.0.0.0` for LAN):
 
 ```powershell
 python -m veilbound.server
-python -m veilbound.server --host 0.0.0.0 --port 8765
 ```
 
-Then start two clients:
+Join from another machine:
 
 ```powershell
-python -m veilbound.client
 python -m veilbound.client --host 192.168.1.10 --port 8765
 ```
 
-Choose **Host Online Room** on one client and share the six-character room code it shows. Choose **Join Online Room** on the other client and enter the code (Tab switches between the host, port, and code fields). The match starts when both players are connected. Gameplay, animations, and sounds are identical to local play; each player sees only their own hand, the room code stays in the footer, and the status line shows when it is the opponent's turn. If a player disconnects, the room pauses until they reconnect with the same credentials, and missed reveals are replayed automatically.
-
-Press **F11** or **Alt+Enter** to toggle fullscreen. Press the same shortcut again to return to the previous window size.
-
-### Pause menu
-
-Press **Esc** during any match (local or online) to open the pause overlay. It shows:
-
-- **Options** — opens the audio settings screen where you can raise or lower **SFX volume** and **Music volume** in 10% steps. Changes take effect immediately.
-- **Quit Game** — exits the application entirely.
-
-Press **Esc** again on the pause screen, or **Back** on the audio screen, to return to the match. Game state, turn order, and sounds are preserved while paused.
-
-Each row fills from left to right; only its next empty slot accepts a card. Placing a card reveals the previous card in that row, leaving the newest card face down. Once every slot is filled, the remaining face-down cards are revealed one at a time from Row 1 through Row 4 before scoring begins. Row totals count revealed cards only. A row winner gains points equal to that row's capacity. A tied row has no winner and awards no points. A Continue button can advance the round-result screen early; otherwise it advances after the configured presentation time. Match points carry forward across two rounds.
-
-The character roster contains 50 unique IDs. At the start of a match, each player independently receives a random 40-character pool, with no duplicates within that player's pool. Pools may overlap between players. Each pool, hand, and used-card list persists through both rounds: cards in hand stay available, cards not drawn remain in the draw pile, and played cards are permanently used for that match. An empty draw pile never recycles used cards.
-
-Character effects are descriptive text only. Scoring uses each character's `base_points`; effect text never changes game rules or scores. During reveals, a large card panel shows the character name, base points, effect name, and effect description together. Hovering over a character also shows its effect details.
-
-## Tests
+Run the tests:
 
 ```powershell
 python -m pytest -q
 ```
-
-Coverage includes roster and 40-card pool validation, random-deal population, cross-round pool persistence and no card reuse, four rows and randomized capacities, sequential slot placement, turn alternation and hidden cards, reveal order, base-point totals, ties, point awards, round resets, animation settings, image-loading fallbacks, menu routing and room-code validation, protocol framing, two-peer room flow with reveal acknowledgments, and masked remote state with input gating.
-
-## Structure
-
-```text
-assets/
-  art/characters/    Character PNG/JPG artwork
-  art/card_backs/    Optional shared card-back art
-  art/ui/            Board slot frames
-  backgrounds/       Configurable battlefield backgrounds
-  sounds/            Reveal and next-row sound effects
-  fonts/             Optional bundled fonts
-config/settings.json Central animation, audio, and background settings
-veilbound/
-  assets/data/       anime_bedriegers_bedrogen.json character definitions
-  client/            Pygame app, assets, renderer, layout, input
-  shared/            Models, config, engine, definitions, scoring
-tests/               pytest gameplay and image-loading tests
-```
-
-## Add a character
-
-1. Add a PNG or JPG portrait under `assets/art/characters/`.
-2. Add a character object to `veilbound/assets/data/anime_bedriegers_bedrogen.json` with a unique `id`, `name`, integer `base_points`, `effect_name`, `effect_text`, and project-relative `image` path.
-3. The asset loader caches images and scales them to fit without changing their aspect ratio. Missing or unreadable images use the generated placeholder portrait.
-
-The game reads each character's `id`, `name`, `base_points`, `effect_name`, `effect_text`, and `image` from the character file. Effect descriptions are display-only; scoring uses base points only. Image paths point into `assets/art/characters/`. If an image is missing, a generated placeholder portrait is used.
-
-## Settings
-
-Edit `config/settings.json` and restart the game to change the selected animation preset or background. The default `Slow` preset uses reveal and scoring timings at least ten times longer than the previous animation timings. `Normal` and `Fast` provide shorter alternatives. Individual millisecond values can also be edited in the JSON.
-
-The settings file configures looping background music, the seven reveal sounds in `assets/sounds/Abillity_Sfx/`, the Next Row sound in `assets/sounds/New_row/`, and the card placement sound in `assets/sounds/card_place/`. Reveal sounds are chosen with equal probability, and each placement or reveal event plays at most once. Music can be disabled or its volume changed under `audio.background_music`. Missing or unsupported audio files are skipped safely.
-
-The included background is registered as `anime_samurai_worlds`. Add another key and project-relative image path under `background.presets`, then set `background.selected` to that key. Backgrounds retain their aspect ratio; invalid paths fall back to the game's dark background.
