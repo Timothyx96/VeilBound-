@@ -53,11 +53,11 @@ class CardDefinition:
 class CardInstance(StateRecord):
     """One dealt/played card.
 
-    ``base_points`` lives on the frozen definition and never changes;
-    ``current_points`` is this instance's runtime value, initialized from the
-    definition when the match deals the card and only ever modified by
-    ability effects. ``activated_abilities`` records which abilities this
-    specific instance has already used during the match.
+    ``base_points`` is an instance snapshot of the roster's frozen base value
+    and may be changed by match-scoped abilities. ``current_points`` is this
+    instance's runtime total after ability effects. ``activated_abilities``
+    tracks current/used activation guards; ``resolved_abilities`` records
+    effects that successfully completed during the match.
     """
 
     def __init__(
@@ -68,9 +68,12 @@ class CardInstance(StateRecord):
         revealed: bool = False,
         current_points: int | None = None,
         activated_abilities: list[str] | None = None,
+        resolved_abilities: list[str] | None = None,
         eliminated: bool = False,
         base_points: int | None = None,
         applied_bonuses: dict[str, int] | None = None,
+        suppressed_bonuses: list[str] | None = None,
+        base_point_reductions: dict[str, int] | None = None,
     ):
         super().__init__(
             id=id,
@@ -79,12 +82,18 @@ class CardInstance(StateRecord):
             revealed=revealed,
             current_points=current_points,
             activated_abilities=list(activated_abilities or []),
+            resolved_abilities=list(resolved_abilities or []),
             eliminated=eliminated,
             base_points=base_points,
             # Dynamic bonuses granted by abilities (ability_id -> amount). Kept
             # separate from the immutable base so removing a bonus never
             # corrupts the character's original points.
             applied_bonuses=dict(applied_bonuses) if applied_bonuses is not None else {},
+            suppressed_bonuses=list(suppressed_bonuses or []),
+            # Match-scoped changes to this instance's base points, keyed by source.
+            base_point_reductions=(
+                dict(base_point_reductions) if base_point_reductions is not None else {}
+            ),
         )
 
 

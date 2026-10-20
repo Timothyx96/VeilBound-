@@ -48,6 +48,7 @@ VEGETA = "dragonball_02"
 GOKU = "dragonball_01"
 ALLUKA = "hxh_03"
 KILLUA = "hxh_02"
+STAR_AND_STRIPES = "mha_10"
 SPECIAL = {SASUKE, ITACHI, SANJI, ZORO, VEGETA, GOKU, ALLUKA, KILLUA}
 ABILITY_ID = "sasuke_shared_row_bonus"
 
@@ -207,6 +208,7 @@ def test_sasuke_revealed_first_gains_bonus_when_itachi_later_revealed_same_row()
     assert [event.kind for event in reveals[0].events] == [
         "card_revealed",
         "ability_activated",
+        "ability_resolved",
     ]
     granted = ability_events(reveals[0])
     assert len(granted) == 1
@@ -222,6 +224,11 @@ def test_sasuke_revealed_first_gains_bonus_when_itachi_later_revealed_same_row()
     assert data["current_points"] == 10
     assert data["floating_text"] == "+3"
     assert data["animation"] == "points_gain"
+    resolved = [event for event in reveals[0].events if event.kind == "ability_resolved"]
+    assert len(resolved) == 1
+    assert resolved[0].data["ability_id"] == ABILITY_ID
+    assert resolved[0].data["owner_card_id"] == sasuke.id
+    assert resolved[0].data["target_card_id"] == sasuke.id
     assert sasuke.current_points == 10
     assert itachi.current_points == 6
     # Exactly one activation across every remaining reveal of the round.
@@ -249,6 +256,7 @@ def test_itachi_revealed_first_grants_bonus_when_sasuke_revealed_after():
     assert [event.kind for event in reveals[0].events] == [
         "card_revealed",
         "ability_activated",
+        "ability_resolved",
     ]
     granted = ability_events(reveals[0])
     assert len(granted) == 1
@@ -445,21 +453,15 @@ def test_two_sasuke_instances_keep_independent_points_and_activations():
     assert ability_events(reveals[2:]) == []
 
 
-def test_itachi_declares_no_ability_and_contributes_base_points():
+def test_itachi_declares_tsukuyomi_bonus_removal_target_ability():
     engine = make_engine()
-    assert engine.cards[ITACHI].ability is None
-
-    engine, sasuke, itachi, _ = build_sasuke_first()
-    finish_reveals(engine)
-    assert itachi.current_points == 6 == engine.cards[ITACHI].base_points
-    assert itachi.activated_abilities == []
-    # The only activation in the round belongs to Sasuke.
-    owners = [
-        event.data["owner_card_id"]
-        for event in engine.state.events
-        if event.kind == "ability_activated"
-    ]
-    assert owners == [sasuke.id]
+    ability = engine.cards[ITACHI].ability
+    assert ability is not None
+    assert ability.id == "itachi_tsukuyomi_remove_bonus"
+    assert ability.trigger == "on_reveal"
+    assert [effect.type for effect in ability.effects] == ["remove_target_bonus"]
+    assert ability.target_scope == "same_row"
+    assert ability.target_side == "opposing"
 
 
 def test_scoring_uses_sasuke_modified_current_points():
@@ -791,6 +793,599 @@ def test_naruto_hinata_repeated_recalc_never_stacks():
     for _ in range(5):
         engine.abilities.recalculate_continuous_bonuses(engine.state)
         assert holder_card.current_points == base + 3, holder_card.current_points
+
+
+def _sakura_bonus_board():
+    engine = make_engine(capacity=4)
+    p1, p2 = engine.state.players
+    sakura = instance(engine, "naruto_04", p1.id)
+    row = engine.state.rows[0]
+    row.slots[0] = sakura
+    sakura.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    return engine, sakura
+
+
+def test_sakura_or_row_bonus_is_friendly_revealed_dynamic_and_does_not_stack():
+    engine, sakura = _sakura_bonus_board()
+    p1, p2 = engine.state.players
+    base = engine.cards["naruto_04"].base_points
+    assert sakura.current_points == base
+    assert sakura.base_points is None  # instance keeps using the unchanged roster base
+    assert engine.cards["naruto_04"].base_points == base
+
+    naruto = instance(engine, "naruto_01", p1.id)
+    engine.state.rows[0].slots[1] = naruto
+    naruto.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert sakura.current_points == base + 2
+
+    sasuke = instance(engine, "naruto_02", p1.id)
+    engine.state.rows[0].slots[2] = sasuke
+    sasuke.revealed = True
+    for _ in range(5):
+        engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert sakura.current_points == base + 2  # both partners still grant one bonus
+
+    naruto.eliminated = True
+    naruto.current_points = 0
+    engine.abilities.recalculate_after_elimination(engine.state, naruto)
+    assert sakura.current_points == base + 2  # Sasuke still qualifies
+
+    sasuke.eliminated = True
+    sasuke.current_points = 0
+    engine.abilities.recalculate_after_elimination(engine.state, sasuke)
+    assert sakura.current_points == base
+
+    # Reactivating a qualifying ally restores the same keyed contribution.
+    sasuke.eliminated = False
+    sasuke.current_points = engine.cards["naruto_02"].base_points
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert sakura.current_points == base + 2
+    assert sakura.base_points is None
+
+    # Both multiplayer projections expose the same authoritative point total.
+    for player in engine.state.players:
+        view = engine.view_for(player.id)
+        card_view = next(
+            slot["card"] for row_view in view["rows"] for slot in row_view["slots"]
+            if slot is not None and slot["card"]["id"] == sakura.id
+        )
+        assert card_view["current_points"] == base + 2
+
+
+def test_sakura_or_row_bonus_rejects_opposing_other_row_and_eliminated_partners():
+    engine, sakura = _sakura_bonus_board()
+    p1, p2 = engine.state.players
+    base = engine.cards["naruto_04"].base_points
+
+    opposing_naruto = instance(engine, "naruto_01", p2.id)
+    engine.state.rows[0].slots[1] = opposing_naruto
+    opposing_naruto.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert sakura.current_points == base
+
+    other_row_sasuke = instance(engine, "naruto_02", p1.id)
+    engine.state.rows[1].slots[0] = other_row_sasuke
+    other_row_sasuke.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert sakura.current_points == base
+
+    opposing_naruto.owner_id = p1.id
+    opposing_naruto.eliminated = True
+    opposing_naruto.current_points = 0
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert sakura.current_points == base
+
+
+def _rock_lee_board():
+    engine = make_engine(capacity=4)
+    p1 = engine.state.players[0]
+    rock = instance(engine, "naruto_09", p1.id)
+    engine.state.rows[0].slots[0] = rock
+    rock.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    return engine, rock
+
+
+def test_rock_lee_lone_warrior_tracks_active_friendly_cards_without_stacking():
+    engine, rock = _rock_lee_board()
+    p1, p2 = engine.state.players
+    base = engine.cards["naruto_09"].base_points
+    assert rock.current_points == base + 4
+    assert rock.base_points is None
+    # Keep a separate, valid ability contribution to verify Rock Lee's
+    # continuous bonus can be removed without erasing unrelated points.
+    rock.applied_bonuses = {
+        "rock_lee_lone_warrior": 4,
+        "naruto_rasenshuriken_eliminate:other-card": 3,
+    }
+    rock.current_points = base + 7
+
+    # Opposing cards in his row and friendly cards in another row do not count.
+    opponent = instance(engine, "naruto_05", p2.id)
+    other_row_friend = instance(engine, "naruto_08", p1.id)
+    engine.state.rows[0].slots[1] = opponent
+    engine.state.rows[1].slots[0] = other_row_friend
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert rock.current_points == base + 7
+
+    # A placed friendly card counts even while still face down; a second one
+    # also keeps the lone-warrior condition false.
+    first_friend = instance(engine, "naruto_08", p1.id)
+    second_friend = instance(engine, "naruto_06", p1.id)
+    engine.state.rows[0].slots[2] = first_friend
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert rock.current_points == base + 3
+    engine.state.rows[0].slots[3] = second_friend
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert rock.current_points == base + 3
+
+    # Removing one friend does not restore the bonus while another remains.
+    first_friend.eliminated = True
+    first_friend.current_points = 0
+    engine.abilities.recalculate_after_elimination(engine.state, first_friend)
+    assert rock.current_points == base + 3
+
+    # Eliminating the last active friendly card restores +4 immediately.
+    second_friend.eliminated = True
+    second_friend.current_points = 0
+    engine.abilities.recalculate_after_elimination(engine.state, second_friend)
+    for _ in range(4):
+        engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert rock.current_points == base + 7
+    assert engine.cards["naruto_09"].base_points == base
+
+    for player in engine.state.players:
+        view = engine.view_for(player.id)
+        rock_view = next(
+            slot["card"] for row_view in view["rows"] for slot in row_view["slots"]
+            if slot is not None and slot["card"]["id"] == rock.id
+        )
+        assert rock_view["current_points"] == base + 7
+
+
+def _hinata_bonus_board():
+    engine = make_engine(capacity=5)
+    p1 = engine.state.players[0]
+    hinata = instance(engine, "naruto_10", p1.id)
+    engine.state.rows[0].slots[0] = hinata
+    hinata.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    return engine, hinata
+
+
+def test_hinata_regular_synergy_scales_and_recalculates_with_active_friendly_cards():
+    engine, hinata = _hinata_bonus_board()
+    p1, p2 = engine.state.players
+    base = engine.cards["naruto_10"].base_points
+    ability_id = "hinata_byakugan_regular_synergy"
+    assert hinata.current_points == base
+    assert ability_id not in hinata.applied_bonuses
+
+    # Preserve an independent bonus while Hinata's calculated amount changes.
+    unrelated_key = "naruto_rasenshuriken_eliminate:other-card"
+    hinata.applied_bonuses = {unrelated_key: 3}
+    hinata.current_points = base + 3
+
+    one_regular = instance(engine, "naruto_08", p1.id)
+    engine.state.rows[0].slots[1] = one_regular
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert hinata.current_points == base + 3  # unrevealed ally does not contribute
+    assert ability_id not in hinata.applied_bonuses
+
+    one_regular.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert hinata.current_points == base + 4
+    assert hinata.applied_bonuses[ability_id] == 1
+
+    second_regular = instance(engine, "naruto_09", p1.id)
+    engine.state.rows[0].slots[2] = second_regular
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert hinata.current_points == base + 4
+    second_regular.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert hinata.current_points == base + 5
+    assert hinata.applied_bonuses[ability_id] == 2
+
+    third_regular = instance(engine, "naruto_08", p1.id)
+    engine.state.rows[0].slots[3] = third_regular
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert hinata.current_points == base + 5
+    third_regular.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert hinata.current_points == base + 6
+    assert hinata.applied_bonuses[ability_id] == 3
+
+    # Opposing Regular and friendly Regular in another row are not counted.
+    opponent_regular = instance(engine, "naruto_10", p2.id)
+    opponent_regular.revealed = True
+    other_row_regular = instance(engine, "naruto_08", p1.id)
+    other_row_regular.revealed = True
+    engine.state.rows[0].slots[4] = opponent_regular
+    engine.state.rows[1].slots[0] = other_row_regular
+    for _ in range(4):
+        engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert hinata.current_points == base + 6
+    assert hinata.applied_bonuses[ability_id] == 3
+    assert hinata.applied_bonuses[unrelated_key] == 3
+
+    # Hinata herself is Regular but never counts as a supporting card.
+    assert sum(
+        1 for card in engine.state.rows[0].slots
+        if card is not None and card.owner_id == p1.id and not card.eliminated
+        and engine.cards[card.definition_id].type == "Regular"
+    ) == 4  # Hinata plus the three allies
+    assert hinata.applied_bonuses[ability_id] == 3
+
+    # The amount drops by one per eliminated ally, then reaches zero.
+    one_regular.eliminated = True
+    one_regular.current_points = 0
+    engine.abilities.recalculate_after_elimination(engine.state, one_regular)
+    assert hinata.current_points == base + 5
+    assert hinata.applied_bonuses[ability_id] == 2
+
+    second_regular.eliminated = True
+    second_regular.current_points = 0
+    engine.abilities.recalculate_after_elimination(engine.state, second_regular)
+    assert hinata.current_points == base + 4
+    assert hinata.applied_bonuses[ability_id] == 1
+
+    third_regular.eliminated = True
+    third_regular.current_points = 0
+    engine.abilities.recalculate_after_elimination(engine.state, third_regular)
+    assert hinata.current_points == base + 3
+    assert ability_id not in hinata.applied_bonuses
+    assert engine.cards["naruto_10"].base_points == base
+
+    for player in engine.state.players:
+        view = engine.view_for(player.id)
+        hinata_view = next(
+            slot["card"] for row_view in view["rows"] for slot in row_view["slots"]
+            if slot is not None and slot["card"]["id"] == hinata.id
+        )
+        assert hinata_view["current_points"] == base + 3
+
+
+def test_usopp_bonus_requires_a_revealed_opposing_goat_and_recalculates():
+    engine = make_engine(capacity=5)
+    p1, p2 = engine.state.players
+    usopp = instance(engine, "onepiece_08", p1.id)
+    friendly_goat = instance(engine, NARUTO, p1.id)
+    hidden_opposing_goat = instance(engine, "onepiece_01", p2.id)
+    other_opposing_goat = instance(engine, NARUTO, p2.id)
+    row = engine.state.rows[0]
+    usopp.revealed = True
+    friendly_goat.revealed = True
+    row.slots[:4] = [usopp, friendly_goat, hidden_opposing_goat, other_opposing_goat]
+    base = engine.cards[usopp.definition_id].base_points
+    ability_id = "usopp_god_opposing_goat_bonus"
+
+    # Friendly GOATs and hidden opposing GOATs are ineligible.
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert usopp.current_points == base
+    assert ability_id not in usopp.applied_bonuses
+
+    engine._reveal_card(row, 2, hidden_opposing_goat)
+    assert usopp.current_points == base + 3
+    assert usopp.applied_bonuses[ability_id] == 3
+
+    # Another revealed opposing GOAT keeps the same single +3 contribution.
+    other_opposing_goat.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert usopp.current_points == base + 3
+
+    # An independent, still-valid contribution remains when one or both GOATs leave.
+    unrelated_key = "sakura_naruto_or_sasuke_row_bonus"
+    usopp.applied_bonuses[unrelated_key] = 2
+    usopp.current_points += 2
+    engine.elimination.eliminate_target(engine.state, hidden_opposing_goat, usopp)
+    engine.abilities.recalculate_after_elimination(engine.state, hidden_opposing_goat)
+    assert usopp.current_points == base + 5
+    assert usopp.applied_bonuses[ability_id] == 3
+    assert usopp.applied_bonuses[unrelated_key] == 2
+
+    engine.elimination.eliminate_target(engine.state, other_opposing_goat, usopp)
+    engine.abilities.recalculate_after_elimination(engine.state, other_opposing_goat)
+    assert usopp.current_points == base + 2
+    assert ability_id not in usopp.applied_bonuses
+    assert usopp.applied_bonuses[unrelated_key] == 2
+    assert engine.cards[usopp.definition_id].base_points == base
+    row_scores = calculate_row_scores(
+        row, (p1.id, p2.id), engine.cards,
+    )
+    assert row_scores[p1.id] == usopp.current_points + friendly_goat.current_points
+    assert row_scores[p2.id] == 0
+
+    for player in engine.state.players:
+        usopp_view = engine.view_for(player.id)["rows"][0]["slots"][0]["card"]
+        assert usopp_view["base_points"] == base
+        assert usopp_view["current_points"] == base + 2
+        assert usopp_view["applied_bonuses"][unrelated_key] == 2
+
+
+def test_star_and_stripes_bonus_tracks_latest_placement_and_updates_score():
+    engine = make_engine(capacity=3)
+    p1, p2 = engine.state.players
+    give(p1, engine, STAR_AND_STRIPES, "naruto_05")
+    give(p2, engine, "naruto_06")
+    star, friendly = p1.hand
+    base = engine.cards[STAR_AND_STRIPES].base_points
+
+    # The bonus applies while the row is still mostly empty, so it is not a
+    # final-slot check.
+    place(engine, star, 0, 0)
+    row = engine.state.rows[0]
+    assert not row.is_full
+    assert star.current_points == base + 3
+    engine._reveal_card(row, 0, star)
+    scores = calculate_row_scores(row, (p1.id, p2.id), engine.cards)
+    assert scores[p1.id] == base + 3
+
+    # A later opposing placement counts too, and removes the bonus as soon as
+    # the new card becomes the row's latest placement.
+    opposing = p2.hand[0]
+    place(engine, opposing, 0, 1)
+    assert star.revealed
+    assert star.current_points == base
+    scores = calculate_row_scores(row, (p1.id, p2.id), engine.cards)
+    assert scores[p1.id] == base
+
+
+def test_star_and_stripes_bonus_removed_by_later_friendly_placement():
+    engine = make_engine(capacity=3)
+    p1, p2 = engine.state.players
+    give(p1, engine, STAR_AND_STRIPES, "naruto_05")
+    give(p2, engine, "naruto_06")
+    star, friendly = p1.hand
+    base = engine.cards[STAR_AND_STRIPES].base_points
+
+    place(engine, star, 0, 0)
+    assert star.current_points == base + 3
+    place(engine, p2.hand[0], 1, 0)
+    place(engine, friendly, 0, 1)
+    assert star.revealed
+    assert star.current_points == base
+    scores = calculate_row_scores(engine.state.rows[0], (p1.id, p2.id), engine.cards)
+    assert scores[p1.id] == base
+
+
+def test_star_and_stripes_bonus_recalculation_is_idempotent_and_can_return():
+    engine = make_engine(capacity=3)
+    p1, p2 = engine.state.players
+    give(p1, engine, STAR_AND_STRIPES, "naruto_05")
+    give(p2, engine, "naruto_06")
+    star, later_friendly = p1.hand
+    base = engine.cards[STAR_AND_STRIPES].base_points
+
+    place(engine, star, 0, 0)
+    for _ in range(5):
+        engine.abilities.recalculate_continuous_bonuses(engine.state)
+        assert star.current_points == base + 3
+    place(engine, p2.hand[0], 1, 0)
+    place(engine, later_friendly, 0, 1)
+    assert star.current_points == base
+
+    # Under the current left-to-right placement rules, a later valid action
+    # cannot make an earlier card latest again. Recalculation remains stable.
+    for _ in range(5):
+        engine.abilities.recalculate_continuous_bonuses(engine.state)
+        assert star.current_points == base
+
+
+def gon_activation_fixture():
+    engine = make_engine(capacity=3)
+    p1, p2 = engine.state.players
+    gon = instance(engine, "hxh_01", p1.id)
+    friendly_fighter = instance(engine, "naruto_05", p1.id)
+    friendly_fighter_other_row = instance(engine, "hxh_04", p1.id)
+    opposing_fighter = instance(engine, "naruto_06", p2.id)
+    friendly_non_fighter = instance(engine, "naruto_07", p1.id)
+    eliminated_fighter = instance(engine, "naruto_05", p1.id)
+
+    # Preserve a pre-existing point contribution on one recipient.
+    friendly_fighter.applied_bonuses = {"legacy_bonus": 2}
+    friendly_fighter.current_points = engine.cards["naruto_05"].base_points + 2
+    friendly_fighter_other_row.revealed = True
+    opposing_fighter.revealed = True
+    eliminated_fighter.eliminated = True
+    eliminated_fighter.current_points = 0
+    engine.state.rows[0].slots[0] = gon
+    engine.state.rows[0].slots[1] = friendly_fighter
+    engine.state.rows[1].slots[0] = friendly_fighter_other_row
+    engine.state.rows[1].slots[1] = opposing_fighter
+    engine.state.rows[2].slots[0] = friendly_non_fighter
+    engine.state.rows[2].slots[1] = eliminated_fighter
+
+    engine._reveal_card(engine.state.rows[0], 0, gon)
+    return engine, gon, friendly_fighter, friendly_fighter_other_row, opposing_fighter, friendly_non_fighter, eliminated_fighter
+
+
+def test_gon_bonuses_all_friendly_board_fighters_and_sets_him_to_one():
+    (
+        engine, gon, friendly_fighter, friendly_fighter_other_row,
+        opposing_fighter, friendly_non_fighter, eliminated_fighter,
+    ) = gon_activation_fixture()
+    base = engine.cards["hxh_01"].base_points
+    fighter_base = engine.cards["naruto_05"].base_points
+    other_fighter_base = engine.cards["hxh_04"].base_points
+
+    assert gon.current_points == 1
+    assert gon.base_points == 1
+    assert engine.cards["hxh_01"].base_points == base
+    assert friendly_fighter.current_points == fighter_base + 6
+    assert friendly_fighter.applied_bonuses["legacy_bonus"] == 2
+    assert friendly_fighter.current_points == engine.cards["naruto_05"].base_points + sum(friendly_fighter.applied_bonuses.values())
+    assert friendly_fighter_other_row.current_points == other_fighter_base + 4
+    assert opposing_fighter.current_points == engine.cards["naruto_06"].base_points
+    assert friendly_non_fighter.current_points == engine.cards["naruto_07"].base_points
+    assert eliminated_fighter.current_points == 0
+    assert not any(key.startswith("gon_jajanken_rock_ultimate_transformation:") for key in opposing_fighter.applied_bonuses)
+    assert not any(key.startswith("gon_jajanken_rock_ultimate_transformation:") for key in friendly_non_fighter.applied_bonuses)
+    assert not any(key.startswith("gon_jajanken_rock_ultimate_transformation:") for key in eliminated_fighter.applied_bonuses)
+
+    activation = next(
+        event for event in engine.state.events
+        if event.kind == "ability_activated"
+        and event.data.get("ability_id") == "gon_jajanken_rock_ultimate_transformation"
+    )
+    assert activation.data["current_points"] == 1
+    assert activation.data["floating_text"] == "JAJANKEN: ROCK"
+    assert activation.data["transformed_card_art"] == "assets/art/card front/Abillity_transform/Gon Adult.png"
+    assert activation.data["affected_card_ids"] == [
+        friendly_fighter.id, friendly_fighter_other_row.id,
+    ]
+    row_scores = calculate_row_scores(
+        engine.state.rows[1], tuple(player.id for player in engine.state.players), engine.cards,
+    )
+    assert row_scores[engine.state.players[0].id] == other_fighter_base + 4
+    assert row_scores[engine.state.players[1].id] == engine.cards["naruto_06"].base_points
+
+
+def test_gon_does_not_activate_when_no_friendly_fighters_are_on_board():
+    engine = make_engine(capacity=3)
+    player = engine.state.players[0]
+    gon = instance(engine, "hxh_01", player.id)
+    row = engine.state.rows[0]
+    row.slots[0] = gon
+
+    engine._reveal_card(row, 0, gon)
+
+    assert gon.current_points == engine.cards["hxh_01"].base_points
+    assert "gon_jajanken_rock_ultimate_transformation" not in gon.activated_abilities
+    assert not any(
+        event.kind in {"ability_activated", "ability_resolved"}
+        and event.data.get("ability_id") == "gon_jajanken_rock_ultimate_transformation"
+        for event in engine.state.events
+    )
+    failures = [
+        event for event in engine.state.events
+        if event.kind == "ability_failed"
+        and event.data.get("ability_id") == "gon_jajanken_rock_ultimate_transformation"
+    ]
+    assert len(failures) == 1
+    assert failures[0].message == "Gon Freecss's Jajanken: Rock failed"
+
+    # Duplicate reveal processing cannot announce the same failed attempt again.
+    engine.abilities.on_card_revealed(
+        engine.state, gon, row, 0, emit_failure=engine._handle_ability_failure,
+    )
+    assert sum(
+        event.kind == "ability_failed"
+        and event.data.get("ability_id") == "gon_jajanken_rock_ultimate_transformation"
+        for event in engine.state.events
+    ) == 1
+    assert any(
+        ability_id == "gon_jajanken_rock_ultimate_transformation" and owner_id == gon.id
+        for _, ability_id, owner_id in engine.abilities.pending_abilities
+    )
+
+    # A later Fighter reveal is not a new Gon trigger event.
+    fighter = instance(engine, "hxh_04", player.id)
+    row.slots[1] = fighter
+    engine._reveal_card(row, 1, fighter)
+    assert gon.current_points == engine.cards["hxh_01"].base_points
+    assert not any(
+        event.kind == "ability_activated"
+        and event.data.get("ability_id") == "gon_jajanken_rock_ultimate_transformation"
+        for event in engine.state.events
+    )
+    assert any(
+        ability_id == "gon_jajanken_rock_ultimate_transformation" and owner_id == gon.id
+        for _, ability_id, owner_id in engine.abilities.pending_abilities
+    )
+
+
+def test_gon_bonus_snapshot_does_not_grow_or_stack_after_activation():
+    (
+        engine, gon, friendly_fighter, friendly_fighter_other_row,
+        _opposing_fighter, _friendly_non_fighter, _eliminated_fighter,
+    ) = gon_activation_fixture()
+    bonus_key = f"gon_jajanken_rock_ultimate_transformation:{gon.id}"
+    before = (friendly_fighter.current_points, friendly_fighter_other_row.current_points)
+
+    # Duplicate reveal resolution and ordinary point recalculations cannot
+    # apply the same activation twice or restore Gon to base points.
+    engine.abilities.on_card_revealed(
+        engine.state, gon, engine.state.rows[0], 0,
+    )
+    for _ in range(4):
+        engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert (friendly_fighter.current_points, friendly_fighter_other_row.current_points) == before
+    assert gon.current_points == 1
+    assert friendly_fighter.applied_bonuses[bonus_key] == 4
+    engine.abilities.recalculate_after_elimination(
+        engine.state, engine.state.rows[2].slots[1],
+    )
+    assert friendly_fighter_other_row.applied_bonuses[bonus_key] == 4
+    assert friendly_fighter_other_row.current_points == before[1]
+    assert gon.current_points == 1
+
+    # A Fighter entering the board after the activation is outside its snapshot.
+    p1 = engine.state.players[0]
+    give(p1, engine, "naruto_06")
+    late_fighter = p1.hand[0]
+    place(engine, late_fighter, 3, 0)
+    assert late_fighter.current_points == engine.cards["naruto_06"].base_points
+    assert bonus_key not in late_fighter.applied_bonuses
+    assert gon.current_points == 1
+
+    # Multiplayer views are projections of the same authoritative point state.
+    view_one = engine.view_for(engine.state.players[0].id)
+    view_two = engine.view_for(engine.state.players[1].id)
+    for view in (view_one, view_two):
+        assert view["rows"][0]["slots"][0]["card"]["current_points"] == 1
+        assert view["rows"][1]["slots"][0]["card"]["current_points"] == before[1]
+
+
+def test_eliminating_gon_removes_his_bonus_but_preserves_other_contributions():
+    (
+        engine, gon, fighter, _fighter_other_row,
+        _opposing_fighter, _friendly_non_fighter, _eliminated_fighter,
+    ) = gon_activation_fixture()
+    gon_bonus_key = f"gon_jajanken_rock_ultimate_transformation:{gon.id}"
+    sakura_bonus_key = "sakura_naruto_or_sasuke_row_bonus"
+    fighter.revealed = True
+    naruto = instance(engine, NARUTO, gon.owner_id)
+    naruto.revealed = True
+    engine.state.rows[0].slots[2] = naruto
+    fighter.applied_bonuses[sakura_bonus_key] = 2
+    fighter.current_points += 2
+
+    engine.elimination.eliminate_target(engine.state, gon, gon)
+    changed = engine.abilities.recalculate_after_elimination(engine.state, gon)
+
+    assert fighter in changed
+    assert fighter.eliminated is False
+    assert gon.eliminated is True and gon.current_points == 0
+    assert gon_bonus_key not in fighter.applied_bonuses
+    assert fighter.applied_bonuses[sakura_bonus_key] == 2
+    assert fighter.current_points == engine.cards[fighter.definition_id].base_points + 2
+    row_scores = calculate_row_scores(
+        engine.state.rows[0], tuple(player.id for player in engine.state.players), engine.cards,
+    )
+    assert row_scores[gon.owner_id] == fighter.current_points + naruto.current_points
+
+    for player in engine.state.players:
+        view = engine.view_for(player.id)
+        fighter_view = view["rows"][0]["slots"][1]["card"]
+        assert fighter_view["current_points"] == fighter.current_points
+        assert fighter_view["applied_bonuses"] == fighter.applied_bonuses
+
+
+def test_eliminating_another_card_does_not_remove_gons_snapshot_bonus():
+    (
+        engine, gon, fighter, fighter_other_row,
+        _opposing_fighter, _friendly_non_fighter, eliminated_fighter,
+    ) = gon_activation_fixture()
+    gon_bonus_key = f"gon_jajanken_rock_ultimate_transformation:{gon.id}"
+
+    assert gon_bonus_key in fighter.applied_bonuses
+    engine.abilities.recalculate_after_elimination(engine.state, eliminated_fighter)
+
+    assert gon.eliminated is False
+    assert fighter.applied_bonuses[gon_bonus_key] == 4
+    assert fighter_other_row.applied_bonuses[gon_bonus_key] == 4
 
 
 def test_naruto_elimination_ability_definition():

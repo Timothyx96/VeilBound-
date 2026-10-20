@@ -341,7 +341,7 @@ class InputController:
         state = self.engine.state
         pending = state.get("pending_elimination") or {}
         if self.remote and str(pending.get("attacker_owner_id", "")) != str(self.engine.player_id):
-            self.renderer.notice = "The opponent chooses the elimination target."
+            self.renderer.notice = "The opponent chooses the ability target."
             self.renderer.notice_until = time.monotonic() + 3
             return
         layout = self.renderer.layout(state, screen.get_size())
@@ -357,7 +357,16 @@ class InputController:
             None,
         )
         if hit is None:
-            self.renderer.notice = "Click a highlighted card to eliminate it."
+            if pending.get("effect_type") == "revive_target":
+                self.renderer.notice = "Click a highlighted eliminated card to revive it."
+            elif pending.get("effect_type") == "steal_target_bonus":
+                self.renderer.notice = "Click a highlighted card to steal its bonus points."
+            elif pending.get("effect_type") == "remove_target_bonus":
+                self.renderer.notice = "Click a highlighted card to remove its bonus points."
+            elif pending.get("effect_type") == "eliminate_target":
+                self.renderer.notice = "Click a highlighted card to eliminate it."
+            else:
+                self.renderer.notice = "Click a highlighted card to resolve the ability."
             self.renderer.notice_until = time.monotonic() + 2.5
             return
         row_id, slot_index = hit

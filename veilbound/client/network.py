@@ -219,10 +219,10 @@ class RemoteGameEngine:
         return ActionResult(True)
 
     def select_elimination_target(self, row_id: str, slot_index: int) -> ActionResult:
-        """Ask the authority to eliminate the chosen target (deduplicated)."""
+        """Ask the authority to resolve the selected ability target once."""
         pending = (self.state.get("pending_elimination") or {}) if self.state else {}
         if self.remote_locked or str(pending.get("attacker_owner_id", "")) != str(self.player_id):
-            return ActionResult(False, "Wait for the elimination selection.")
+            return ActionResult(False, "Wait for the ability target selection.")
         request = ("select_elimination", row_id, str(slot_index))
         if request not in self._sent_requests:
             self._sent_requests.add(request)
@@ -286,6 +286,7 @@ def _state_from_view(view: dict) -> GameState:
             if card_view is None:
                 slots.append(CardInstance(
                     f"hidden-{row_view['id']}-{slot_index}", "", str(slot_view["owner_id"]),
+                    eliminated=bool(slot_view.get("eliminated", False)),
                 ))
             else:
                 slots.append(CardInstance(
@@ -295,7 +296,10 @@ def _state_from_view(view: dict) -> GameState:
                     current_points=card_view.get("current_points"),
                     base_points=card_view.get("base_points"),
                     activated_abilities=list(card_view.get("activated_abilities") or []),
+                    resolved_abilities=list(card_view.get("resolved_abilities") or []),
                     applied_bonuses=dict(card_view.get("applied_bonuses") or {}),
+                    suppressed_bonuses=list(card_view.get("suppressed_bonuses") or []),
+                    base_point_reductions=dict(card_view.get("base_point_reductions") or {}),
                     eliminated=bool(card_view.get("eliminated", False)),
                 ))
         row = BattleRow(

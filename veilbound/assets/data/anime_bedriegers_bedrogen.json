@@ -106,9 +106,33 @@
       "base_points": 6,
       "type": "Dynamic Duo",
       "effect_name": "Tsukuyomi",
-      "effect_text": "Cancels all bonus points gained by one opposing card in the same row.",
+      "effect_text": "Select one opposing card in the same row that currently has bonus points. Remove all bonus points from that card, returning its points to its base points.",
       "image": "assets/art/characters/Naruto/Itachi Uchiha.jfif",
-      "full_card_art": "assets/art/card front/Naruto/Itachi_Uchiha.png"
+      "full_card_art": "assets/art/card front/Naruto/Itachi_Uchiha.png",
+      "abilities": [
+        {
+          "id": "itachi_tsukuyomi_remove_bonus",
+          "name": "Tsukuyomi",
+          "description": "Select one opposing card in the same row that currently has bonus points. Remove all bonus points from that card, returning its points to its base points.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "remove_target_bonus"
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "opposing",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "TSUKUYOMI",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "naruto_04",
@@ -117,6 +141,34 @@
       "type": "Fighter",
       "effect_name": "Cherry Blossom Impact",
       "effect_text": "Gains +2 points if Naruto or Sasuke is in the same row.",
+      "abilities": [
+        {
+          "id": "sakura_naruto_or_sasuke_row_bonus",
+          "name": "Cherry Blossom Impact",
+          "description": "Gains +2 points if Naruto or Sasuke is in the same row.",
+          "trigger": "on_reveal",
+          "conditions": [
+            {
+              "type": "same_row_any",
+              "characters": [
+                "naruto_01",
+                "naruto_02"
+              ]
+            }
+          ],
+          "effects": [
+            {
+              "type": "add_current_points",
+              "amount": 2
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+2",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/Naruto/Sakura Haruno.png",
       "full_card_art": "assets/art/card front/Naruto/Sakura_Haruno.png"
     },
@@ -136,7 +188,7 @@
       "base_points": 8,
       "type": "Fighter",
       "effect_name": "Flying Raijin",
-      "effect_text": "Gains +2 points for each other opposing card in his row, up to a maximum bonus of +6.",
+      "effect_text": "“Gains +2 points for each opposing card in the same row, up to a maximum bonus of +6.”",
       "image": "assets/art/characters/Naruto/Madara Uchiha.png",
       "full_card_art": "assets/art/card front/Naruto/Minato.png"
     },
@@ -167,6 +219,30 @@
       "type": "Regular",
       "effect_name": "Eight Gates: First Gate",
       "effect_text": "Gains +4 points if there are no other friendly cards in his row.",
+      "abilities": [
+        {
+          "id": "rock_lee_lone_warrior",
+          "name": "Eight Gates: First Gate",
+          "description": "Gains +4 points if there are no other friendly cards in his row.",
+          "trigger": "on_reveal",
+          "conditions": [
+            {
+              "type": "no_other_friendly_in_row"
+            }
+          ],
+          "effects": [
+            {
+              "type": "add_current_points",
+              "amount": 4
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+4",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/Naruto/Rock_Lee.jpg",
       "full_card_art": "assets/art/card front/Naruto/Rock_Lee.png"
     },
@@ -176,7 +252,29 @@
       "base_points": 4,
       "type": "Regular",
       "effect_name": "Byakugan",
-      "effect_text": "Gains +1 point for each other friendly Regular card in the same row.",
+      "effect_text": "Gains +1 point for each every friendly Regular card in the same row.",
+      "abilities": [
+        {
+          "id": "hinata_byakugan_regular_synergy",
+          "name": "Byakugan",
+          "description": "Gains +1 point for every other friendly Regular card in the same row.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "add_current_points_per_friendly_type",
+              "amount": 1,
+              "target_type": "Regular",
+              "require_revealed": true
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+1 per friendly Regular",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/Naruto/Hinata Hyuga.jpg",
       "full_card_art": "assets/art/card front/Naruto/Hinata_Hyuga.png"
     },
@@ -278,7 +376,31 @@
       "effect_name": "Last-Minute Hero",
       "effect_text": "If Star and Stripes is the last card placed in the row, she gains +3 points.",
       "image": "assets/art/characters/My Hero Academia/Denki_Kaminari.jpg",
-      "full_card_art": "assets/art/card front/MHA/Star_And_Stripes.png"
+      "full_card_art": "assets/art/card front/MHA/Star_And_Stripes.png",
+      "abilities": [
+        {
+          "id": "star_and_stripes_new_order",
+          "name": "New Order",
+          "description": "If Star and Stripes is the last card placed in her row, she gains +3 points.",
+          "trigger": "on_reveal",
+          "conditions": [
+            {
+              "type": "last_placed_in_row"
+            }
+          ],
+          "effects": [
+            {
+              "type": "add_current_points",
+              "amount": 3
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+3",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "hxh_01",
@@ -288,7 +410,38 @@
       "effect_name": "Jajanken: Rock",
       "effect_text": "All friendly Fighter cards on the board gain +4 points. After activating this ability, Gon's points are reduced to 1. Only characters on the board at the time of activation receive the bonus.",
       "image": "assets/art/characters/Hunter x Hunter/Gon_Freecss.jpg",
-      "full_card_art": "assets/art/card front/HxH/Gon Freecss_ Gouden GOAT-kaart.png"
+      "full_card_art": "assets/art/card front/HxH/Gon Freecss_ Gouden GOAT-kaart.png",
+      "abilities": [
+        {
+          "id": "gon_jajanken_rock_ultimate_transformation",
+          "name": "Jajanken: Rock",
+          "description": "All friendly Fighter cards on the board gain +4 points. After activating this ability, Gon's points are reduced to 1. Only characters on the board at the time of activation receive the bonus.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "add_current_points_to_friendly_type",
+              "amount": 4,
+              "target_type": "Fighter"
+            },
+            {
+              "type": "set_base_points",
+              "amount": 1
+            },
+            {
+              "type": "set_current_points",
+              "amount": 1
+            }
+          ],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "JAJANKEN: ROCK",
+            "animation": "points_gain",
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Gon.mp3",
+            "transformed_card_art": "assets/art/card front/Abillity_transform/Gon Adult.png"
+          }
+        }
+      ]
     },
     {
       "id": "hxh_02",
@@ -315,7 +468,8 @@
         "activation_limit": "once_per_card_per_match",
         "presentation": {
           "floating_text": "GODSPEED",
-          "animation": "elimination"
+          "animation": "elimination",
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Killua.mp3"
         }
       },
       "image": "assets/art/characters/Hunter x Hunter/Killua_Zoldyck.jpg",
@@ -525,9 +679,34 @@
       "base_points": 4,
       "type": "Regular",
       "effect_name": "Clutch",
-      "effect_text": "Reduces the points of one opposing card in her row by 2.",
+      "effect_text": "Choose any opponent character to reduce their base points by 2.",
       "image": "assets/art/characters/One Piece/Nico_Robin",
-      "full_card_art": "assets/art/card front/One_Piece/Nico_Robin.png"
+      "full_card_art": "assets/art/card front/One_Piece/Nico_Robin.png",
+      "abilities": [
+        {
+          "id": "onepiece_nico_robin_clutch_reduce_base_points",
+          "name": "Clutch",
+          "description": "Choose any opponent character to reduce their base points by 2.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "reduce_target_base_points",
+              "amount": 2
+            }
+          ],
+          "targeting": {
+            "target_scope": "any_row",
+            "target_side": "opposing",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "Clutch",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "onepiece_06",
@@ -556,6 +735,32 @@
       "type": "Trickster",
       "effect_name": "God Usopp",
       "effect_text": "Gains +3 points if there is an opposing GOAT card in his row.",
+      "abilities": [
+        {
+          "id": "usopp_god_opposing_goat_bonus",
+          "name": "God Usopp",
+          "description": "Gains +3 points if there is an opposing GOAT card in his row.",
+          "trigger": "on_reveal",
+          "conditions": [
+            {
+              "type": "same_row_type",
+              "target_type": "GOAT",
+              "target_side": "opposing"
+            }
+          ],
+          "effects": [
+            {
+              "type": "add_current_points",
+              "amount": 3
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+3",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/One Piece/Usopp.jpg",
       "full_card_art": "assets/art/card front/One_Piece/Usopp.png"
     },
@@ -566,6 +771,31 @@
       "type": "Regular",
       "effect_name": "Cat Burglar",
       "effect_text": "Steals up to 2 bonus points from one opposing character in the same row. Nami cannot steal a character's base points.",
+      "abilities": [
+        {
+          "id": "nami_cat_burglar_steal_bonus",
+          "name": "Cat Burglar",
+          "description": "Steals up to 2 bonus points from one opposing character in the same row. Nami cannot steal a character's base points.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "steal_target_bonus",
+              "amount": 2
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "opposing",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "CAT BURGLAR",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/One Piece/Nami.jpg",
       "full_card_art": "assets/art/card front/One_Piece/Nami.png"
     },
@@ -575,7 +805,31 @@
       "base_points": 4,
       "type": "Regular",
       "effect_name": "Doctor Chopper Arrives",
-      "effect_text": "Revives one eliminated friendly character in the same row, restoring its original points and ability.",
+      "effect_text": "Revives one eliminated friendly character in the same row, restoring its original points and ability if it has not been used.",
+      "abilities": [
+        {
+          "id": "chopper_doctor_revive_friendly",
+          "name": "Doctor Chopper Arrives",
+          "description": "Revives one eliminated friendly character in the same row, restoring its original points and ability if it has not been used.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "revive_target"
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "friendly",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "REVIVE",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/One Piece/Tony_tony_Chopper.png",
       "full_card_art": "assets/art/card front/One_Piece/Tony_tony_Chopper.png"
     },
@@ -717,7 +971,32 @@
       "effect_name": "Erase from Existence",
       "effect_text": "If Zeno is the first character placed in an empty row, eliminate the next character in that row if it belongs to the opposing player.",
       "image": "assets/art/characters/Dragon Ball/Android_18.jpg",
-      "full_card_art": "assets/art/card front/Dragon_Ball/Zeno.png"
+      "full_card_art": "assets/art/card front/Dragon_Ball/Zeno.png",
+      "abilities": [
+        {
+          "id": "zeno_erase_from_existence_trap",
+          "name": "Erase from Existence",
+          "description": "If Zeno is first in an empty row, eliminate the next opposing card placed there.",
+          "trigger": "on_next_opposing_placement",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "eliminate_target"
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "opposing",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "ERASED",
+            "animation": "elimination",
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Zeno.wav"
+          }
+        }
+      ]
     },
     {
       "id": "dragonball_10",

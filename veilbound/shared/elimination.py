@@ -18,15 +18,17 @@ class EliminationTargeting:
     allowed_types: tuple[str, ...] = field(default_factory=tuple)
     max_base_points: int | None = None
     min_base_points: int | None = None
+    require_bonus_points: bool = False
+    require_eliminated: bool = False
 
     def __post_init__(self) -> None:
         if self.target_scope not in {"same_row", "any_row"}:
             raise ValueError(
                 f"target_scope must be 'same_row' or 'any_row', got {self.target_scope!r}"
             )
-        if self.target_side != "opposing":
+        if self.target_side not in {"opposing", "friendly", "any"}:
             raise ValueError(
-                f"target_side must be 'opposing', got {self.target_side!r}"
+                f"target_side must be 'opposing', 'friendly', or 'any', got {self.target_side!r}"
             )
 
 
@@ -55,15 +57,28 @@ class EliminationManager:
         return targets
 
     def _is_eligible_target(self, card, attacker_card, targeting, state) -> bool:
-        if not card.revealed:
+        eliminated = bool(getattr(card, "eliminated", False))
+        if targeting.require_eliminated:
+            if not eliminated:
+                return False
+        elif eliminated:
             return False
-        if getattr(card, "eliminated", False):
+        if not targeting.require_eliminated and not card.revealed:
             return False
-        if card.owner_id == attacker_card.owner_id:
+        if targeting.target_side == "opposing" and card.owner_id == attacker_card.owner_id:
+            return False
+        if targeting.target_side == "friendly" and card.owner_id != attacker_card.owner_id:
             return False
         definition = self.cards.get(card.definition_id)
-        base_points = getattr(definition, "base_points", None) if definition else None
+        base_points = getattr(card, "base_points", None)
         if base_points is None:
+            base_points = getattr(definition, "base_points", None) if definition else None
+        if base_points is None:
+            return False
+        # Gon can be revived after Nico Robin reduces his match-scoped base to
+        # zero; his revival reset restores the roster base before play resumes.
+        if (targeting.require_eliminated and base_points <= 0
+                and card.definition_id != "hxh_01"):
             return False
         if targeting.min_base_points is not None and base_points < targeting.min_base_points:
             return False
@@ -72,6 +87,11 @@ class EliminationManager:
         if targeting.allowed_types:
             card_type = getattr(definition, "type", None)
             if card_type not in targeting.allowed_types:
+                return False
+        if targeting.require_bonus_points:
+            current_points = getattr(card, "current_points", None)
+            if (isinstance(current_points, bool) or not isinstance(current_points, (int, float))
+                    or current_points <= base_points):
                 return False
         return True
 

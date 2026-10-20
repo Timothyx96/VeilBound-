@@ -55,6 +55,7 @@ class AudioManager:
         self.next_row_sound: pygame.mixer.Sound | None = None
         self.card_place_sound: pygame.mixer.Sound | None = None
         self.counter_sound: pygame.mixer.Sound | None = None
+        self.ability_sounds: dict[str, pygame.mixer.Sound | None] = {}
         self.sfx_volume = 0.8
         # Music state: the current track, the track to restore after the
         # options screen, and whether exit music has started (blocks repeated
@@ -265,6 +266,24 @@ class AudioManager:
                 self._play_once(("next_row", str(event.data.get("row_id", ""))), self.next_row_sound)
             elif event.kind == "row_scored":
                 self._play_once(("counter_sfx", str(event.data.get("row_id", ""))), self.counter_sound)
+            elif event.kind == "ability_resolved":
+                sound_path = event.data.get("sound")
+                if not isinstance(sound_path, str) or not sound_path.strip():
+                    continue
+                resolution_id = str(event.data.get("resolution_id", ""))
+                if not resolution_id:
+                    resolution_id = ":".join((
+                        str(event.data.get("ability_id", "")),
+                        str(event.data.get("owner_card_id", "")),
+                        str(event.data.get("row_id", "")),
+                        str(event.data.get("slot_index", "")),
+                    ))
+                if sound_path not in self.ability_sounds:
+                    self.ability_sounds[sound_path] = self._load_sound(sound_path)
+                self._play_once(
+                    ("ability_sfx", resolution_id),
+                    self.ability_sounds[sound_path],
+                )
 
     def _play_reveal_once(self, event_id: str) -> None:
         settings = self.settings.get("card_reveal", {})

@@ -159,7 +159,7 @@ class Room:
             await self.broadcast([])
 
     async def _select_elimination(self, peer: Peer, message: dict) -> None:
-        """Resolve the attacker owner's elimination target selection.
+        """Resolve the ability owner's pending target selection.
 
         Only the peer whose card armed the pause may choose; the engine
         revalidates the target against live state before eliminating it.
@@ -169,15 +169,15 @@ class Room:
             return
         pending = self.engine.state.get("pending_elimination")
         if not pending:
-            await peer.send({"type": "error", "message": "No elimination is awaiting target selection."})
+            await peer.send({"type": "error", "message": "No ability target is awaiting selection."})
             return
         if peer.player_id != str(pending.get("attacker_owner_id")):
-            await peer.send({"type": "error", "message": "Only the ability's owner chooses the elimination target."})
+            await peer.send({"type": "error", "message": "Only the ability's owner may choose this target."})
             return
         row_id = str(message.get("row_id", ""))
         slot_index = message.get("slot_index")
         if not isinstance(slot_index, int) or isinstance(slot_index, bool):
-            await peer.send({"type": "error", "message": "Invalid elimination target."})
+            await peer.send({"type": "error", "message": "Invalid ability target."})
             return
         result = self.engine.select_elimination_target(row_id, slot_index)
         if not result.accepted:

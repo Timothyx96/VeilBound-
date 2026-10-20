@@ -68,7 +68,7 @@ class Renderer:
         self._slot_surface_cache: dict[tuple[str, tuple[int, int], bool], pygame.Surface] = {}
         self._card_frame_cache: dict[tuple[int, int], pygame.Surface] = {}
         self._card_front_cache: dict[tuple[int, int], pygame.Surface] = {}
-        self._card_face_cache: dict[tuple[str, tuple[int, int]], pygame.Surface] = {}
+        self._card_face_cache: dict[tuple[str, tuple[int, int], str], pygame.Surface] = {}
         self._card_back_cache: dict[tuple[str, tuple[int, int]], pygame.Surface] = {}
         self._spotlight_portrait_cache: dict[tuple[str, tuple[int, int]], pygame.Surface] = {}
         self.flip_started: dict[tuple[str, int], float] = {}
@@ -85,7 +85,8 @@ class Renderer:
         # Timed floating ability texts; presentation only, never mutates points.
         self.floating_texts: list[dict] = []
         # Dedupe key -> start time, so a duplicated event cannot replay text.
-        self.floating_texts_started: dict[tuple[str, str, int], float] = {}
+        self.floating_texts_started: dict[tuple[str, str, str], float] = {}
+        self._processed_ability_resolution_ids: set[str] = set()
         # Dynamic Duo energy arc animation; one shot per genuine same-player
         # pair activation. Populated by note_events for an ability_activated
         # event and resolved against live state during draw so the arc
@@ -109,6 +110,7 @@ class Renderer:
         self.elimination_flash_started: float | None = None
         self.elimination_failed_message: str | None = None
         self.elimination_failed_at: float = 0.0
+        self._processed_elimination_events: set[str] = set()
 
     def layout(self, state: GameState, size: tuple[int, int], debug_mode: bool | None = None) -> BoardLayout:
         active_debug = self.debug_mode if debug_mode is None else debug_mode
@@ -119,6 +121,7 @@ class Renderer:
         self.last_card_reveal = ""
         self.floating_texts.clear()
         self.floating_texts_started.clear()
+        self._processed_ability_resolution_ids.clear()
         self.reveal_card = None
         self.reveal_card_visible_after = 0.0
         self.reveal_card_until = 0.0
@@ -132,6 +135,7 @@ class Renderer:
         self.elimination_flash_started = None
         self.elimination_failed_message = None
         self.elimination_failed_at = 0.0
+        self._processed_elimination_events.clear()
 
     @property
     def duo_duration(self) -> float:
@@ -181,22 +185,42 @@ class Renderer:
     def note_events(self, events: tuple[GameEvent, ...]) -> None:
         now = time.monotonic()
         for event in events:
-            if event.kind == "elimination":
+            if event.kind in {"elimination", "death"}:
                 data = event.data
-                self.elimination_announcement = (
-                    f"{str(data.get('target_name', '?')).upper()} "
-                    f"HAS BEEN ELIMINATED BY "
-                    f"{str(data.get('attacker_name', '?')).upper()}"
-                )
+                elimination_id = data.get("elimination_id")
+                if elimination_id is not None:
+                    elimination_id = str(elimination_id)
+                    if elimination_id in self._processed_elimination_events:
+                        continue
+                    self._processed_elimination_events.add(elimination_id)
+                if event.kind == "death":
+                    self.elimination_announcement = f"{data.get('target_name', '?')} Died"
+                else:
+                    self.elimination_announcement = (
+                        f"{str(data.get('target_name', '?')).upper()} "
+                        f"HAS BEEN ELIMINATED BY "
+                        f"{str(data.get('attacker_name', '?')).upper()}"
+                    )
                 self.elimination_announced_at = now
-                self.elimination_flash_card = (
-                    str(data.get("row_id", "")),
-                    int(data.get("slot_index", -1)),
-                )
-                self.elimination_flash_started = now
+                if data.get("animate", True):
+                    self.elimination_flash_card = (
+                        str(data.get("row_id", "")),
+                        int(data.get("slot_index", -1)),
+                    )
+                    self.elimination_flash_started = now
+                else:
+                    self.elimination_flash_card = None
+                    self.elimination_flash_started = None
                 self.elimination_targets = []
             elif event.kind == "elimination_failed":
                 self.elimination_failed_message = "ELIMINATION ATTEMPT FAILED"
+                self.elimination_failed_at = now
+                self.elimination_targets = []
+                self.elimination_announcement = None
+                self.elimination_flash_card = None
+                self.elimination_flash_started = None
+            elif event.kind == "ability_failed":
+                self.elimination_failed_message = event.message
                 self.elimination_failed_at = now
                 self.elimination_targets = []
                 self.elimination_announcement = None
@@ -216,24 +240,15 @@ class Renderer:
                 self.score_animation_row_id = event.data["row_id"]
                 self.score_animation_started = time.monotonic()
             elif event.kind == "ability_activated":
-                # Pure presentation: points already changed in the authority.
-                # A duplicated event (replay/reconnect) must not replay text.
-                now = time.monotonic()
-                key = (
-                    str(event.data.get("ability_id", "")),
-                    str(event.data.get("owner_card_id", "")),
-                    int(event.data.get("current_points", 0)),
-                )
-                started = self.floating_texts_started.get(key)
-                if started is not None and now - started < FLOATING_TEXT_SECONDS:
-                    continue
-                self.floating_texts_started[key] = now
-                self.floating_texts.append({
-                    "row_id": event.data.get("row_id"),
-                    "slot_index": event.data.get("slot_index"),
-                    "text": str(event.data.get("floating_text", "")),
-                    "started": now,
-                })
+                # Target-selection abilities only show success presentation
+                # after their target has been validated and the effect applied.
+                if not event.data.get("requires_target_selection", False):
+                    self._queue_ability_floating_text(event.data, now)
+                    transformed_art = event.data.get("transformed_card_art")
+                    if (isinstance(transformed_art, str) and self.reveal_card is not None
+                            and self.reveal_card.get("row_id") == event.data.get("row_id")
+                            and self.reveal_card.get("slot_index") == event.data.get("slot_index")):
+                        self.reveal_card["full_card_art"] = transformed_art
                 # Dynamic Duo energy arc: schedule a one-shot arc between the
                 # activating card and its same-row partner. The partner is
                 # resolved against live state during draw so the arc endpoints
@@ -255,8 +270,39 @@ class Renderer:
                     self.duo_queue.append(
                         {"owner_key": owner_key, "partner_key": None, "started": now}
                     )
+            elif event.kind == "ability_resolved" and event.data.get("floating_text"):
+                self._queue_ability_floating_text(event.data, now)
             self.notice = event.message
             self.notice_until = time.monotonic() + 3.5
+
+    def _queue_ability_floating_text(self, data: dict, now: float) -> None:
+        """Show ability text once, using resolution IDs for delayed success events."""
+        ability_id = str(data.get("ability_id", ""))
+        owner_card_id = str(data.get("owner_card_id", ""))
+        resolution_id = data.get("resolution_id")
+        if resolution_id is not None:
+            resolution_id = str(resolution_id)
+            processed = getattr(self, "_processed_ability_resolution_ids", None)
+            if processed is None:
+                processed = self._processed_ability_resolution_ids = set()
+            if resolution_id in processed:
+                return
+            processed.add(resolution_id)
+            dedupe_token = resolution_id
+        else:
+            dedupe_token = str(data.get("current_points", 0))
+            key = (ability_id, owner_card_id, dedupe_token)
+            started = self.floating_texts_started.get(key)
+            if started is not None and now - started < FLOATING_TEXT_SECONDS:
+                return
+        key = (ability_id, owner_card_id, dedupe_token)
+        self.floating_texts_started[key] = now
+        self.floating_texts.append({
+            "row_id": data.get("row_id"),
+            "slot_index": data.get("slot_index"),
+            "text": str(data.get("floating_text", "")),
+            "started": now,
+        })
 
     def _resolve_duo_animation(self, state: GameState, cards: dict[str, CardDefinition]) -> None:
         """Advance the Dynamic Duo queue and resolve the next partner.
@@ -542,7 +588,7 @@ class Renderer:
         font = get_font("title", 48)
         text = font.render(self.elimination_announcement, True, self.ELIMINATION_RED)
         shadow = font.render(self.elimination_announcement, True, (0, 0, 0))
-        text_rect = text.get_rect(center=(width // 2, height // 3 - 40))
+        text_rect = text.get_rect(center=(width // 2, height // 3 - 40 - round(height * 0.09)))
         screen.blit(shadow, shadow.get_rect(center=(text_rect.centerx + 3, text_rect.centery + 3)))
         alpha_layer = pygame.Surface(text.get_size(), pygame.SRCALPHA)
         alpha_layer.fill((255, 255, 255, int(255 * fade)))
@@ -575,6 +621,11 @@ class Renderer:
                 return row.slots[slot_index]
         return None
 
+    @staticmethod
+    def _owner_card_outline(owner_id: str):
+        """Return the ownership outline color independently of card state."""
+        return P1 if owner_id == "player-1" else P2_CARD_OUTLINE
+
     def _draw_elimination_flash(
         self, screen, state: GameState, cards: dict[str, CardDefinition],
         layout: BoardLayout, now: float,
@@ -605,16 +656,22 @@ class Renderer:
             back = self._make_card_back_surface(card_rect.size, owner_id)
             surface = pygame.transform.smoothscale(back, (scaled_width, card_rect.height))
             screen.blit(surface, surface.get_rect(center=card_rect.center))
-            pygame.draw.rect(screen, self.ELIMINATION_RED, card_rect, width=3, border_radius=6)
+            pygame.draw.rect(
+                screen, self._owner_card_outline(owner_id),
+                card_rect, width=3, border_radius=6,
+            )
             return
         # Phase B: card rests on its back with a persistent red X overlay.
         back = self._make_card_back_surface(card_rect.size, owner_id)
         screen.blit(back, card_rect)
-        pygame.draw.rect(screen, self.ELIMINATION_RED, card_rect, width=3, border_radius=6)
+        pygame.draw.rect(
+            screen, self._owner_card_outline(owner_id),
+            card_rect, width=3, border_radius=6,
+        )
         self._draw_elimination_cross(screen, card_rect)
 
     def _draw_elimination_failed(self, screen, now: float) -> None:
-        """Draw the center-screen ELIMINATION ATTEMPT FAILED message."""
+        """Draw failure feedback at the same height as elimination announcements."""
         if self.elimination_failed_message is None:
             return
         if self.elimination_failed_at is None:
@@ -633,7 +690,9 @@ class Renderer:
         font = get_font("title", 44)
         text = font.render(self.elimination_failed_message, True, self.ELIMINATION_RED)
         shadow = font.render(self.elimination_failed_message, True, (0, 0, 0))
-        text_rect = text.get_rect(center=(width // 2, height // 2))
+        text_rect = text.get_rect(
+            center=(width // 2, height // 3 - 40 - round(height * 0.09))
+        )
         screen.blit(shadow, shadow.get_rect(center=(text_rect.centerx + 3, text_rect.centery + 3)))
         alpha_layer = pygame.Surface(text.get_size(), pygame.SRCALPHA)
         alpha_layer.fill((255, 255, 255, int(255 * fade)))
@@ -946,6 +1005,9 @@ class Renderer:
             return
 
         definition = cards[hovered.definition_id]
+        hovered_base_points = getattr(hovered, "base_points", None)
+        if hovered_base_points is None:
+            hovered_base_points = definition.base_points
         width, height = screen.get_size()
 
         # Compute panel size, shrinking width if needed until a non-overlapping
@@ -981,7 +1043,8 @@ class Renderer:
             "ability_title", 1, panel.width - 20,
         )
         self._text_center_fit(
-            screen, f"BASE POINTS: {definition.base_points}", (panel.centerx, panel.y + 55 + name_extra),
+            screen, f"BASE POINTS: {hovered_base_points}",
+            (panel.centerx, panel.y + 55 + name_extra),
             "label_small", panel.width - 20,
         )
         for index, line in enumerate(visible_lines):
@@ -1316,7 +1379,10 @@ class Renderer:
         if getattr(card, "eliminated", False):
             surface = self._make_card_back_surface(rect.size, card.owner_id)
             screen.blit(surface, rect)
-            pygame.draw.rect(screen, self.ELIMINATION_RED, rect, width=3, border_radius=6)
+            pygame.draw.rect(
+                screen, self._owner_card_outline(card.owner_id),
+                rect, width=3, border_radius=6,
+            )
             self._draw_elimination_cross(screen, rect)
             return
         definition = cards.get(card.definition_id) if card.revealed else None
@@ -1326,11 +1392,15 @@ class Renderer:
         if reveal_time is not None:
             progress = min(1.0, max(0.0, (now - reveal_time) / flip_duration))
         face_up = card.revealed and (reveal_time is None or progress >= 0.5)
-        owner_accent = P1 if card.owner_id == "player-1" else P2_CARD_OUTLINE
+        owner_accent = self._owner_card_outline(card.owner_id)
         if face_up:
             if definition is None:
                 return
-            surface = self._make_card_face(definition, rect.size)
+            surface = self._make_card_face(
+                definition,
+                rect.size,
+                transformed_card_art=self._activated_transformation_art(definition, card),
+            )
         else:
             surface = self._make_card_back_surface(rect.size, card.owner_id)
         if reveal_time is not None and progress < 1.0:
@@ -1345,20 +1415,28 @@ class Renderer:
         if not card.revealed:
             self._draw_card_frame(screen, draw_rect)
             return
-        # Persistent per-instance boost indicator: the cached face underneath
-        # keeps showing immutable base points, while this overlay shows the
-        # live current total after an ability (for example, "10 (+3)").
+        # Persistent per-instance point indicator: the cached face underneath
+        # uses roster art, while this overlay shows the live total and any
+        # match-scoped base-point reduction.
         flip_finished = reveal_time is None or progress >= 1.0
         if flip_finished and definition is not None:
             current = getattr(card, "current_points", None)
-            base = getattr(definition, "base_points", None)
-            if isinstance(current, bool) or isinstance(base, bool):
+            roster_base = getattr(definition, "base_points", None)
+            base = getattr(card, "base_points", None)
+            if base is None:
+                base = roster_base
+            if isinstance(current, bool) or isinstance(base, bool) or isinstance(roster_base, bool):
                 return
-            if isinstance(current, (int, float)) and isinstance(base, (int, float)):
+            if (isinstance(current, (int, float)) and isinstance(base, (int, float))
+                    and isinstance(roster_base, (int, float))):
                 boost = int(current) - int(base)
-                if boost > 0:
+                if int(current) != int(roster_base):
+                    if int(base) != int(roster_base):
+                        point_label = f"{int(current)} (BASE {int(base)})"
+                    else:
+                        point_label = f"{int(current)} ({boost:+})"
                     badge_font = get_font("label_small")
-                    badge_text = badge_font.render(f"{int(current)} (+{boost})", True, BG)
+                    badge_text = badge_font.render(point_label, True, BG)
                     badge_rect = badge_text.get_rect()
                     pill = pygame.Rect(0, 0, badge_rect.width + 12, badge_rect.height + 6)
                     pill.topright = (rect.right - 4, rect.y + 4)
@@ -1386,8 +1464,27 @@ class Renderer:
         rect.center = slot_rect.center
         return rect
 
-    def _make_card_face(self, definition: CardDefinition, size: tuple[int, int]) -> pygame.Surface:
-        key = (definition.id, size)
+    @staticmethod
+    def _activated_transformation_art(definition: CardDefinition, card) -> str | None:
+        resolved_state = card.get("resolved_abilities")
+        activated = set(
+            resolved_state if resolved_state is not None
+            else (card.get("activated_abilities") or [])
+        )
+        for ability in getattr(definition, "abilities", None) or ():
+            art = ability.presentation.transformed_card_art
+            if ability.id in activated and art:
+                return art
+        return None
+
+    def _make_card_face(
+        self,
+        definition: CardDefinition,
+        size: tuple[int, int],
+        transformed_card_art: str | None = None,
+    ) -> pygame.Surface:
+        full_card_art = transformed_card_art or definition.full_card_art
+        key = (definition.id, size, full_card_art)
         cached = self._card_face_cache.get(key)
         if cached is not None:
             return cached
@@ -1395,8 +1492,8 @@ class Renderer:
 
         # Full card artwork takes priority and replaces the entire card face.
         full_art = None
-        if definition.full_card_art:
-            full_art = self.assets.load_image(definition.full_card_art)
+        if full_card_art:
+            full_art = self.assets.load_image(full_card_art)
         if full_art is not None:
             face = pygame.Surface(size, pygame.SRCALPHA)
             fitted = self.assets.scale_to_fit(full_art, size)

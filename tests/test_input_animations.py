@@ -5,6 +5,7 @@ import pygame
 from conftest import resolve_eliminations
 from veilbound.client.input import InputController
 from veilbound.client.renderer import Renderer
+from veilbound.client.theme import P1, P2_CARD_OUTLINE
 from veilbound.shared.config import GameConfig
 from veilbound.shared.engine import GameEngine
 from veilbound.shared.models import GameEvent, GamePhase
@@ -103,6 +104,82 @@ def test_animation_flow_advances_by_deadlines_without_blocking():
         i for i, event in enumerate(renderer.events) if event.kind == "card_revealed"
     ][:4][-1]
     assert first_scored > first_round_last_reveal
+
+
+def test_gon_activation_keeps_ability_text_and_updates_card_art():
+    renderer = Renderer.__new__(Renderer)
+    renderer.floating_texts = []
+    renderer.floating_texts_started = {}
+    renderer.duo_queue = []
+    renderer.duo_animation = None
+    renderer.reveal_card = {
+        "row_id": "row-1", "slot_index": 0, "full_card_art": "old-gon-card.png",
+    }
+    transformed_art = "assets/art/card front/Abillity_transform/Gon Adult.png"
+    event = GameEvent("ability_activated", "Gon activates", {
+        "ability_id": "gon_jajanken_rock_ultimate_transformation",
+        "owner_card_id": "gon-card",
+        "row_id": "row-1",
+        "slot_index": 0,
+        "current_points": 1,
+        "delta": -9,
+        "floating_text": "JAJANKEN: ROCK",
+        "transformed_card_art": transformed_art,
+    })
+
+    renderer.note_events((event,))
+
+    assert renderer.floating_texts[0]["text"] == "JAJANKEN: ROCK"
+    assert renderer.reveal_card["full_card_art"] == transformed_art
+    definition = SimpleNamespace(abilities=[SimpleNamespace(
+        id="gon_jajanken_rock_ultimate_transformation",
+        presentation=SimpleNamespace(transformed_card_art=transformed_art),
+    )])
+    card = {"activated_abilities": ["gon_jajanken_rock_ultimate_transformation"]}
+    assert Renderer._activated_transformation_art(definition, card) == transformed_art
+
+
+def test_targeted_ability_text_waits_for_success_and_is_once_per_resolution():
+    renderer = Renderer.__new__(Renderer)
+    renderer.floating_texts = []
+    renderer.floating_texts_started = {}
+    renderer._processed_ability_resolution_ids = set()
+    renderer.duo_queue = []
+    renderer.duo_animation = None
+    renderer.reveal_card = None
+    renderer.elimination_targets = []
+    renderer.elimination_announcement = None
+    renderer.elimination_flash_card = None
+    renderer.elimination_flash_started = None
+
+    activation = GameEvent("ability_activated", "Tsukuyomi begins", {
+        "ability_id": "itachi_tsukuyomi_remove_bonus",
+        "owner_card_id": "itachi-card",
+        "row_id": "row-1",
+        "slot_index": 0,
+        "floating_text": "TSUKUYOMI",
+        "requires_target_selection": True,
+    })
+    failed = GameEvent("elimination_failed", "No valid target", {})
+    ability_failed = GameEvent("ability_failed", "Itachi Uchiha's Tsukuyomi failed", {
+        "ability_id": "itachi_tsukuyomi_remove_bonus",
+        "owner_card_id": "itachi-card",
+    })
+    renderer.note_events((activation, failed, ability_failed))
+    assert renderer.floating_texts == []
+    assert renderer.elimination_failed_message == "Itachi Uchiha's Tsukuyomi failed"
+
+    resolved = GameEvent("ability_resolved", "Tsukuyomi resolved", {
+        "ability_id": "itachi_tsukuyomi_remove_bonus",
+        "owner_card_id": "itachi-card",
+        "row_id": "row-1",
+        "slot_index": 0,
+        "resolution_id": "resolution-42",
+        "floating_text": "TSUKUYOMI",
+    })
+    renderer.note_events((resolved, resolved))
+    assert len(renderer.floating_texts) == 1
+    assert renderer.floating_texts[0]["text"] == "TSUKUYOMI"
 
 
 def test_final_reveals_wait_for_each_flip_and_finish_before_scoring():
@@ -217,10 +294,11 @@ def test_renderer_preserves_back_shrink_face_expand_flip_transition():
     renderer.flip_started = {("row-1", 0): 10.0}
     renderer.animation_ms = {"card_flip_ms": 100}
     renderer._make_card_back_surface = lambda size, owner_id: _solid_surface(size, (0, 0, 255))
-    renderer._make_card_face = lambda definition, size: _solid_surface(size, (255, 0, 0))
+    renderer._make_card_face = lambda definition, size, transformed_card_art=None: _solid_surface(size, (255, 0, 0))
     renderer._draw_card_frame = lambda screen, rect: None
     row = SimpleNamespace(id="row-1")
     card = SimpleNamespace(definition_id="definition-1", owner_id="player-1", revealed=True)
+    card.get = lambda key, default=None: getattr(card, key, default)
     definition = SimpleNamespace(id="definition-1")
     rect = pygame.Rect(20, 20, 40, 60)
 
@@ -238,6 +316,69 @@ def test_renderer_preserves_back_shrink_face_expand_flip_transition():
     assert sample(0.075, (23, 50)) == (1, 1, 1)  # front widens after the midpoint
     finished = sample(0.1, (23, 50))
     assert finished[0] > 240 and finished[1:] == (0, 0)
+
+
+def test_eliminated_card_outline_follows_owner_and_red_x_is_independent():
+    renderer = Renderer.__new__(Renderer)
+    renderer.ELIMINATION_RED = (220, 40, 40)
+    renderer.elimination_flash_card = None
+    renderer.elimination_flash_started = None
+    renderer._make_card_back_surface = lambda size, owner_id: _solid_surface(size, (30, 30, 30))
+    renderer._draw_card_frame = lambda screen, rect: None
+    rect = pygame.Rect(20, 20, 60, 80)
+    row = SimpleNamespace(id="row-1")
+
+    # The ownership outline remains blue for player 1 and red for player 2,
+    # while both cards receive the same red elimination X.
+    for owner_id, expected_outline in (("player-1", P1), ("player-2", P2_CARD_OUTLINE)):
+        card = SimpleNamespace(
+            definition_id="definition-1", owner_id=owner_id,
+            revealed=True, eliminated=True,
+        )
+        screen = pygame.Surface((100, 120))
+        screen.fill((1, 1, 1))
+        renderer._draw_placed_card(screen, rect, row, 0, card, {}, 0.0)
+        assert screen.get_at((rect.left + 1, rect.centery))[:3] == expected_outline
+        assert screen.get_at(rect.center)[:3] == renderer.ELIMINATION_RED
+
+
+def test_elimination_flip_and_revived_card_keep_owner_outline_without_stale_x():
+    renderer = Renderer.__new__(Renderer)
+    renderer.ELIMINATION_RED = (220, 40, 40)
+    renderer.ELIMINATION_FLIP_SECONDS = 0.2
+    renderer.elimination_flash_card = ("row-1", 0)
+    renderer.elimination_flash_started = 1.0
+    renderer.flip_started = {}
+    renderer._portrait_card_rect = lambda rect: rect
+    renderer._make_card_back_surface = lambda size, owner_id: _solid_surface(size, (30, 30, 30))
+    row = SimpleNamespace(id="row-1", slots=[SimpleNamespace(owner_id="player-2")])
+    state = SimpleNamespace(rows=[row])
+    layout = SimpleNamespace(slot_rects={("row-1", 0): pygame.Rect(20, 20, 60, 80)})
+
+    for now, expected_outline in ((1.05, P2_CARD_OUTLINE), (1.25, P2_CARD_OUTLINE)):
+        screen = pygame.Surface((100, 120))
+        screen.fill((1, 1, 1))
+        renderer._draw_elimination_flash(screen, state, {}, layout, now)
+        rect = layout.slot_rects[("row-1", 0)]
+        assert screen.get_at((rect.left + 1, rect.centery))[:3] == expected_outline
+        if now >= 1.0 + renderer.ELIMINATION_FLIP_SECONDS:
+            assert screen.get_at(rect.center)[:3] == renderer.ELIMINATION_RED
+
+    # Once revived, the normal card path draws the owner border and no X.
+    renderer.elimination_flash_card = None
+    renderer.elimination_flash_started = None
+    renderer._draw_card_frame = lambda screen, rect: None
+    renderer.animation_ms = {"card_flip_ms": 100}
+    revived = SimpleNamespace(
+        definition_id="definition-1", owner_id="player-2",
+        revealed=False, eliminated=False,
+    )
+    screen = pygame.Surface((100, 120))
+    screen.fill((1, 1, 1))
+    rect = layout.slot_rects[("row-1", 0)]
+    renderer._draw_placed_card(screen, rect, row, 0, revived, {}, 0.0)
+    assert screen.get_at((rect.left + 1, rect.centery))[:3] == P2_CARD_OUTLINE
+    assert screen.get_at(rect.center)[:3] == (30, 30, 30)
 
 
 def _solid_surface(size, color):

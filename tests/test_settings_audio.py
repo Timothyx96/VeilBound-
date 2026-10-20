@@ -126,6 +126,77 @@ def test_reveal_audio_plays_once_per_distinct_card_reveal(monkeypatch, tmp_path)
     assert [sound.play_count for sound in loaded] == [0, 2]
 
 
+def test_ability_sfx_plays_only_on_successful_resolution_once(monkeypatch):
+    pygame.mixer.quit()
+    monkeypatch.setattr(pygame.mixer, "get_init", lambda: (44100, -16, 2))
+    loaded = []
+
+    def fake_sound(path):
+        sound = FakeSound(path)
+        loaded.append(sound)
+        return sound
+
+    monkeypatch.setattr(pygame.mixer, "Sound", fake_sound)
+    audio = AudioManager(load_settings().audio)
+    preloaded_count = len(loaded)
+    sound_path = "assets/sounds/Abillity_Sfx/Ability_Resolution/Killua.mp3"
+    activated = GameEvent("ability_activated", "started", {
+        "ability_id": "killua_godspeed_eliminate",
+        "owner_card_id": "killua-card",
+        "sound": sound_path,
+    })
+    failed = GameEvent("elimination_failed", "no valid target", {})
+    resolved = GameEvent("ability_resolved", "eliminated", {
+        "resolution_id": "42",
+        "ability_id": "killua_godspeed_eliminate",
+        "owner_card_id": "killua-card",
+        "sound": sound_path,
+    })
+
+    audio.on_events((activated, failed))
+    assert len(loaded) == preloaded_count
+    audio.on_events((resolved, resolved))
+    ability_sounds = [sound for sound in loaded if sound.path.endswith("Killua.mp3")]
+    assert len(ability_sounds) == 1
+    ability_sound = ability_sounds[0]
+    assert ability_sound.play_count == 1
+
+
+def test_gon_ability_sfx_is_silent_on_failure_and_plays_on_resolution(monkeypatch):
+    pygame.mixer.quit()
+    monkeypatch.setattr(pygame.mixer, "get_init", lambda: (44100, -16, 2))
+    loaded = []
+
+    def fake_sound(path):
+        sound = FakeSound(path)
+        loaded.append(sound)
+        return sound
+
+    monkeypatch.setattr(pygame.mixer, "Sound", fake_sound)
+    audio = AudioManager(load_settings().audio)
+    sound_path = "assets/sounds/Abillity_Sfx/Ability_Resolution/Gon.mp3"
+    failed = GameEvent("ability_failed", "effect did not resolve", {
+        "resolution_id": "gon-failed",
+        "ability_id": "gon_jajanken_rock_ultimate_transformation",
+        "owner_card_id": "gon-card",
+        "sound": sound_path,
+    })
+    resolved = GameEvent("ability_resolved", "effects applied", {
+        "resolution_id": "gon-success",
+        "ability_id": "gon_jajanken_rock_ultimate_transformation",
+        "owner_card_id": "gon-card",
+        "sound": sound_path,
+    })
+
+    audio.on_events((failed,))
+    assert not [sound for sound in loaded if sound.path.endswith("Gon.mp3")]
+
+    audio.on_events((resolved, resolved))
+    gon_sounds = [sound for sound in loaded if sound.path.endswith("Gon.mp3")]
+    assert len(gon_sounds) == 1
+    assert gon_sounds[0].play_count == 1
+
+
 def test_missing_sound_or_unavailable_mixer_is_safe(monkeypatch, tmp_path):
     pygame.mixer.quit()
     monkeypatch.setattr(pygame.mixer, "get_init", lambda: None)
