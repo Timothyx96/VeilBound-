@@ -1,0 +1,75 @@
+196:                 self.elimination_flash_started = now
+197:                 self.elimination_targets = []
+198:             elif event.kind == "elimination_failed":
+199:                 self.elimination_failed_message = "ELIMINATION ATTEMPT FAILED"
+200:                 self.elimination_failed_at = now
+201:                 self.elimination_targets = []
+202:                 self.elimination_announcement = None
+203:                 self.elimination_flash_card = None
+204:                 self.elimination_flash_started = None
+205:             elif event.kind == "card_revealed":
+206:                 key = (event.data["row_id"], event.data["slot_index"])
+207:                 if key in self.flip_started:
+208:                     continue
+209:                 self.flip_started[key] = time.monotonic()
+210:                 self.last_card_reveal = event.message
+211:                 now = time.monotonic()
+212:                 self.reveal_card = dict(event.data)
+213:                 self.reveal_card_visible_after = now + self.animation_ms["card_flip_ms"] / 1000
+214:                 self.reveal_card_until = self.reveal_card_visible_after + self.animation_ms["card_information_ms"] / 1000
+215:             elif event.kind == "row_scored":
+216:                 self.score_animation_row_id = event.data["row_id"]
+217:                 self.score_animation_started = time.monotonic()
+218:             elif event.kind == "ability_activated":
+219:                 # Pure presentation: points already changed in the authority.
+220:                 # A duplicated event (replay/reconnect) must not replay text.
+221:                 now = time.monotonic()
+222:                 key = (
+223:                     str(event.data.get("ability_id", "")),
+224:                     str(event.data.get("owner_card_id", "")),
+225:                     int(event.data.get("current_points", 0)),
+226:                 )
+227:                 started = self.floating_texts_started.get(key)
+228:                 if started is not None and now - started < FLOATING_TEXT_SECONDS:
+229:                     continue
+230:                 self.floating_texts_started[key] = now
+231:                 self.floating_texts.append({
+232:                     "row_id": event.data.get("row_id"),
+233:                     "slot_index": event.data.get("slot_index"),
+234:                     "text": str(event.data.get("floating_text", "")),
+235:                     "started": now,
+236:                 })
+237:                 # Dynamic Duo energy arc: schedule a one-shot arc between the
+238:                 # activating card and its same-row partner. The partner is
+239:                 # resolved against live state during draw so the arc endpoints
+240:                 # always derive from actual card screen positions. An owner
+241:                 # activates at most once per match, so duplicate/replayed
+242:                 # events for the same owner are ignored.
+243:                 owner_key = (
+244:                     str(event.data.get("row_id", "")),
+245:                     int(event.data.get("slot_index", -1)),
+246:                 )
+247:                 owner_id = str(event.data.get("owner_card_id", ""))
+248:                 already_queued = any(
+249:                     item["owner_key"] == owner_key for item in self.duo_queue
+250:                 ) or (
+251:                     self.duo_animation is not None
+252:                     and self.duo_animation.get("owner_key") == owner_key
+253:                 )
+254:                 if owner_id and owner_key[1] >= 0 and not already_queued:
+255:                     self.duo_queue.append(
+256:                         {"owner_key": owner_key, "partner_key": None, "started": now}
+257:                     )
+258:             self.notice = event.message
+259:             self.notice_until = time.monotonic() + 3.5
+260: 
+261:     def _resolve_duo_animation(self, state: GameState, cards: dict[str, CardDefinition]) -> None:
+262:         """Advance the Dynamic Duo queue and resolve the next partner.
+263: 
+264:         The current animation expires after ``duo_duration``; once it does, the
+265:         next queued activation is resolved against live state so its arc
+266:         endpoints come from actual card screen positions. Activations that are
+267:         not genuine same-player Dynamic Duo pairs are discarded silently.
+268:         """
+269:         while self.duo_animation is not None:
+270:             if time.monotonic() < self.duo_animation["started"] + self.duo_duration:

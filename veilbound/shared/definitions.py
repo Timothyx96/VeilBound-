@@ -36,7 +36,16 @@ def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]
         if card_id in definitions:
             duplicate_ids.add(card_id)
             continue
-        ability_raw = raw.get("ability")
+        ability_raw = raw.get("abilities") or raw.get("ability")
+        if isinstance(ability_raw, list):
+            ability_defs = [
+                parse_ability(item, context=f"Character {card_id}") for item in ability_raw
+            ]
+        elif isinstance(ability_raw, dict):
+            ability_defs = [parse_ability(ability_raw, context=f"Character {card_id}")]
+        else:
+            ability_defs = []
+
         definition = CardDefinition(
             id=card_id,
             name=str(raw["name"]),
@@ -47,12 +56,9 @@ def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]
             full_card_art=str(raw.get("full_card_art", "")),
             # Roster classification drives elimination allowed_types filters.
             type=str(raw.get("type", "")),
-            # Malformed/unsupported abilities fail loudly with the card named.
-            ability=(
-                parse_ability(ability_raw, context=f"Character {card_id}")
-                if ability_raw is not None
-                else None
-            ),
+            # Pass the parsed abilities (possibly empty) so every CardDefinition
+            # now carries a list of abilities.
+            abilities=ability_defs if ability_defs else None,
         )
         if not definition.name or not definition.image:
             raise ValueError(f"Character {definition.id} needs a name and image path")

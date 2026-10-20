@@ -1,0 +1,35 @@
+{
+  "character_name": "Naruto Uzumaki",
+  "effect_name": "Six Paths: Rasen-Shuriken",
+  "description": "Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row."
+}
+
+{
+  "character_name": "Sakura Haruno",
+  "effect_name": "Cherry Blossom Impact",
+  "description": "Gains +2 points if Naruto or Sasuke is in the same row."
+}
+
+{
+  "character_name": "Killua Zoldyck",
+  "effect_name": "Godspeed",
+  "description": "Eliminates one opposing character anywhere on the board."
+}
+
+{
+  "character_name": "Roronoa Zoro",
+  "effect_name": "Three-Sword Style",
+  "description": "Eliminates one opposing Fighter card in the same row."
+}
+
+{
+  "character_name": "Sanji",
+  "effect_name": "Wings of the Pirate King",
+  "description": "Gains +3 points if placed in the same row as Zoro."
+}
+
+{
+  "character_name": "Frieza (Golden)",
+  "effect_name": "Golden Tyrant",
+  "description": "Eliminates one opposing card in his row with 5 or fewer base points."
+}

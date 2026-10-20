@@ -1,0 +1,50 @@
+517:     def _try_activate(
+518:         self,
+519:         ability: AbilityDefinition,
+520:         owner_card: Any,
+521:         owner_row: Any,
+522:         owner_index: int,
+523:         state: Any,
+524:     ) -> AbilityActivation | None:
+525:         """Check every condition; if satisfied, apply effects once and record it."""
+526:         for condition in ability.conditions:
+527:             if not self._condition_holds(condition, owner_card, owner_row, state):
+528:                 return None
+529: 
+530:         definition = self.definitions[owner_card.definition_id]
+531:         base_points = int(definition.base_points)
+532:         delta = 0
+533:         bonuses = dict(owner_card.get("applied_bonuses") or {})
+534:         for effect in ability.effects:
+535:             if effect.type == "add_current_points":
+536:                 # Track each dynamic bonus by the ability that granted it so it
+537:                 # can be removed later (for example when a Dynamic Duo partner
+538:                 # is eliminated) without ever touching the immutable base.
+539:                 bonuses[ability.id] = effect.amount
+540:                 delta += effect.amount
+541:             # eliminate_target effects are not applied here: target selection
+542:             # happens in the client layer via the pending-elimination state.
+543:         owner_card.applied_bonuses = bonuses
+544:         owner_card.current_points = base_points + sum(bonuses.values())
+545:         after = owner_card.current_points
+546: 
+547:         activated = list(owner_card.get("activated_abilities") or [])
+548:         activated.append(ability.id)
+549:         owner_card.activated_abilities = activated
+550: 
+551:         return AbilityActivation(
+552:             ability=ability,
+553:             owner_card_id=owner_card.id,
+554:             target_card_id=owner_card.id,  # effects target the ability's owner
+555:             row_id=owner_row.id,
+556:             slot_index=owner_index,
+557:             definition_id=owner_card.definition_id,
+558:             owner_name=str(definition.name),
+559:             delta=delta,
+560:             base_points=base_points,
+561:             current_points=after,
+562:             is_elimination=any(effect.type == "eliminate_target" for effect in ability.effects),
+563:         )
+564: 
+565:     def _base_points(self, card: Any) -> int:
+566:         stored = card.get("base_points")

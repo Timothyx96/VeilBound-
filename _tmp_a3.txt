@@ -1,0 +1,68 @@
+564: 
+565:     def _base_points(self, card: Any) -> int:
+566:         stored = card.get("base_points")
+567:         if isinstance(stored, (int, float)) and not isinstance(stored, bool):
+568:             return int(stored)
+569:         definition = self.definitions.get(card.definition_id)
+570:         return int(getattr(definition, "base_points", 0))
+571: 
+572:     def recalculate_after_elimination(self, state: Any, eliminated_card: Any) -> list[Any]:
+573:         """Remove dynamic bonuses that depended on the eliminated card.
+574: 
+575:         This is the reusable Dynamic Duo elimination system: for every card
+576:         that still carries dynamic bonuses, each bonus survives only while its
+577:         ability's conditions hold on the live board. Because an eliminated
+578:         partner never satisfies a reveal or same-row condition
+579:         (see ``_condition_holds``), losing the partner removes the bonus.
+580:         Eliminated cards themselves keep ``current_points == 0`` and are never
+581:         resurrected here. Bonuses keyed by ability id, so the same bonus can
+582:         never be stacked twice.
+583: 
+584:         Returns the list of card instances whose points changed.
+585:         """
+586:         changed: list[Any] = []
+587:         for row in state.rows:
+588:             for slot in row.slots:
+589:                 if slot is None or slot is eliminated_card:
+590:                     continue
+591:                 if getattr(slot, "eliminated", False):
+592:                     # Eliminated cards score zero for the rest of the match;
+593:                     # never resurrect their points here.
+594:                     continue
+595:                 bonuses = dict(slot.get("applied_bonuses") or {})
+596:                 if not bonuses:
+597:                     continue
+598:                 located = _find_card(state, slot.id)
+599:                 if located is None:
+600:                     continue
+601:                 owner_row, _owner_index, _owner_card = located
+602:                 kept: dict[str, int] = {}
+603:                 for ability_id, amount in bonuses.items():
+604:                     ability = self._ability_by_id.get(ability_id)
+605:                     if ability is None:
+606:                         continue
+607:                     if all(
+608:                         self._condition_holds(condition, slot, owner_row, state)
+609:                         for condition in ability.conditions
+610:                     ):
+611:                         kept[ability_id] = amount
+612:                 if len(kept) == len(bonuses):
+613:                     continue  # every bonus still valid: nothing to remove
+614:                 slot.applied_bonuses = kept
+615:                 slot.current_points = self._base_points(slot) + sum(kept.values())
+616:                 changed.append(slot)
+617:         return changed
+618: 
+619: 
+620: def _find_card(state: Any, card_id: str) -> tuple[Any, int, Any] | None:
+621:     """Locate a placed card instance as (row, slot index, card)."""
+622:     for row in state.rows:
+623:         for index, slot in enumerate(row.slots):
+624:             if slot is not None and slot.id == card_id:
+625:                 return row, index, slot
+626:     return None
+627: 
+628: 
+629: 
+630: 
+631: 

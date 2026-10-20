@@ -1,0 +1,165 @@
+﻿@dataclass(frozen=True)
+class AbilityActivation:
+    """One resolved activation: effects are already applied when this exists."""
+
+    ability: AbilityDefinition
+    owner_card_id: str
+    target_card_id: str
+    row_id: str
+    slot_index: int
+    definition_id: str
+    owner_name: str
+    delta: int
+    base_points: int
+    current_points: int
+    is_elimination: bool = False
+
+    def event_data(self) -> dict[str, Any]:
+        """JSON-safe payload for the ``ability_activated`` presentation event."""
+        return {
+            "ability_id": self.ability.id,
+            "ability_name": self.ability.name,
+            "owner_card_id": self.owner_card_id,
+            "target_card_id": self.target_card_id,
+            "row_id": self.row_id,
+            "slot_index": self.slot_index,
+            "definition_id": self.definition_id,
+            "name": self.owner_name,
+            "delta": self.delta,
+            "base_points": self.base_points,
+            "current_points": self.current_points,
+            "floating_text": self.ability.presentation.floating_text,
+            "animation": self.ability.presentation.animation,
+            "is_elimination": self.is_elimination,
+        }
+
+
+@dataclass(frozen=True)
+class _PendingAbility:
+    """A registered ability whose conditions were not satisfied at reveal time."""
+
+    sequence: int
+    ability: AbilityDefinition
+    owner_card_id: str
+
+
+def _require_str(raw: dict, key: str, context: str) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise AbilityValidationError(f"{context}: '{key}' must be a non-empty string.")
+    return value.strip()
+
+
+def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
+    """Parse and validate one ``ability`` object from character JSON.
+
+    Raises :class:`AbilityValidationError` naming the offending character and
+    field so bad data is caught while character data loads.
+    """
+    if not isinstance(raw, dict):
+        raise AbilityValidationError(f"{context}: 'ability' must be a JSON object.")
+    ability_id = _require_str(raw, "id", context)
+    name = _require_str(raw, "name", context)
+    description = str(raw.get("description", ""))
+
+    trigger = _require_str(raw, "trigger", context)
+    if trigger not in SUPPORTED_TRIGGERS:
+        raise AbilityValidationError(
+            f"{context}: unsupported trigger {trigger!r} for ability {ability_id!r}; "
+            f"supported triggers: {sorted(SUPPORTED_TRIGGERS)}."
+        )
+
+    conditions_raw = raw.get("conditions", [])
+    if not isinstance(conditions_raw, list):
+        raise AbilityValidationError(f"{context}: 'conditions' must be a list.")
+    conditions: list[Condition] = []
+    for index, item in enumerate(conditions_raw, start=1):
+        where = f"{context}: condition #{index} of ability {ability_id!r}"
+        if not isinstance(item, dict):
+            raise AbilityValidationError(f"{where} must be a JSON object.")
+        condition_type = item.get("type")
+        if condition_type not in SUPPORTED_CONDITION_TYPES:
+            raise AbilityValidationError(
+                f"{where}: unsupported condition type {condition_type!r}; "
+                f"supported conditions: {sorted(SUPPORTED_CONDITION_TYPES)}."
+            )
+        character = item.get("character")
+        if not isinstance(character, str) or not character.strip():
+            raise AbilityValidationError(
+                f"{where}: 'character' must be a non-empty roster id or exact character name."
+            )
+        conditions.append(Condition(type=str(condition_type), character=character.strip()))
+
+    effects_raw = raw.get("effects")
+    if not isinstance(effects_raw, list) or not effects_raw:
+        raise AbilityValidationError(f"{context}: 'effects' must be a non-empty list.")
+    effects: list[Effect] = []
+    for index, item in enumerate(effects_raw, start=1):
+        where = f"{context}: effect #{index} of ability {ability_id!r}"
+        if not isinstance(item, dict):
+            raise AbilityValidationError(f"{where} must be a JSON object.")
+        effect_type = item.get("type")
+        if effect_type not in SUPPORTED_EFFECT_TYPES:
+            raise AbilityValidationError(
+                f"{where}: unsupported effect type {effect_type!r}; "
+                f"supported effects: {sorted(SUPPORTED_EFFECT_TYPES)}."
+            )
+        if effect_type == "add_current_points":
+            amount = item.get("amount")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
+                raise AbilityValidationError(f"{where}: 'amount' must be a non-zero integer.")
+        else:
+            # eliminate_target carries no numeric amount; target selection
+            # happens through the pending-elimination pause, not a delta.
+            amount = 0
+        effects.append(Effect(type=str(effect_type), amount=int(amount)))
+
+    activation_limit = raw.get("activation_limit", "once_per_card_per_match")
+    if activation_limit not in SUPPORTED_ACTIVATION_LIMITS:
+        raise AbilityValidationError(
+            f"{context}: unsupported activation_limit {activation_limit!r} for ability "
+            f"{ability_id!r}; supported limits: {sorted(SUPPORTED_ACTIVATION_LIMITS)}."
+        )
+
+    presentation_raw = raw.get("presentation", {})
+    if not isinstance(presentation_raw, dict):
+        raise AbilityValidationError(f"{context}: 'presentation' must be a JSON object.")
+    total = sum(effect.amount for effect in effects)
+    default_text = f"+{total}" if total > 0 else str(total)
+    floating_text = presentation_raw.get("floating_text", default_text)
+    if not isinstance(floating_text, str) or not floating_text.strip():
+        raise AbilityValidationError(
+            f"{context}: presentation 'floating_text' must be a non-empty string."
+        )
+    animation = presentation_raw.get("animation", "points_gain")
+    if animation not in SUPPORTED_ANIMATIONS:
+        raise AbilityValidationError(
+            f"{context}: unsupported presentation animation {animation!r} for ability "
+            f"{ability_id!r}; supported animations: {sorted(SUPPORTED_ANIMATIONS)}."
+        )
+
+    # Elimination targeting: only validated when an effect is eliminate_target.
+    has_elimination = any(effect.type == "eliminate_target" for effect in effects)
+    target_scope = "any_row"
+    target_side = "opposing"
+    allowed_types: tuple[str, ...] = ()
+    max_base_points: int | None = None
+    min_base_points: int | None = None
+    if has_elimination:
+        targeting_raw = raw.get("targeting", {})
+        if not isinstance(targeting_raw, dict):
+            raise AbilityValidationError(
+                f"{context}: 'targeting' must be a JSON object for eliminate_target abilities."
+            )
+        target_scope = targeting_raw.get("target_scope", "any_row")
+        if target_scope not in {"same_row", "any_row"}:
+            raise AbilityValidationError(
+                f"{context}: targeting 'target_scope' must be 'same_row' or 'any_row'."
+            )
+        target_side = targeting_raw.get("target_side", "opposing")
+        if target_side != "opposing":
+            raise AbilityValidationError(
+                f"{context}: targeting 'target_side' must be 'opposing'."
+            )
+        allowed_types_raw = targeting_raw.get("allowed_types", [])
+        if not isinstance(allowed_types_raw, list):

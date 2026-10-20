@@ -1,0 +1,74 @@
+ 167:     conditions_raw = raw.get("conditions", [])
+ 168:     if not isinstance(conditions_raw, list):
+ 169:         raise AbilityValidationError(f"{context}: 'conditions' must be a list.")
+ 170:     conditions: list[Condition] = []
+ 171:     for index, item in enumerate(conditions_raw, start=1):
+ 172:         where = f"{context}: condition #{index} of ability {ability_id!r}"
+ 173:         if not isinstance(item, dict):
+ 174:             raise AbilityValidationError(f"{where} must be a JSON object.")
+ 175:         condition_type = item.get("type")
+ 176:         if condition_type not in SUPPORTED_CONDITION_TYPES:
+ 177:             raise AbilityValidationError(
+ 178:                 f"{where}: unsupported condition type {condition_type!r}; "
+ 179:                 f"supported conditions: {sorted(SUPPORTED_CONDITION_TYPES)}."
+ 180:             )
+ 181:         character = item.get("character")
+ 182:         if not isinstance(character, str) or not character.strip():
+ 183:             raise AbilityValidationError(
+ 184:                 f"{where}: 'character' must be a non-empty roster id or exact character name."
+ 185:             )
+ 186:         conditions.append(Condition(type=str(condition_type), character=character.strip()))
+ 187: 
+ 188:     effects_raw = raw.get("effects")
+ 189:     if not isinstance(effects_raw, list) or not effects_raw:
+ 190:         raise AbilityValidationError(f"{context}: 'effects' must be a non-empty list.")
+ 191:     effects: list[Effect] = []
+ 192:     for index, item in enumerate(effects_raw, start=1):
+ 193:         where = f"{context}: effect #{index} of ability {ability_id!r}"
+ 194:         if not isinstance(item, dict):
+ 195:             raise AbilityValidationError(f"{where} must be a JSON object.")
+ 196:         effect_type = item.get("type")
+ 197:         if effect_type not in SUPPORTED_EFFECT_TYPES:
+ 198:             raise AbilityValidationError(
+ 199:                 f"{where}: unsupported effect type {effect_type!r}; "
+ 200:                 f"supported effects: {sorted(SUPPORTED_EFFECT_TYPES)}."
+ 201:             )
+ 202:         if effect_type == "add_current_points":
+ 203:             amount = item.get("amount")
+ 204:             if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
+ 205:                 raise AbilityValidationError(f"{where}: 'amount' must be a non-zero integer.")
+ 206:         else:
+ 207:             # eliminate_target carries no numeric amount; target selection
+ 208:             # happens through the pending-elimination pause, not a delta.
+ 209:             amount = 0
+ 210:         effects.append(Effect(type=str(effect_type), amount=int(amount)))
+ 211: 
+ 212:     activation_limit = raw.get("activation_limit", "once_per_card_per_match")
+ 213:     if activation_limit not in SUPPORTED_ACTIVATION_LIMITS:
+ 214:         raise AbilityValidationError(
+ 215:             f"{context}: unsupported activation_limit {activation_limit!r} for ability "
+ 216:             f"{ability_id!r}; supported limits: {sorted(SUPPORTED_ACTIVATION_LIMITS)}."
+ 217:         )
+ 218: 
+ 219:     presentation_raw = raw.get("presentation", {})
+ 220:     if not isinstance(presentation_raw, dict):
+ 221:         raise AbilityValidationError(f"{context}: 'presentation' must be a JSON object.")
+ 222:     total = sum(effect.amount for effect in effects)
+ 223:     default_text = f"+{total}" if total > 0 else str(total)
+ 224:     floating_text = presentation_raw.get("floating_text", default_text)
+ 225:     if not isinstance(floating_text, str) or not floating_text.strip():
+ 226:         raise AbilityValidationError(
+ 227:             f"{context}: presentation 'floating_text' must be a non-empty string."
+ 228:         )
+ 229:     animation = presentation_raw.get("animation", "points_gain")
+ 230:     if animation not in SUPPORTED_ANIMATIONS:
+ 231:         raise AbilityValidationError(
+ 232:             f"{context}: unsupported presentation animation {animation!r} for ability "
+ 233:             f"{ability_id!r}; supported animations: {sorted(SUPPORTED_ANIMATIONS)}."
+ 234:         )
+ 235: 
+ 236:     # Elimination targeting: only validated when an effect is eliminate_target.
+ 237:     has_elimination = any(effect.type == "eliminate_target" for effect in effects)
+ 238:     target_scope = "any_row"
+ 239:     target_side = "opposing"
+ 240:     allowed_types: tuple[str, ...] = ()

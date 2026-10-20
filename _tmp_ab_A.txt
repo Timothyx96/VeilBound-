@@ -1,0 +1,200 @@
+1: def _require_str(raw: dict, key: str, context: str) -> str:
+2:     value = raw.get(key)
+3:     if not isinstance(value, str) or not value.strip():
+4:         raise AbilityValidationError(f"{context}: '{key}' must be a non-empty string.")
+5:     return value.strip()
+6: 
+7: 
+8: def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
+9:     """Parse and validate one ``ability`` object from character JSON.
+10: 
+11:     Raises :class:`AbilityValidationError` naming the offending character and
+12:     field so bad data is caught while character data loads.
+13:     """
+14:     if not isinstance(raw, dict):
+15:         raise AbilityValidationError(f"{context}: 'ability' must be a JSON object.")
+16:     ability_id = _require_str(raw, "id", context)
+17:     name = _require_str(raw, "name", context)
+18:     description = str(raw.get("description", ""))
+19: 
+20:     trigger = _require_str(raw, "trigger", context)
+21:     if trigger not in SUPPORTED_TRIGGERS:
+22:         raise AbilityValidationError(
+23:             f"{context}: unsupported trigger {trigger!r} for ability {ability_id!r}; "
+24:             f"supported triggers: {sorted(SUPPORTED_TRIGGERS)}."
+25:         )
+26: 
+27:     conditions_raw = raw.get("conditions", [])
+28:     if not isinstance(conditions_raw, list):
+29:         raise AbilityValidationError(f"{context}: 'conditions' must be a list.")
+30:     conditions: list[Condition] = []
+31:     for index, item in enumerate(conditions_raw, start=1):
+32:         where = f"{context}: condition #{index} of ability {ability_id!r}"
+33:         if not isinstance(item, dict):
+34:             raise AbilityValidationError(f"{where} must be a JSON object.")
+35:         condition_type = item.get("type")
+36:         if condition_type not in SUPPORTED_CONDITION_TYPES:
+37:             raise AbilityValidationError(
+38:                 f"{where}: unsupported condition type {condition_type!r}; "
+39:                 f"supported conditions: {sorted(SUPPORTED_CONDITION_TYPES)}."
+40:             )
+41:         character = item.get("character")
+42:         if not isinstance(character, str) or not character.strip():
+43:             raise AbilityValidationError(
+44:                 f"{where}: 'character' must be a non-empty roster id or exact character name."
+45:             )
+46:         conditions.append(Condition(type=str(condition_type), character=character.strip()))
+47: 
+48:     effects_raw = raw.get("effects")
+49:     if not isinstance(effects_raw, list) or not effects_raw:
+50:         raise AbilityValidationError(f"{context}: 'effects' must be a non-empty list.")
+51:     effects: list[Effect] = []
+52:     for index, item in enumerate(effects_raw, start=1):
+53:         where = f"{context}: effect #{index} of ability {ability_id!r}"
+54:         if not isinstance(item, dict):
+55:             raise AbilityValidationError(f"{where} must be a JSON object.")
+56:         effect_type = item.get("type")
+57:         if effect_type not in SUPPORTED_EFFECT_TYPES:
+58:             raise AbilityValidationError(
+59:                 f"{where}: unsupported effect type {effect_type!r}; "
+60:                 f"supported effects: {sorted(SUPPORTED_EFFECT_TYPES)}."
+61:             )
+62:         if effect_type == "add_current_points":
+63:             amount = item.get("amount")
+64:             if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
+65:                 raise AbilityValidationError(f"{where}: 'amount' must be a non-zero integer.")
+66:         else:
+67:             # eliminate_target carries no numeric amount; target selection
+68:             # happens through the pending-elimination pause, not a delta.
+69:             amount = 0
+70:         effects.append(Effect(type=str(effect_type), amount=int(amount)))
+71: 
+72:     activation_limit = raw.get("activation_limit", "once_per_card_per_match")
+73:     if activation_limit not in SUPPORTED_ACTIVATION_LIMITS:
+74:         raise AbilityValidationError(
+75:             f"{context}: unsupported activation_limit {activation_limit!r} for ability "
+76:             f"{ability_id!r}; supported limits: {sorted(SUPPORTED_ACTIVATION_LIMITS)}."
+77:         )
+78: 
+79:     presentation_raw = raw.get("presentation", {})
+80:     if not isinstance(presentation_raw, dict):
+81:         raise AbilityValidationError(f"{context}: 'presentation' must be a JSON object.")
+82:     total = sum(effect.amount for effect in effects)
+83:     default_text = f"+{total}" if total > 0 else str(total)
+84:     floating_text = presentation_raw.get("floating_text", default_text)
+85:     if not isinstance(floating_text, str) or not floating_text.strip():
+86:         raise AbilityValidationError(
+87:             f"{context}: presentation 'floating_text' must be a non-empty string."
+88:         )
+89:     animation = presentation_raw.get("animation", "points_gain")
+90:     if animation not in SUPPORTED_ANIMATIONS:
+91:         raise AbilityValidationError(
+92:             f"{context}: unsupported presentation animation {animation!r} for ability "
+93:             f"{ability_id!r}; supported animations: {sorted(SUPPORTED_ANIMATIONS)}."
+94:         )
+95: 
+96:     # Elimination targeting: only validated when an effect is eliminate_target.
+97:     has_elimination = any(effect.type == "eliminate_target" for effect in effects)
+98:     target_scope = "any_row"
+99:     target_side = "opposing"
+100:     allowed_types: tuple[str, ...] = ()
+101:     max_base_points: int | None = None
+102:     min_base_points: int | None = None
+103:     if has_elimination:
+104:         targeting_raw = raw.get("targeting", {})
+105:         if not isinstance(targeting_raw, dict):
+106:             raise AbilityValidationError(
+107:                 f"{context}: 'targeting' must be a JSON object for eliminate_target abilities."
+108:             )
+109:         target_scope = targeting_raw.get("target_scope", "any_row")
+110:         if target_scope not in {"same_row", "any_row"}:
+111:             raise AbilityValidationError(
+112:                 f"{context}: targeting 'target_scope' must be 'same_row' or 'any_row'."
+113:             )
+114:         target_side = targeting_raw.get("target_side", "opposing")
+115:         if target_side != "opposing":
+116:             raise AbilityValidationError(
+117:                 f"{context}: targeting 'target_side' must be 'opposing'."
+118:             )
+119:         allowed_types_raw = targeting_raw.get("allowed_types", [])
+120:         if not isinstance(allowed_types_raw, list):
+121:             raise AbilityValidationError(
+122:                 f"{context}: targeting 'allowed_types' must be a list."
+123:             )
+124:         allowed_types = tuple(str(t) for t in allowed_types_raw)
+125:         max_base_points = targeting_raw.get("max_base_points")
+126:         if max_base_points is not None:
+127:             if isinstance(max_base_points, bool) or not isinstance(max_base_points, int):
+128:                 raise AbilityValidationError(
+129:                     f"{context}: targeting 'max_base_points' must be an integer or null."
+130:                 )
+131:         min_base_points = targeting_raw.get("min_base_points")
+132:         if min_base_points is not None:
+133:             if isinstance(min_base_points, bool) or not isinstance(min_base_points, int):
+134:                 raise AbilityValidationError(
+135:                     f"{context}: targeting 'min_base_points' must be an integer or null."
+136:                 )
+137:         if (min_base_points is not None and max_base_points is not None
+138:                 and min_base_points > max_base_points):
+139:             raise AbilityValidationError(
+140:                 f"{context}: targeting 'min_base_points' cannot exceed 'max_base_points'."
+141:             )
+142: 
+143:     return AbilityDefinition(
+144:         id=ability_id,
+145:         name=name,
+146:         description=description,
+147:         trigger=trigger,
+148:         conditions=tuple(conditions),
+149:         effects=tuple(effects),
+150:         activation_limit=str(activation_limit),
+151:         presentation=AbilityPresentation(
+152:             floating_text=floating_text.strip(), animation=str(animation)
+153:         ),
+154:         target_scope=target_scope,
+155:         target_side=target_side,
+156:         allowed_types=allowed_types,
+157:         max_base_points=max_base_points,
+158:         min_base_points=min_base_points,
+159:     )
+160: 
+161: 
+162: def resolve_character_reference(definitions: Mapping[str, Any], reference: str) -> str | None:
+163:     """Resolve a JSON character reference to a roster id (id first, then exact name)."""
+164:     if reference in definitions:
+165:         return reference
+166:     for card_id, definition in definitions.items():
+167:         if getattr(definition, "name", None) == reference:
+168:             return card_id
+169:     return None
+170: 
+171: 
+172: def validate_ability_references(definitions: Mapping[str, Any]) -> None:
+173:     """Validate every loaded ability against the full roster; raises on problems."""
+174:     seen_ids: dict[str, str] = {}
+175:     for card_id, definition in definitions.items():
+176:         ability = getattr(definition, "ability", None)
+177:         if ability is None:
+178:             continue
+179:         if ability.id in seen_ids:
+180:             raise AbilityValidationError(
+181:                 f"Duplicate ability id {ability.id!r} used by characters "
+182:                 f"{seen_ids[ability.id]!r} and {card_id!r}."
+183:             )
+184:         seen_ids[ability.id] = card_id
+185:         for condition in ability.conditions:
+186:             if resolve_character_reference(definitions, condition.character) is None:
+187:                 raise AbilityValidationError(
+188:                     f"Ability {ability.id!r} on character {card_id!r} references unknown "
+189:                     f"character {condition.character!r}; use a roster id or an exact name."
+190:                 )
+191: 
+192: 
+193: @dataclass
+194: class AbilityManager:
+195:     """Owns pending registrations and resolves abilities deterministically.
+196: 
+197:     One manager instance lives on the authoritative engine and is reset at the
+198:     start of every match. Remote clients never resolve abilities; they replay
+199:     the ``ability_activated`` events the authority broadcasts.
+200:     """

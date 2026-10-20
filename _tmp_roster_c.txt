@@ -1,0 +1,7 @@
+[17] Keigo (id=mha_08, base=5, type=Regular)
+    effect: Zero Gravity | Verwijder maximaal 3 bonuspunten van één vijandelijke kaart. De basispunten blijven gewoon staan.
+[18] Toga (id=mha_09, base=2, type=Trickster)
+    effect: Transform | If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.
+[19] Star_And_Stripes (id=mha_10, base=5, type=Regular)
+    effect: Last-Minute Hero | If Star and Stripes is the last card placed in the row, she gains +3 points.
+[20] Gon Freecss (id=hxh_01, base=10, type=GOAT)

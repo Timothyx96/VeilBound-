@@ -51,12 +51,13 @@ KILLUA = "hxh_02"
 SPECIAL = {SASUKE, ITACHI, SANJI, ZORO, VEGETA, GOKU, ALLUKA, KILLUA}
 ABILITY_ID = "sasuke_shared_row_bonus"
 
-# Filler cards must never carry an on-reveal synergy: random draw piles can
-# otherwise leak extra duo activations into unrelated scenarios. Keep this in
+# Filler cards must never carry an on-reveal ability: random draw piles can
+# otherwise leak extra activations into unrelated scenarios. Keep this in
 # sync with the roster JSON abilities.
-ABILITY_HOLDERS = {SASUKE, SANJI, VEGETA, ALLUKA}
+NARUTO = "naruto_01"
+ABILITY_HOLDERS = {SASUKE, SANJI, VEGETA, ALLUKA, KILLUA, NARUTO}
 NON_ABILITY_FILLERS = [
-    "naruto_01", "naruto_05", "naruto_06", "naruto_07", "naruto_08", "naruto_10",
+    "naruto_05", "naruto_06", "naruto_07", "naruto_08", "naruto_10",
     "onepiece_01", "hxh_01", "dragonball_03",
 ]
 
@@ -116,7 +117,7 @@ def make_engine(capacity=2, seed=4):
 
 
 def pick_filler(player):
-    card = next((c for c in player.hand if c.definition_id not in SPECIAL), None)
+    card = next((c for c in player.hand if c.definition_id not in SPECIAL and c.definition_id != NARUTO), None)
     assert card is not None, "scenario needs a non-duo filler card in hand"
     return card
 
@@ -706,4 +707,97 @@ def test_new_synergy_behaves_identically_to_sasuke_when_partner_removed():
     sasuke_bonus = _retraction_bonus_after_partner_removed(SASUKE, ITACHI)
     for holder, partner, _ability_id in NEW_DUOS:
         assert _retraction_bonus_after_partner_removed(holder, partner) == sasuke_bonus, holder
+
+def test_naruto_hinata_partner_same_row_grants_plus_three():
+    engine, holder_card, partner_card = build_duo_same_owner(NARUTO, "naruto_10")
+    base = engine.cards[NARUTO].base_points
+    assert holder_card.current_points == base + 3
+    assert "naruto_hinata_bond_of_love" in holder_card.activated_abilities
+    # The partner itself gains nothing from this ability.
+    assert partner_card.current_points == engine.cards["naruto_10"].base_points
+
+
+def test_naruto_hinata_opponent_partner_does_not_activate():
+    engine = make_engine()
+    p1, p2 = engine.state.players
+    give(p1, engine, NARUTO, "naruto_01", "naruto_05", "naruto_08")
+    give(p2, engine, "naruto_10", "naruto_06", "naruto_07", "naruto_08")
+    holder_card, partner_card = p1.hand[0], p2.hand[0]
+    place(engine, holder_card, 0, 0)
+    place(engine, partner_card, 0, 1)  # opponent's Hinata shares the row
+    place(engine, pick_filler(p1), 1, 0)
+    place(engine, pick_filler(p2), 1, 1)
+    fill_rest(engine)
+    finish_reveals(engine)
+    base = engine.cards[NARUTO].base_points
+    assert holder_card.current_points == base
+    assert holder_card.activated_abilities == []
+
+
+def test_naruto_hinata_no_bonus_different_rows():
+    engine = make_engine()
+    p1, p2 = engine.state.players
+    give(p1, engine, NARUTO, "naruto_05", "naruto_06", "naruto_07")
+    give(p2, engine, "naruto_10", "naruto_06", "naruto_07", "naruto_08")
+    holder_card, partner_card = p1.hand[0], p1.hand[1]
+    place(engine, holder_card, 0, 0)
+    place(engine, pick_filler(p2), 1, 0)
+    place(engine, partner_card, 1, 1)  # different row
+    fill_rest(engine)
+    finish_reveals(engine)
+    base = engine.cards[NARUTO].base_points
+    assert holder_card.current_points == base
+    assert holder_card.activated_abilities == []
+
+
+def test_naruto_hinata_bonus_removed_when_partner_eliminated():
+    engine, holder_card, partner_card = build_duo_same_owner(NARUTO, "naruto_10")
+    base = engine.cards[NARUTO].base_points
+    assert holder_card.current_points == base + 3
+    # Simulate partner elimination: mark the card eliminated and recalc continuous bonuses
+    partner_slot = next(s for s in engine.state.rows[0].slots if s is not None and s.id == partner_card.id)
+    partner_slot.eliminated = True
+    partner_slot.current_points = 0
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert holder_card.current_points == base
+    assert partner_slot.eliminated
+
+
+def test_naruto_hinata_bonus_restored_when_partner_reactivated():
+    engine, holder_card, partner_card = build_duo_same_owner(NARUTO, "naruto_10")
+    base = engine.cards[NARUTO].base_points
+    assert holder_card.current_points == base + 3
+    # Eliminate partner
+    partner_slot = next(s for s in engine.state.rows[0].slots if s is not None and s.id == partner_card.id)
+    partner_slot.eliminated = True
+    partner_slot.current_points = 0
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert holder_card.current_points == base
+    # Reactivate partner (simulate re-placement)
+    partner_slot.eliminated = False
+    partner_slot.revealed = True
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert holder_card.current_points == base + 3
+    # Ensure no stacking
+    assert holder_card.current_points == base + 3
+
+
+def test_naruto_hinata_repeated_recalc_never_stacks():
+    engine, holder_card, partner_card = build_duo_same_owner(NARUTO, "naruto_10")
+    base = engine.cards[NARUTO].base_points
+    # Activate the bonus
+    assert holder_card.current_points == base + 3
+    # Recalc multiple times: should stay at +3
+    for _ in range(5):
+        engine.abilities.recalculate_continuous_bonuses(engine.state)
+        assert holder_card.current_points == base + 3, holder_card.current_points
+
+
+def test_naruto_elimination_ability_definition():
+    engine = make_engine()
+    # The first ability on Naruto should be the elimination ability
+    elimination_ability = engine.cards[NARUTO].abilities[0]
+    assert elimination_ability.id == "naruto_rasenshuriken_eliminate"
+    assert elimination_ability.trigger == "on_reveal"
+    assert [e.type for e in elimination_ability.effects] == ["eliminate_target"]
 

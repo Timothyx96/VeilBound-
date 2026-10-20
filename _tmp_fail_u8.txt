@@ -1,0 +1,114 @@
+........F..................F..........F................................. [ 98%]
+.                                                                        [100%]
+================================== FAILURES ===================================
+______ test_two_sasuke_instances_keep_independent_points_and_activations ______
+
+    def test_two_sasuke_instances_keep_independent_points_and_activations():
+        # Same-player synergy: each Sasuke activates off its OWN player's Itachi
+        # sharing its row. Capacity 4 lets both duos share row 0 while keeping
+        # turn order (p1, p2 alternate).
+        engine = make_engine(capacity=4)
+        p1, p2 = engine.state.players
+        give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
+        give(p2, engine, SASUKE, ITACHI, "naruto_06", "naruto_07")
+        sasuke_a, itachi_a = p1.hand[0], p1.hand[1]
+        sasuke_b, itachi_b = p2.hand[0], p2.hand[1]
+        place(engine, sasuke_a, 0, 0)
+        place(engine, pick_filler(p2), 1, 0)
+        place(engine, itachi_a, 0, 1)  # reveals A (p1 Itachi shares row 0)
+        place(engine, pick_filler(p2), 1, 1)
+>       place(engine, sasuke_b, 0, 2)
+
+tests\test_abilities.py:423: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+engine = <veilbound.shared.rules.GameEngine object at 0x000001BE5A50C950>
+card = {'id': 'test-card-877', 'definition_id': 'naruto_02', 'owner_id': 'player-2', 'revealed': False, 'current_points': 7, 'activated_abilities': [], 'eliminated': False, 'base_points': None, 'applied_bonuses': {}}
+row_index = 0, slot_index = 2
+
+    def place(engine, card, row_index, slot_index):
+        active = engine.state.active_player
+>       assert active.id == card.owner_id, "test sequence must follow turn order"
+E       AssertionError: test sequence must follow turn order
+E       assert 'player-1' == 'player-2'
+E         
+E         - player-2
+E         ?        ^
+E         + player-1
+E         ?        ^
+
+tests\test_abilities.py:126: AssertionError
+__________ test_final_reveal_pause_resumes_after_selecting_a_target ___________
+
+    def test_final_reveal_pause_resumes_after_selecting_a_target():
+        engine = scripted_engine(capacity=3)
+        p1, p2 = engine.state.players
+        give(p1, engine, GO, LUFFY, KILLUA)
+        give(p2, engine, KAKASHI, HISOKA, ITACHI)
+        go, luffy, killua = p1.hand
+        kakashi, hisoka, itachi = p2.hand
+        place(engine, go, 0, 0)              # GO (p1, hidden)
+        place(engine, kakashi, 0, 1)         # KAKASHI reveals GO
+        place(engine, killua, 0, 2)          # KILLUA reveals KAKASHI; row0 full
+        place(engine, hisoka, 1, 0)
+        place(engine, luffy, 1, 1)           # reveals HISOKA
+        place(engine, itachi, 1, 2)          # reveals LUFFY
+        fill_rest(engine)
+        assert engine.state.phase == GamePhase.REVEAL
+    
+        reveal = engine.reveal_next_card()       # first hidden: row0/s2 = KILLUA
+        assert reveal.accepted
+        pending = engine.state.pending_elimination
+        assert pending is not None
+        assert pending["attacker_card_id"] == killua.id
+        assert pending["attacker_owner_id"] == "player-1"
+        # Row-major order: KAKASHI (row0/s1) first, then HISOKA (row1/s0).
+>       assert [(t["row_id"], t["slot_index"]) for t in pending["valid_targets"]] == [
+            (engine.state.rows[0].id, 1),
+            (engine.state.rows[1].id, 0),
+        ]
+E       AssertionError: assert [('round-1-ro...-1-row-4', 0)] == [('round-1-ro...-1-row-2', 0)]
+E         
+E         Left contains 2 more items, first extra item: ('round-1-row-3', 1)
+E         Use -v to get more diff
+
+tests\test_elimination.py:247: AssertionError
+_______________ test_row_box_totals_include_only_revealed_cards _______________
+
+    def test_row_box_totals_include_only_revealed_cards():
+        engine = fixed_engine(capacity=2)
+        row = engine.state.rows[0]
+        p1, p2 = engine.state.players
+        assert engine.play_card(p1.id, p1.hand[0].id, row.id, 0).accepted
+        assert engine.play_card(p2.id, p2.hand[0].id, row.id, 1).accepted
+    
+        renderer = Renderer.__new__(Renderer)
+        labels = []
+        renderer._text_center_fit = lambda _screen, text, *_args, **_kwargs: labels.append(text)
+        renderer._text_center = lambda _screen, text, *_args, **_kwargs: labels.append(text)
+>       renderer._draw_row_box(
+            pygame.Surface((120, 120)), row, pygame.Rect(0, 0, 80, 90), engine.state, engine.cards,
+        )
+
+tests\test_gameplay.py:282: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+veilbound\client\renderer.py:1246: in _draw_row_box
+    panel = self._row_panel_surface(rect.size)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <veilbound.client.renderer.Renderer object at 0x000001BE5A363CB0>
+size = (80, 90)
+
+    def _row_panel_surface(self, size: tuple[int, int]) -> pygame.Surface | None:
+        """Load, cover-crop, and round the dark-marble texture for a square panel."""
+>       cached = self._row_panel_cache.get(size)
+                 ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'Renderer' object has no attribute '_row_panel_cache'. Did you mean: '_row_panel_surface'?
+
+veilbound\client\renderer.py:1226: AttributeError
+=========================== short test summary info ===========================
+FAILED tests/test_abilities.py::test_two_sasuke_instances_keep_independent_points_and_activations
+FAILED tests/test_elimination.py::test_final_reveal_pause_resumes_after_selecting_a_target
+FAILED tests/test_gameplay.py::test_row_box_totals_include_only_revealed_cards
+3 failed, 70 passed in 0.84s

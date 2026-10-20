@@ -1,0 +1,50 @@
+1. spec 'Naruto Uzumaki' / 'Six Paths: Rasen-Shuriken'  || roster naruto_01 'Naruto Uzumaki' / 'Six Paths: Rasen-Shuriken'  desc_match=True name_match=True  ability=N
+2. spec 'Sasuke Uchiha' / 'Eternal Rivalry'  || roster naruto_02 'Sasuke Uchiha' / 'Eternal Rivalry'  desc_match=True name_match=True  ability=Y
+3. spec 'Itachi Uchiha' / 'Tsukuyomi'  || roster naruto_03 'Itachi Uchiha' / 'Tsukuyomi'  desc_match=True name_match=True  ability=N
+4. spec 'Sakura Haruno' / 'Cherry Blossom Impact'  || roster naruto_04 'Sakura Haruno' / 'Cherry Blossom Impact'  desc_match=True name_match=True  ability=N
+5. spec 'Kakashi Hatake' / 'Sharingan Copy'  || roster naruto_05 'Kakashi Hatake' / 'Sharingan Copy'  desc_match=True name_match=True  ability=N
+6. spec 'Madara Uchiha' / 'Perfect Susanoo'  || roster naruto_06 'Minato' / 'Flying Raijin'  desc_match=True name_match=False  ability=N
+7. spec 'Tobi' / 'This Was My Plan All Along'  || roster naruto_07 'Tobi' / 'This Was My Plan All Along'  desc_match=True name_match=True  ability=N
+8. spec 'Shikamaru Nara' / 'Shadow Possession'  || roster naruto_08 'Shikamaru Nara' / 'Shadow Possession'  desc_match=True name_match=True  ability=N
+9. spec 'Rock Lee' / 'Eight Gates: First Gate'  || roster naruto_09 'Rock Lee' / 'Eight Gates: First Gate'  desc_match=True name_match=True  ability=N
+10. spec 'Hinata Hyuga' / 'Byakugan'  || roster naruto_10 'Hinata Hyuga' / 'Byakugan'  desc_match=True name_match=True  ability=N
+11. spec 'All Might' / 'Symbol of Peace'  || roster mha_01 'Izuku Midoriya (Deku)' / 'One For All: United Front'  desc_match=False name_match=False  ability=N
+12. spec 'Izuku Midoriya (Deku)' / 'One For All: United Front'  || roster mha_02 'Katsuki Bakugo' / 'I've Got Your Back!'  desc_match=False name_match=False  ability=N
+13. spec 'Katsuki Bakugo' / 'I've Got Your Back!'  || roster mha_03 'Dabi' / 'Blueflame Pursuit'  desc_match=False name_match=False  ability=N
+14. spec 'Dabi' / 'Blueflame Pursuit'  || roster mha_04 'All Might' / 'Symbol of Peace'  desc_match=False name_match=False  ability=N
+15. spec 'Endeavor' / 'Number One, No Matter What'  || roster mha_05 'Endeavor' / 'Number One, No Matter What'  desc_match=True name_match=True  ability=N
+16. spec 'Shoto Todoroki' / 'Flashfire and Frost'  || roster mha_06 'Shoto Todoroki' / 'Flashfire and Frost'  desc_match=True name_match=True  ability=N
+17. spec 'Toga' / 'Transform'  || roster mha_07 'Lady_Nagant' / 'Deadeye'  desc_match=False name_match=False  ability=N
+18. spec 'Lady Nagant' / 'Deadeye'  || roster mha_08 'Keigo' / 'Zero Gravity'  desc_match=False name_match=False  ability=N
+19. spec 'Keigo (Hawks)' / 'Fierce Wings'  || roster mha_09 'Toga' / 'Transform'  desc_match=False name_match=False  ability=N
+20. spec 'Star and Stripes' / 'Last-Minute Hero'  || roster mha_10 'Star_And_Stripes' / 'Last-Minute Hero'  desc_match=True name_match=True  ability=N
+21. spec 'Gon Freecss' / 'Jajanken: Rock'  || roster hxh_01 'Gon Freecss' / 'Jajanken: Rock'  desc_match=True name_match=True  ability=N
+22. spec 'Killua Zoldyck' / 'Godspeed'  || roster hxh_02 'Killua Zoldyck' / 'Godspeed'  desc_match=True name_match=True  ability=Y
+23. spec 'Alluka Zoldyck' / 'Nanika's Wish'  || roster hxh_03 'Alluka Zoldyck' / 'Nanika's Wish'  desc_match=False name_match=True  ability=Y
+24. spec 'Hisoka' / 'Bungee Gum'  || roster hxh_04 'Hisoka' / 'Bungee Gum'  desc_match=True name_match=True  ability=N
+25. spec 'Chrollo Lucilfer' / 'Master Strategist'  || roster hxh_05 'Chrollo Lucilfer' / 'Master Strategist'  desc_match=True name_match=True  ability=N
+26. spec 'Isaac Netero' / '100-Type Guanyin Bodhisattva'  || roster hxh_06 'Isaac Netero' / '100-Type Guanyin Bodhisattva'  desc_match=True name_match=True  ability=N
+27. spec 'Kurapika' / 'Chain Jail'  || roster hxh_07 'Kite' / 'Crazy Slots'  desc_match=False name_match=False  ability=N
+28. spec 'Kite' / 'Crazy Slots'  || roster hxh_08 'Kurapika' / 'Chain Jail'  desc_match=False name_match=False  ability=N
+29. spec 'Biscuit Krueger' / 'True Form'  || roster hxh_09 'Illumi' / 'Needle'  desc_match=False name_match=False  ability=N
+30. spec 'Leorio Paradinight' / 'Emergency Treatment'  || roster hxh_10 'Leorio Paradinight' / 'Emergency Treatment'  desc_match=True name_match=True  ability=N
+31. spec 'Monkey D. Luffy' / 'Warrior of Liberation'  || roster onepiece_01 'Monkey D. Luffy' / 'Warrior of Liberation'  desc_match=True name_match=True  ability=N
+32. spec 'Roronoa Zoro' / 'Three-Sword Style'  || roster onepiece_02 'Roronoa Zoro' / 'Three-Sword Style'  desc_match=True name_match=True  ability=N
+33. spec 'Sanji' / 'Wings of the Pirate King'  || roster onepiece_03 'Sanji' / 'Wings of the Pirate King'  desc_match=True name_match=True  ability=Y
+34. spec 'Shanks' / 'Conqueror's Haki'  || roster onepiece_04 'Shanks' / 'Conqueror's Haki'  desc_match=True name_match=True  ability=N
+35. spec 'Trafalgar D. Water Law' / 'Room'  || roster onepiece_05 'Nico Robin' / 'Clutch'  desc_match=False name_match=False  ability=N
+36. spec 'Usopp' / 'God Usopp'  || roster onepiece_06 'Trafalgar D. Water Law' / 'Room'  desc_match=False name_match=False  ability=N
+37. spec 'Buggy the Clown' / 'Chop-Chop Escape'  || roster onepiece_07 'Whitebeard' / 'The one piece is real'  desc_match=True name_match=False  ability=N
+38. spec 'Nico Robin' / 'Clutch'  || roster onepiece_08 'Usopp' / 'God Usopp'  desc_match=False name_match=False  ability=N
+39. spec 'Nami' / 'Cat Burglar'  || roster onepiece_09 'Nami' / 'Cat Burglar'  desc_match=True name_match=True  ability=N
+40. spec 'Tony Tony Chopper' / 'Emergency Medicine'  || roster onepiece_10 'Tony Tony Chopper' / 'Doctor Chopper Arrives'  desc_match=True name_match=False  ability=N
+41. spec 'Gogeta (Super Saiyan Blue)' / 'Stardust Breaker'  || roster dragonball_01 'Goku (Ultra Instinct)' / 'Autonomous Ultra Instinct'  desc_match=False name_match=False  ability=N
+42. spec 'Goku (Ultra Instinct)' / 'Autonomous Ultra Instinct'  || roster dragonball_02 'Vegeta' / 'Prince's Rivalry'  desc_match=False name_match=False  ability=Y
+43. spec 'Vegeta' / 'Prince's Rivalry'  || roster dragonball_03 'Gogeta (Super Saiyan Blue)' / 'Stardust Breaker'  desc_match=False name_match=False  ability=N
+44. spec 'Broly' / 'Legendary Saiyan'  || roster dragonball_04 'Frieza (Golden)' / 'Golden Tyrant'  desc_match=False name_match=False  ability=N
+45. spec 'Frieza (Golden)' / 'Golden Tyrant'  || roster dragonball_05 'Broly' / 'Legendary Saiyan'  desc_match=False name_match=False  ability=N
+46. spec 'Gohan (Beast)' / 'Hidden Potential Unlocked'  || roster dragonball_06 'Future Trunks' / 'Hope of the Future'  desc_match=False name_match=False  ability=N
+47. spec 'Hit' / 'Time Skip'  || roster dragonball_07 'Gohan (Beast)' / 'Hidden Potential Unlocked'  desc_match=False name_match=False  ability=N
+48. spec 'Future Trunks' / 'Hope of the Future'  || roster dragonball_08 'Hit' / 'Time Skip'  desc_match=False name_match=False  ability=N
+49. spec 'Zeno' / 'Erase from Existence'  || roster dragonball_09 'Zeno' / 'Erase from Existence'  desc_match=False name_match=True  ability=N
+50. spec 'Whis' / 'Temporal Rewind'  || roster dragonball_10 'Whis' / 'Temporal Rewind'  desc_match=True name_match=True  ability=N

@@ -1,0 +1,101 @@
+﻿N = 50
+[1] Naruto Uzumaki | Six Paths: Rasen-Shuriken
+    Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row.
+[2] Sasuke Uchiha | Eternal Rivalry
+    Gains +3 points if allied Itachi is in the same row.
+[3] Itachi Uchiha | Tsukuyomi
+    Cancels all bonus points gained by one opposing card in the same row.
+[4] Sakura Haruno | Cherry Blossom Impact
+    Gains +2 points if Naruto or Sasuke is in the same row.
+[5] Kakashi Hatake | Sharingan Copy
+    Copies the bonus points of one opposing character in the same row. Kakashi gains the same number of bonus points.
+[6] Madara Uchiha | Perfect Susanoo
+    Gains +2 points for each other opposing card in his row, up to a maximum bonus of +6.
+[7] Tobi | This Was My Plan All Along
+    The row is won by the player with the lowest total points instead of the highest. This effect does not override All Might's effect.
+[8] Shikamaru Nara | Shadow Possession
+    Removes the bonus points from one card in the same row. Cannot target GOAT cards.
+[9] Rock Lee | Eight Gates: First Gate
+    Gains +4 points if there are no other friendly cards in his row.
+[10] Hinata Hyuga | Byakugan
+    Gains +1 point for each other friendly Regular card in the same row.
+[11] All Might | Symbol of Peace
+    If the opposing row contains no GOAT card, you automatically win that row. All Might's automatic-win effect takes priority over all other automatic-win effects.
+[12] Izuku Midoriya (Deku) | One For All: United Front
+    If Deku is placed directly next to Bakugo in the same row, he gains +5 points. He also gains +1 point for each allied Fighter in that row.
+[13] Katsuki Bakugo | I've Got Your Back!
+    If Bakugo is placed directly next to Deku in the same row, he gains +5 points.
+[14] Dabi | Blueflame Pursuit
+    Each opposing character placed behind Dabi in the same row loses 1 point.
+[15] Endeavor | Number One, No Matter What
+    If Endeavor is the first card placed in an otherwise empty row, he gains +4 points.
+[16] Shoto Todoroki | Flashfire and Frost
+    Cancels one opposing character's effect that grants additional points.
+[17] Toga | Transform
+    If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.
+[18] Lady Nagant | Deadeye
+    If the next character placed in the row belongs to the opposing team, that character loses 3 points.
+[19] Keigo (Hawks) | Fierce Wings
+    After Hawks is placed, you may move one other allied card to a different row.
+[20] Star and Stripes | Last-Minute Hero
+    If Star and Stripes is the last card placed in the row, she gains +3 points.
+[21] Gon Freecss | Jajanken: Rock
+    All friendly Fighter cards on the board gain +4 points. After activating this ability, Gon's points are reduced to 1. Only characters on the board at the time of activation receive the bonus.
+[22] Killua Zoldyck | Godspeed
+    Eliminates one opposing character anywhere on the board.
+[23] Alluka Zoldyck | Nanika's Wish
+    Revives one eliminated friendly character anywhere on the board, restoring its original points and ability.
+[24] Hisoka | Bungee Gum
+    Copies the current bonus points of one opposing character in the same row.
+[25] Chrollo Lucilfer | Master Strategist
+    The next opposing character placed in the same row cannot activate its ability or gain additional points.
+[26] Isaac Netero | 100-Type Guanyin Bodhisattva
+    Reduces the points of every opposing character in his row by 2.
+[27] Kurapika | Chain Jail
+    Reduces the points of one opposing Fighter card in the same row by 2.
+[28] Kite | Crazy Slots
+    Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.
+[29] Biscuit Krueger | True Form
+    Gains +2 points if there are three other friendly characters in her row.
+[30] Leorio Paradinight | Emergency Treatment
+    Revives one eliminated friendly character in the same row, restoring its original points and ability.
+[31] Monkey D. Luffy | Warrior of Liberation
+    Luffy ignores all opposing abilities that would eliminate, weaken, move, or disable him. Eliminates one opposing card in his row, regardless of card type.
+[32] Roronoa Zoro | Three-Sword Style
+    Eliminates one opposing Fighter card in the same row.
+[33] Sanji | Wings of the Pirate King
+    Gains +3 points if placed in the same row as Zoro.
+[34] Shanks | Conqueror's Haki
+    Cancels all abilities in the row, including friendly and opposing abilities. Abilities in that row can no longer activate, and eliminated characters remain eliminated.
+[35] Trafalgar D. Water Law | Room
+    Moves one opposing card from his row to another row chosen by the player.
+[36] Usopp | God Usopp
+    Gains +3 points if there is an opposing GOAT card in his row.
+[37] Buggy the Clown | Chop-Chop Escape
+    Cannot be eliminated by an opposing ability.
+[38] Nico Robin | Clutch
+    Reduces the points of one opposing card in her row by 2.
+[39] Nami | Cat Burglar
+    Steals up to 2 bonus points from one opposing character in the same row. Nami cannot steal a character's base points.
+[40] Tony Tony Chopper | Emergency Medicine
+    Revives one eliminated friendly character in the same row, restoring its original points and ability.
+[41] Gogeta (Super Saiyan Blue) | Stardust Breaker
+    Gains +3 points for each opposing Fighter card in his row.
+[42] Goku (Ultra Instinct) | Autonomous Ultra Instinct
+    The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself.
+[43] Vegeta | Prince's Rivalry
+    Gains +3 points if Goku is in the same row.
+[44] Broly | Legendary Saiyan
+    Gains +2 points for each opposing Fighter card played in his row after Broly, with no maximum bonus.
+[45] Frieza (Golden) | Golden Tyrant
+    Eliminates one opposing card in his row with 5 or fewer base points.
+[46] Gohan (Beast) | Hidden Potential Unlocked
+    Gains +3 points if an opposing card in his row has more points than Gohan before ability bonuses.
+[47] Hit | Time Skip
+    The next opposing card played after Hit in the same row cannot activate its ability.
+[48] Future Trunks | Hope of the Future
+    Gains +5 points if another friendly card in his row is eliminated.
+[49] Zeno | Erase from Existence
+    If an opposing ability would eliminate Zeno, he cancels that elimination and eliminates the opposing card that caused it instead.
+[50] Whis | Temporal Rewind
+    Revives one friendly card eliminated in the same row, restoring its original points and ability.

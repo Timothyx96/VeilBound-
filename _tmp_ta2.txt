@@ -1,0 +1,121 @@
+400| 
+401|     engine.start_new_match()
+402|     assert engine.abilities.pending_abilities == ()
+403|     for player in engine.state.players:
+404|         for card in player.draw_pile + player.hand + player.used:
+405|             assert card.current_points == engine.cards[card.definition_id].base_points
+406|             assert card.activated_abilities == []
+407| 
+408| 
+409| def test_two_sasuke_instances_keep_independent_points_and_activations():
+410|     # Same-player synergy: each Sasuke activates off its OWN player's Itachi
+411|     # sharing its row. Capacity 4 lets both duos share row 0 while keeping
+412|     # turn order (p1, p2 alternate).
+413|     engine = make_engine(capacity=4)
+414|     p1, p2 = engine.state.players
+415|     give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
+416|     give(p2, engine, SASUKE, ITACHI, "naruto_06", "naruto_07")
+417|     sasuke_a, itachi_a = p1.hand[0], p1.hand[1]
+418|     sasuke_b, itachi_b = p2.hand[0], p2.hand[1]
+419|     place(engine, sasuke_a, 0, 0)
+420|     place(engine, pick_filler(p2), 1, 0)
+421|     place(engine, itachi_a, 0, 1)  # reveals A (p1 Itachi shares row 0)
+422|     place(engine, pick_filler(p2), 1, 1)
+423|     place(engine, sasuke_b, 0, 2)
+424|     place(engine, pick_filler(p2), 1, 2)
+425|     place(engine, itachi_b, 0, 3)  # row 0 full -> final reveals pending
+426|     place(engine, pick_filler(p2), 1, 3)
+427|     fill_rest(engine)
+428|     reveals = finish_reveals(engine)
+429|     # Row-major finals: row-0 Itachi A reveals first -> Sasuke A fires
+430|     # (same row, same owner p1); then Itachi B -> Sasuke B fires (p2).
+431|     first_grant = ability_events(reveals[0])
+432|     assert len(first_grant) == 1
+433|     assert first_grant[0].data["owner_card_id"] == sasuke_a.id
+434|     assert sasuke_a.current_points == 10
+435|     assert sasuke_b.current_points == 7  # no shared state between instances
+436|     assert sasuke_b.activated_abilities == []
+437|     second_grant = ability_events(reveals[1])
+438|     assert len(second_grant) == 1
+439|     assert second_grant[0].data["owner_card_id"] == sasuke_b.id
+440|     assert sasuke_a.current_points == 10
+441|     assert sasuke_b.current_points == 10
+442|     assert sasuke_a.activated_abilities == [ABILITY_ID]
+443|     assert sasuke_b.activated_abilities == [ABILITY_ID]
+444|     assert ability_events(reveals[2:]) == []
+445| 
+446| 
+447| def test_itachi_declares_no_ability_and_contributes_base_points():
+448|     engine = make_engine()
+449|     assert engine.cards[ITACHI].ability is None
+450| 
+451|     engine, sasuke, itachi, _ = build_sasuke_first()
+452|     finish_reveals(engine)
+453|     assert itachi.current_points == 6 == engine.cards[ITACHI].base_points
+454|     assert itachi.activated_abilities == []
+455|     # The only activation in the round belongs to Sasuke.
+456|     owners = [
+457|         event.data["owner_card_id"]
+458|         for event in engine.state.events
+459|         if event.kind == "ability_activated"
+460|     ]
+461|     assert owners == [sasuke.id]
+462| 
+463| 
+464| def test_scoring_uses_sasuke_modified_current_points():
+465|     engine, sasuke, itachi, _ = build_sasuke_first()
+466|     finish_reveals(engine)
+467|     p1, p2 = engine.state.players
+468|     row = engine.state.rows[0]
+469| 
+470|     # Row totals (live and scored) use current points: 10 + 6 for player 1.
+471|     assert calculate_row_scores(row, (p1.id, p2.id), engine.cards) == {
+472|         p1.id: 16,
+473|         p2.id: 0,
+474|     }
+475|     score = engine.score_current_row()
+476|     assert score.accepted
+477|     assert row.scores == {p1.id: 16, p2.id: 0}
+478|     assert row.winner_id == p1.id
+479|     assert row.awarded_points == row.point_value
+480|     assert p1.match_points == row.point_value
+481| 
+482| 
+483| def test_simultaneous_eligible_abilities_resolve_in_registration_order():
+484|     engine = make_engine(capacity=4)
+485|     p1, p2 = engine.state.players
+486|     give(p1, engine, SASUKE, "naruto_05", SASUKE, ITACHI)
+487|     give(p2, engine, "naruto_06", "naruto_07", "naruto_08", "naruto_10", "naruto_01")
+488|     sasuke_a, sasuke_b, itachi = p1.hand[0], p1.hand[2], p1.hand[3]
+489| 
+490|     place(engine, sasuke_a, 0, 0)
+491|     place(engine, pick_filler(p2), 1, 0)
+492|     place(engine, sasuke_b, 0, 1)  # reveals A -> registers A (sequence 1)
+493|     place(engine, pick_filler(p2), 1, 1)
+494|     place(engine, itachi, 0, 2)  # reveals B -> registers B (sequence 2)
+495|     # Documented order: registration sequence (= owner reveal order).
+496|     assert engine.abilities.pending_abilities == (
+497|         (1, ABILITY_ID, sasuke_a.id),
+498|         (2, ABILITY_ID, sasuke_b.id),
+499|     )
+500|     place(engine, pick_filler(p2), 1, 2)
+501| 
+502|     # Placing a filler into row 1 slot 4 reveals Itachi: both pending
+503|     # abilities become eligible in the same pass.
+504|     reveal_itachi = place(engine, pick_filler(p1), 0, 3)
+505|     kinds = [
+506|         event.kind
+507|         for event in reveal_itachi.events
+508|         if event.kind in {"card_revealed", "ability_activated"}
+509|     ]
+510|     assert kinds == ["card_revealed", "ability_activated", "ability_activated"]
+511|     owners = [
+512|         event.data["owner_card_id"]
+513|         for event in reveal_itachi.events
+514|         if event.kind == "ability_activated"
+515|     ]
+516|     assert owners == [sasuke_a.id, sasuke_b.id]
+517|     assert sasuke_a.current_points == 10
+518|     assert sasuke_b.current_points == 10
+519|     assert engine.abilities.pending_abilities == ()
+520| 

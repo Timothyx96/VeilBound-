@@ -1,0 +1,102 @@
+﻿TYPES: ['Dynamic Duo', 'Fighter', 'GOAT', 'Regular', 'Trickster']
+
+naruto_01        Naruto Uzumaki                   bp=10  type=GOAT           ability=no
+    Six Paths: Rasen-Shuriken: Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row.
+naruto_02        Sasuke Uchiha                    bp=7   type=Dynamic Duo    ability=YES sasuke_shared_row_bonus
+    Eternal Rivalry: Gains +3 points if allied Itachi is in the same row.
+naruto_03        Itachi Uchiha                    bp=6   type=Dynamic Duo    ability=no
+    Tsukuyomi: Cancels all bonus points gained by one opposing card in the same row.
+naruto_04        Sakura Haruno                    bp=6   type=Fighter        ability=no
+    Cherry Blossom Impact: Gains +2 points if Naruto or Sasuke is in the same row.
+naruto_05        Kakashi Hatake                   bp=7   type=Fighter        ability=no
+    Sharingan Copy: Copies the bonus points of one opposing character in the same row. Kakashi gains the same number of bonus points.
+naruto_06        Minato                           bp=8   type=Fighter        ability=no
+    Flying Raijin: Gains +2 points for each other opposing card in his row, up to a maximum bonus of +6.
+naruto_07        Tobi                             bp=4   type=Trickster      ability=no
+    This Was My Plan All Along: The row is won by the player with the lowest total points instead of the highest. This effect does not override All Might's effect.
+naruto_08        Shikamaru Nara                   bp=5   type=Regular        ability=no
+    Shadow Possession: Removes the bonus points from one card in the same row. Cannot target GOAT cards.
+naruto_09        Rock Lee                         bp=5   type=Regular        ability=no
+    Eight Gates: First Gate: Gains +4 points if there are no other friendly cards in his row.
+naruto_10        Hinata Hyuga                     bp=4   type=Regular        ability=no
+    Byakugan: Gains +1 point for each other friendly Regular card in the same row.
+mha_01           Izuku Midoriya (Deku)            bp=8   type=Dynamic Duo    ability=no
+    One For All: United Front: If Deku is placed directly next to Bakugo in the same row, he gains +5 points. He also gains +1 point for each allied Fighter in that row.
+mha_02           Katsuki Bakugo                   bp=7   type=Dynamic Duo    ability=no
+    I've Got Your Back!: If Bakugo is placed directly next to Deku in the same row, he gains +5 points.
+mha_03           Dabi                             bp=6   type=Fighter        ability=no
+    Blueflame Pursuit: Each opposing character placed behind Dabi in the same row loses 1 point.
+mha_04           All Might                        bp=10  type=GOAT           ability=no
+    Symbol of Peace: If the opposing row contains no GOAT card, you automatically win that row. All Might's automatic-win effect takes priority over all other automatic-win effects.
+mha_05           Endeavor                         bp=8   type=Fighter        ability=no
+    Number One, No Matter What: If Endeavor is the first card placed in an otherwise empty row, he gains +4 points.
+mha_06           Shoto Todoroki                   bp=8   type=Fighter        ability=no
+    Flashfire and Frost: Cancels one opposing character's effect that grants additional points.
+mha_07           Lady_Nagant                      bp=4   type=Regular        ability=no
+    Deadeye: De volgende kaart in de rij krijgt -3 punten als deze vijandelijk is.
+mha_08           Keigo                            bp=5   type=Regular        ability=no
+    Zero Gravity: Verwijder maximaal 3 bonuspunten van ├®├®n vijandelijke kaart. De basispunten blijven gewoon staan.
+mha_09           Toga                             bp=2   type=Trickster      ability=no
+    Transform: If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.
+mha_10           Star_And_Stripes                 bp=5   type=Regular        ability=no
+    Last-Minute Hero: If Star and Stripes is the last card placed in the row, she gains +3 points.
+hxh_01           Gon Freecss                      bp=10  type=GOAT           ability=no
+    Jajanken: Rock: All friendly Fighter cards on the board gain +4 points. After activating this ability, Gon's points are reduced to 1. Only characters on the board at the time of activation receive the bonus.
+hxh_02           Killua Zoldyck                   bp=7   type=Dynamic Duo    ability=YES killua_godspeed_eliminate
+    Godspeed: Eliminates one opposing character anywhere on the board.
+hxh_03           Alluka Zoldyck                   bp=5   type=Dynamic Duo    ability=YES alluka_killua_row_bonus
+    Nanika's Wish: Gain 3 points when Alluka and Killua are both revealed in the same row.
+hxh_04           Hisoka                           bp=8   type=Fighter        ability=no
+    Bungee Gum: Copies the current bonus points of one opposing character in the same row.
+hxh_05           Chrollo Lucilfer                 bp=7   type=Fighter        ability=no
+    Master Strategist: The next opposing character placed in the same row cannot activate its ability or gain additional points.
+hxh_06           Isaac Netero                     bp=8   type=Fighter        ability=no
+    100-Type Guanyin Bodhisattva: Reduces the points of every opposing character in his row by 2.
+hxh_07           Kite                             bp=5   type=Trickster      ability=no
+    Crazy Slots: Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.
+hxh_08           Kurapika                         bp=6   type=Fighter        ability=no
+    Chain Jail: Reduces the points of one opposing Fighter card in the same row by 2.
+hxh_09           Illumi                           bp=5   type=Regular        ability=no
+    Needle: Gains +2 points if there are three other friendly characters in his row.
+hxh_10           Leorio Paradinight               bp=5   type=Regular        ability=no
+    Emergency Treatment: Revives one eliminated friendly character in the same row, restoring its original points and ability.
+onepiece_01      Monkey D. Luffy                  bp=10  type=GOAT           ability=no
+    Warrior of Liberation: Luffy ignores all opposing abilities that would eliminate, weaken, move, or disable him. Eliminates one opposing card in his row, regardless of card type.
+onepiece_02      Roronoa Zoro                     bp=7   type=Dynamic Duo    ability=no
+    Three-Sword Style: Eliminates one opposing Fighter card in the same row.
+onepiece_03      Sanji                            bp=7   type=Dynamic Duo    ability=YES sanji_zoro_row_bonus
+    Wings of the Pirate King: Gains +3 points if placed in the same row as Zoro.
+onepiece_04      Shanks                           bp=8   type=Fighter        ability=no
+    Conqueror's Haki: Cancels all abilities in the row, including friendly and opposing abilities. Abilities in that row can no longer activate, and eliminated characters remain eliminated.
+onepiece_05      Nico Robin                       bp=4   type=Regular        ability=no
+    Clutch: Reduces the points of one opposing card in her row by 2.
+onepiece_06      Trafalgar D. Water Law           bp=7   type=Fighter        ability=no
+    Room: Moves one opposing card from his row to another row chosen by the player.
+onepiece_07      Whitebeard                       bp=4   type=Regular        ability=no
+    The one piece is real: Cannot be eliminated by an opposing ability.
+onepiece_08      Usopp                            bp=4   type=Trickster      ability=no
+    God Usopp: Gains +3 points if there is an opposing GOAT card in his row.
+onepiece_09      Nami                             bp=5   type=Regular        ability=no
+    Cat Burglar: Steals up to 2 bonus points from one opposing character in the same row. Nami cannot steal a character's base points.
+onepiece_10      Tony Tony Chopper                bp=4   type=Regular        ability=no
+    Doctor Chopper Arrives: Revives one eliminated friendly character in the same row, restoring its original points and ability.
+dragonball_01    Goku (Ultra Instinct)            bp=9   type=Dynamic Duo    ability=no
+    Autonomous Ultra Instinct: The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself.
+dragonball_02    Vegeta                           bp=7   type=Dynamic Duo    ability=YES vegeta_goku_row_bonus
+    Prince's Rivalry: Gains +3 points if Goku is in the same row.
+dragonball_03    Gogeta (Super Saiyan Blue)       bp=10  type=GOAT           ability=no
+    Stardust Breaker: Gains +3 points for each opposing Fighter card in his row.
+dragonball_04    Frieza (Golden)                  bp=8   type=Fighter        ability=no
+    Golden Tyrant: Eliminates one opposing card in his row with 5 or fewer base points.
+dragonball_05    Broly                            bp=8   type=Fighter        ability=no
+    Legendary Saiyan: Gains +2 points for each opposing Fighter card played in his row after Broly, with no maximum bonus.
+dragonball_06    Future Trunks                    bp=5   type=Trickster      ability=no
+    Hope of the Future: Gains +5 points if another friendly card in his row is eliminated.
+dragonball_07    Gohan (Beast)                    bp=8   type=Fighter        ability=no
+    Hidden Potential Unlocked: Gains +3 points if an opposing card in his row has more points than Gohan before ability bonuses.
+dragonball_08    Hit                              bp=7   type=Fighter        ability=no
+    Time Skip: The next opposing card played after Hit in the same row cannot activate its ability.
+dragonball_09    Zeno                             bp=4   type=Regular        ability=no
+    Erase from Existence: If Zeno is the first character placed in an empty row, eliminate the next character in that row if it belongs to the opposing player.
+dragonball_10    Whis                             bp=4   type=Regular        ability=no
+    Temporal Rewind: Revives one friendly card eliminated in the same row, restoring its original points and ability.

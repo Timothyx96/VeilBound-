@@ -1,0 +1,75 @@
+[7] Shikamaru Nara (id=naruto_08, base=5, type=Regular)
+    effect: Shadow Possession | Removes the bonus points from one card in the same row. Cannot target GOAT cards.
+[8] Rock Lee (id=naruto_09, base=5, type=Regular)
+    effect: Eight Gates: First Gate | Gains +4 points if there are no other friendly cards in his row.
+[9] Hinata Hyuga (id=naruto_10, base=4, type=Regular)
+    effect: Byakugan | Gains +1 point for each other friendly Regular card in the same row.
+[10] Izuku Midoriya (Deku) (id=mha_01, base=8, type=Dynamic Duo)
+    effect: One For All: United Front | If Deku is placed directly next to Bakugo in the same row, he gains +5 points. He also gains +1 point for each allied Fighter in that row.
+[11] Katsuki Bakugo (id=mha_02, base=7, type=Dynamic Duo)
+    effect: I've Got Your Back! | If Bakugo is placed directly next to Deku in the same row, he gains +5 points.
+[12] Dabi (id=mha_03, base=6, type=Fighter)
+    effect: Blueflame Pursuit | Each opposing character placed behind Dabi in the same row loses 1 point.
+[13] All Might (id=mha_04, base=10, type=GOAT)
+    effect: Symbol of Peace | If the opposing row contains no GOAT card, you automatically win that row. All Might's automatic-win effect takes priority over all other automatic-win effects.
+[14] Endeavor (id=mha_05, base=8, type=Fighter)
+    effect: Number One, No Matter What | If Endeavor is the first card placed in an otherwise empty row, he gains +4 points.
+[15] Shoto Todoroki (id=mha_06, base=8, type=Fighter)
+    effect: Flashfire and Frost | Cancels one opposing character's effect that grants additional points.
+[16] Lady_Nagant (id=mha_07, base=4, type=Regular)
+    effect: Deadeye | De volgende kaart in de rij krijgt -3 punten als deze vijandelijk is.
+[17] Keigo (id=mha_08, base=5, type=Regular)
+    effect: Zero Gravity | Verwijder maximaal 3 bonuspunten van één vijandelijke kaart. De basispunten blijven gewoon staan.
+[18] Toga (id=mha_09, base=2, type=Trickster)
+    effect: Transform | If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.
+[19] Star_And_Stripes (id=mha_10, base=5, type=Regular)
+    effect: Last-Minute Hero | If Star and Stripes is the last card placed in the row, she gains +3 points.
+[20] Gon Freecss (id=hxh_01, base=10, type=GOAT)
+    effect: Jajanken: Rock | All friendly Fighter cards on the board gain +4 points. After activating this ability, Gon's points are reduced to 1. Only characters on the board at the time of activation receive the bonus.
+[21] Killua Zoldyck (id=hxh_02, base=7, type=Dynamic Duo)
+    effect: Godspeed | Eliminates one opposing character anywhere on the board.
+    abil: {"id": "killua_godspeed_eliminate", "name": "Godspeed", "description": "Eliminates one opposing character anywhere on the board.", "trigger": "on_reveal", "conditions": [], "effects": [{"type": "eliminate_target"}], "targeting": {"target_scope": "any_row", "target_side": "opposing"}, "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "GODSPEED", "animation": "elimination"}}
+[22] Alluka Zoldyck (id=hxh_03, base=5, type=Dynamic Duo)
+    effect: Nanika's Wish | Gain 3 points when Alluka and Killua are both revealed in the same row.
+    abil: {"id": "alluka_killua_row_bonus", "name": "Shared Row Bonus", "description": "Gain 3 points when Alluka and Killua are both revealed in the same row.", "trigger": "on_reveal", "conditions": [{"type": "character_revealed", "character": "hxh_02"}, {"type": "same_row", "character": "hxh_02"}], "effects": [{"type": "add_current_points", "amount": 3}], "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "+3", "animation": "points_gain"}}
+[23] Hisoka (id=hxh_04, base=8, type=Fighter)
+    effect: Bungee Gum | Copies the current bonus points of one opposing character in the same row.
+[24] Chrollo Lucilfer (id=hxh_05, base=7, type=Fighter)
+    effect: Master Strategist | The next opposing character placed in the same row cannot activate its ability or gain additional points.
+[25] Isaac Netero (id=hxh_06, base=8, type=Fighter)
+    effect: 100-Type Guanyin Bodhisattva | Reduces the points of every opposing character in his row by 2.
+[26] Kite (id=hxh_07, base=5, type=Trickster)
+    effect: Crazy Slots | Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.
+[27] Kurapika (id=hxh_08, base=6, type=Fighter)
+    effect: Chain Jail | Reduces the points of one opposing Fighter card in the same row by 2.
+[28] Illumi (id=hxh_09, base=5, type=Regular)
+    effect: Needle | Gains +2 points if there are three other friendly characters in his row.
+[29] Leorio Paradinight (id=hxh_10, base=5, type=Regular)
+    effect: Emergency Treatment | Revives one eliminated friendly character in the same row, restoring its original points and ability.
+[30] Monkey D. Luffy (id=onepiece_01, base=10, type=GOAT)
+    effect: Warrior of Liberation | Luffy ignores all opposing abilities that would eliminate, weaken, move, or disable him. Eliminates one opposing card in his row, regardless of card type.
+[31] Roronoa Zoro (id=onepiece_02, base=7, type=Dynamic Duo)
+    effect: Three-Sword Style | Eliminates one opposing Fighter card in the same row.
+[32] Sanji (id=onepiece_03, base=7, type=Dynamic Duo)
+    effect: Wings of the Pirate King | Gains +3 points if placed in the same row as Zoro.
+    abil: {"id": "sanji_zoro_row_bonus", "name": "Shared Row Bonus", "description": "Gain 3 points when Sanji and Zoro are both revealed in the same row.", "trigger": "on_reveal", "conditions": [{"type": "character_revealed", "character": "onepiece_02"}, {"type": "same_row", "character": "onepiece_02"}], "effects": [{"type": "add_current_points", "amount": 3}], "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "+3", "animation": "points_gain"}}
+[33] Shanks (id=onepiece_04, base=8, type=Fighter)
+    effect: Conqueror's Haki | Cancels all abilities in the row, including friendly and opposing abilities. Abilities in that row can no longer activate, and eliminated characters remain eliminated.
+[34] Nico Robin (id=onepiece_05, base=4, type=Regular)
+    effect: Clutch | Reduces the points of one opposing card in her row by 2.
+[35] Trafalgar D. Water Law (id=onepiece_06, base=7, type=Fighter)
+    effect: Room | Moves one opposing card from his row to another row chosen by the player.
+[36] Whitebeard (id=onepiece_07, base=4, type=Regular)
+    effect: The one piece is real | Cannot be eliminated by an opposing ability.
+[37] Usopp (id=onepiece_08, base=4, type=Trickster)
+    effect: God Usopp | Gains +3 points if there is an opposing GOAT card in his row.
+[38] Nami (id=onepiece_09, base=5, type=Regular)
+    effect: Cat Burglar | Steals up to 2 bonus points from one opposing character in the same row. Nami cannot steal a character's base points.
+[39] Tony Tony Chopper (id=onepiece_10, base=4, type=Regular)
+    effect: Doctor Chopper Arrives | Revives one eliminated friendly character in the same row, restoring its original points and ability.
+[40] Goku (Ultra Instinct) (id=dragonball_01, base=9, type=Dynamic Duo)
+    effect: Autonomous Ultra Instinct | The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself.
+[41] Vegeta (id=dragonball_02, base=7, type=Dynamic Duo)
+    effect: Prince's Rivalry | Gains +3 points if Goku is in the same row.
+    abil: {"id": "vegeta_goku_row_bonus", "name": "Shared Row Bonus", "description": "Gain 3 points when Vegeta and Goku are both revealed in the same row.", "trigger": "on_reveal", "conditions": [{"type": "character_revealed", "character": "dragonball_01"}, {"type": "same_row", "character": "dragonball_01"}], "effects": [{"type": "add_current_points", "amount": 3}], "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "+3", "animation": "points_gain"}}
+[42] Gogeta (Super Saiyan Blue) (id=dragonball_03, base=10, type=GOAT)

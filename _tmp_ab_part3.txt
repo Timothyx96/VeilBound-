@@ -1,0 +1,131 @@
+﻿                            emit(activation)
+                    else:
+                        self._sequence += 1
+                        kept.append(
+                            _PendingAbility(self._sequence, ability, revealed_card.id)
+                        )
+
+            self._pending = kept
+            return activations
+        finally:
+            self._resolving = False
+
+    # ---------------------------------------------------------------- helpers
+
+    def _limit_reached(self, ability: AbilityDefinition, card: Any) -> bool:
+        if ability.activation_limit == "once_per_card_per_match":
+            return ability.id in (card.get("activated_abilities") or [])
+        return False
+
+    def _row_closed_without_partner(
+        self, ability: AbilityDefinition, owner_card: Any, owner_row: Any
+    ) -> bool:
+        """True when a pending same-row synergy can never become eligible.
+
+        Board positions never change after placement, so once the owner's row
+        is completely filled and revealed without a revealed same-player
+        partner, the ``same_row`` condition can never turn true. Dropping the
+        registration keeps ``pending_abilities`` truthful instead of leaking
+        stale entries. Returns False while the row could still change (empty
+        slots or hidden cards).
+        """
+        for condition in ability.conditions:
+            if condition.type != "same_row":
+                continue
+            partner_id = resolve_character_reference(self.definitions, condition.character)
+            if partner_id is None:
+                continue
+            if not all(slot is not None and slot.revealed for slot in owner_row.slots):
+                return False  # row still in flux; partner may yet arrive/reveal
+            in_row = any(
+                slot.definition_id == partner_id and slot.owner_id == owner_card.owner_id
+                for slot in owner_row.slots
+            )
+            if not in_row:
+                return True  # closed row without the partner: impossible
+        return False
+
+    def _condition_holds(
+        self, condition: Condition, owner_card: Any, owner_row: Any, state: Any
+    ) -> bool:
+        partner_id = resolve_character_reference(self.definitions, condition.character)
+        if partner_id is None:
+            logger.warning(
+                "Ability condition references unknown character %r; treating as failed.",
+                condition.character,
+            )
+            return False
+        if condition.type == "character_revealed":
+            # Hidden cards can never satisfy a reveal condition, and an
+            # eliminated partner is no longer an active ally on the board.
+            return any(
+                slot is not None
+                and slot.revealed
+                and not getattr(slot, "eliminated", False)
+                and slot.definition_id == partner_id
+                for row in state.rows
+                for slot in row.slots
+            )
+        if condition.type == "same_row":
+            # The partner must share the owner's row *and* belong to the same
+            # player *and* be revealed *and* still be in play: an eliminated
+            # partner no longer satisfies a same-row synergy.
+            return any(
+                slot is not None
+                and slot.revealed
+                and not getattr(slot, "eliminated", False)
+                and slot.definition_id == partner_id
+                and slot.owner_id == owner_card.owner_id
+                for slot in owner_row.slots
+            )
+        return False  # unreachable: parsing rejects unknown types
+
+    def _current_points(self, card: Any, base_points: int) -> int:
+        value = card.get("current_points")
+        return base_points if value is None else int(value)
+
+    def _try_activate(
+        self,
+        ability: AbilityDefinition,
+        owner_card: Any,
+        owner_row: Any,
+        owner_index: int,
+        state: Any,
+    ) -> AbilityActivation | None:
+        """Check every condition; if satisfied, apply effects once and record it."""
+        for condition in ability.conditions:
+            if not self._condition_holds(condition, owner_card, owner_row, state):
+                return None
+
+        definition = self.definitions[owner_card.definition_id]
+        base_points = int(definition.base_points)
+        delta = 0
+        bonuses = dict(owner_card.get("applied_bonuses") or {})
+        for effect in ability.effects:
+            if effect.type == "add_current_points":
+                # Track each dynamic bonus by the ability that granted it so it
+                # can be removed later (for example when a Dynamic Duo partner
+                # is eliminated) without ever touching the immutable base.
+                bonuses[ability.id] = effect.amount
+                delta += effect.amount
+            # eliminate_target effects are not applied here: target selection
+            # happens in the client layer via the pending-elimination state.
+        owner_card.applied_bonuses = bonuses
+        owner_card.current_points = base_points + sum(bonuses.values())
+        after = owner_card.current_points
+
+        activated = list(owner_card.get("activated_abilities") or [])
+        activated.append(ability.id)
+        owner_card.activated_abilities = activated
+
+        return AbilityActivation(
+            ability=ability,
+            owner_card_id=owner_card.id,
+            target_card_id=owner_card.id,  # effects target the ability's owner
+            row_id=owner_row.id,
+            slot_index=owner_index,
+            definition_id=owner_card.definition_id,
+            owner_name=str(definition.name),
+            delta=delta,
+            base_points=base_points,
+            current_points=after,

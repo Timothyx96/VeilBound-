@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 SUPPORTED_TRIGGERS = frozenset({"on_reveal"})
 SUPPORTED_CONDITION_TYPES = frozenset({"character_revealed", "same_row"})
 SUPPORTED_EFFECT_TYPES = frozenset({"add_current_points", "eliminate_target"})
-SUPPORTED_ACTIVATION_LIMITS = frozenset({"once_per_card_per_match"})
+SUPPORTED_ACTIVATION_LIMITS = frozenset({"once_per_card_per_match", "continuous"})
 SUPPORTED_ANIMATIONS = frozenset({"points_gain", "elimination"})
 
 
@@ -313,21 +313,22 @@ def validate_ability_references(definitions: Mapping[str, Any]) -> None:
     """Validate every loaded ability against the full roster; raises on problems."""
     seen_ids: dict[str, str] = {}
     for card_id, definition in definitions.items():
-        ability = getattr(definition, "ability", None)
-        if ability is None:
+        abilities = definition.abilities
+        if abilities is None:
             continue
-        if ability.id in seen_ids:
-            raise AbilityValidationError(
-                f"Duplicate ability id {ability.id!r} used by characters "
-                f"{seen_ids[ability.id]!r} and {card_id!r}."
-            )
-        seen_ids[ability.id] = card_id
-        for condition in ability.conditions:
-            if resolve_character_reference(definitions, condition.character) is None:
+        for ability in abilities:
+            if ability.id in seen_ids:
                 raise AbilityValidationError(
-                    f"Ability {ability.id!r} on character {card_id!r} references unknown "
-                    f"character {condition.character!r}; use a roster id or an exact name."
+                    f"Duplicate ability id {ability.id!r} used by characters "
+                    f"{seen_ids[ability.id]!r} and {card_id!r}."
                 )
+            seen_ids[ability.id] = card_id
+            for condition in ability.conditions:
+                if resolve_character_reference(definitions, condition.character) is None:
+                    raise AbilityValidationError(
+                        f"Ability {ability.id!r} on character {card_id!r} references unknown "
+                        f"character {condition.character!r}; use a roster id or an exact name."
+                    )
 
 
 @dataclass
@@ -353,9 +354,10 @@ class AbilityManager:
         # without scanning every card definition.
         self._ability_by_id: dict[str, AbilityDefinition] = {}
         for definition in self.definitions.values():
-            ability = getattr(definition, "ability", None)
-            if ability is not None:
-                self._ability_by_id[ability.id] = ability
+            abilities = definition.abilities
+            if abilities:
+                for ability in abilities:
+                    self._ability_by_id[ability.id] = ability
 
     @property
     def pending_abilities(self) -> tuple[tuple[int, str, str], ...]:
@@ -411,17 +413,18 @@ class AbilityManager:
 
             # Phase B - the just-revealed character's own on-reveal abilities.
             definition = self.definitions.get(revealed_card.definition_id)
-            ability = getattr(definition, "ability", None)
-            if (
-                ability is not None
-                and ability.trigger == "on_reveal"
-                and not self._limit_reached(ability, revealed_card)
-            ):
-                already_pending = any(
-                    item.ability.id == ability.id and item.owner_card_id == revealed_card.id
-                    for item in kept
-                )
-                if not already_pending:
+            if definition is not None:
+                for ability in definition.abilities or []:
+                    if ability.trigger != "on_reveal":
+                        continue
+                    if self._limit_reached(ability, revealed_card):
+                        continue
+                    already_pending = any(
+                        item.ability.id == ability.id and item.owner_card_id == revealed_card.id
+                        for item in kept
+                    )
+                    if already_pending:
+                        continue
                     activation = self._try_activate(
                         ability, revealed_card, row, slot_index, state
                     )
@@ -436,6 +439,7 @@ class AbilityManager:
                         )
 
             self._pending = kept
+            self.recalculate_continuous_bonuses(state)
             return activations
         finally:
             self._resolving = False
@@ -445,6 +449,7 @@ class AbilityManager:
     def _limit_reached(self, ability: AbilityDefinition, card: Any) -> bool:
         if ability.activation_limit == "once_per_card_per_match":
             return ability.id in (card.get("activated_abilities") or [])
+        # "continuous" abilities (or any other limit) can fire repeatedly.
         return False
 
     def _row_closed_without_partner(
@@ -475,6 +480,58 @@ class AbilityManager:
                 return True  # closed row without the partner: impossible
         return False
 
+    def recalculate_continuous_bonuses(self, state: Any) -> list[Any]:
+        """Recompute continuous bonuses for all cards that still have abilities.
+
+        This ensures that continuous abilities apply/remove points as the board
+        state changes (e.g., when a partner becomes revealed or is eliminated).
+        Only abilities with activation_limit == "continuous" are handled here.
+        """
+        changed: list[Any] = []
+        for row in state.rows:
+            for slot in row.slots:
+                if slot is None or getattr(slot, "eliminated", False):
+                    continue
+                # Identify owner row for the slot
+                owner_row, _owner_index, _owner_card = _find_card(state, slot.id)
+                if owner_row is None:
+                    continue
+                definition = self.definitions.get(slot.definition_id)
+                if definition is None:
+                    continue
+                for ability in definition.abilities or []:
+                    if ability.activation_limit != "continuous":
+                        continue
+                    # Find the add_current_points effect
+                    add_effect = None
+                    for effect in ability.effects:
+                        if effect.type == "add_current_points":
+                            add_effect = effect
+                            break
+                    if add_effect is None:
+                        continue
+                    conditions_ok = all(
+                        self._condition_holds(condition, slot, owner_row, state)
+                        for condition in ability.conditions
+                    )
+                    applied_bonuses = dict(slot.get("applied_bonuses") or {})
+                    if conditions_ok:
+                        if ability.id not in applied_bonuses:
+                            applied_bonuses[ability.id] = add_effect.amount
+                            changed.append(slot)
+                            slot.applied_bonuses = applied_bonuses
+                            slot.current_points = (
+                                self._base_points(slot) + sum(applied_bonuses.values())
+                            )
+                    else:
+                        if ability.id in applied_bonuses:
+                            del applied_bonuses[ability.id]
+                            changed.append(slot)
+                            slot.applied_bonuses = applied_bonuses
+                            slot.current_points = (
+                                self._base_points(slot) + sum(applied_bonuses.values())
+                            )
+        return changed
     def _condition_holds(
         self, condition: Condition, owner_card: Any, owner_row: Any, state: Any
     ) -> bool:

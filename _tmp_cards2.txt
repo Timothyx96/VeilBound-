@@ -1,0 +1,245 @@
+[5] naruto_06 | 'Minato' | base=8 type='Fighter'
+    effect_name='Flying Raijin'
+    effect_text='Gains +2 points for each other opposing card in his row, up to a maximum bonus of +6.'
+    image='assets/art/characters/Naruto/Madara Uchiha.png' full='assets/art/card front/Naruto/Minato.png'
+    ability=None
+[16] mha_07 | 'Lady_Nagant' | base=4 type='Regular'
+    effect_name='Deadeye'
+    effect_text='De volgende kaart in de rij krijgt -3 punten als deze vijandelijk is.'
+    image='assets/art/characters/My Hero Academia/Minoru_Mineta.jpg' full='assets/art/card front/MHA/Lady_Nagant.png'
+    ability=None
+[17] mha_08 | 'Keigo' | base=5 type='Regular'
+    effect_name='Zero Gravity'
+    effect_text='Verwijder maximaal 3 bonuspunten van één vijandelijke kaart. De basispunten blijven gewoon staan.'
+    image='assets/art/characters/My Hero Academia/Ochaco_Uraraka.jpg' full='assets/art/card front/MHA/Keigo.png'
+    ability=None
+[18] mha_09 | 'Toga' | base=2 type='Trickster'
+    effect_name='Transform'
+    effect_text="If the next character placed in the row belongs to the opposing team, Toga copies that character's base points."
+    image='assets/art/characters/My Hero Academia/Tenya_Iida.jpg' full='assets/art/card front/MHA/Toga.png'
+    ability=None
+[19] mha_10 | 'Star_And_Stripes' | base=5 type='Regular'
+    effect_name='Last-Minute Hero'
+    effect_text='If Star and Stripes is the last card placed in the row, she gains +3 points.'
+    image='assets/art/characters/My Hero Academia/Denki_Kaminari.jpg' full='assets/art/card front/MHA/Star_And_Stripes.png'
+    ability=None
+[28] hxh_09 | 'Illumi' | base=5 type='Regular'
+    effect_name='Needle'
+    effect_text='Gains +2 points if there are three other friendly characters in his row.'
+    image='assets/art/characters/Hunter x Hunter/Illumi.png' full='assets/art/card front/HxH/Illumi.png'
+    ability=None
+[34] onepiece_05 | 'Nico Robin' | base=4 type='Regular'
+    effect_name='Clutch'
+    effect_text='Reduces the points of one opposing card in her row by 2.'
+    image='assets/art/characters/One Piece/Nico_Robin' full='assets/art/card front/One_Piece/Nico_Robin.png'
+    ability=None
+[36] onepiece_07 | 'Whitebeard' | base=4 type='Regular'
+    effect_name='The one piece is real'
+    effect_text='Cannot be eliminated by an opposing ability.'
+    image='assets/art/characters/One Piece/Buggy_the_Clown.jpg' full='assets/art/card front/One_Piece/whitebeard.png'
+    ability=None
+[39] onepiece_10 | 'Tony Tony Chopper' | base=4 type='Regular'
+    effect_name='Doctor Chopper Arrives'
+    effect_text='Revives one eliminated friendly character in the same row, restoring its original points and ability.'
+    image='assets/art/characters/One Piece/Tony_tony_Chopper.png' full='assets/art/card front/One_Piece/Tony_tony_Chopper.png'
+    ability=None
+[40] dragonball_01 | 'Goku (Ultra Instinct)' | base=9 type='Dynamic Duo'
+    effect_name='Autonomous Ultra Instinct'
+    effect_text="The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself."
+    image='assets/art/characters/Dragon Ball/Goku_Ultra_Instinct.jpg' full='assets/art/card front/Dragon_Ball/Goku.png'
+    ability=None
+[48] dragonball_09 | 'Zeno' | base=4 type='Regular'
+    effect_name='Erase from Existence'
+    effect_text='If Zeno is the first character placed in an empty row, eliminate the next character in that row if it belongs to the opposing player.'
+    image='assets/art/characters/Dragon Ball/Android_18.jpg' full='assets/art/card front/Dragon_Ball/Zeno.png'
+    ability=None
+[0] naruto_01 | 'Naruto Uzumaki' | base=10 type='GOAT'
+    effect_name='Six Paths: Rasen-Shuriken'
+    effect_text='Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row.'
+    image='assets/art/characters/Naruto/Naruto Uzumaki .png' full='assets/art/card front/Naruto/Naruto.png'
+    ability=None
+[2] naruto_03 | 'Itachi Uchiha' | base=6 type='Dynamic Duo'
+    effect_name='Tsukuyomi'
+    effect_text='Cancels all bonus points gained by one opposing card in the same row.'
+    image='assets/art/characters/Naruto/Itachi Uchiha.jfif' full='assets/art/card front/Naruto/Itachi_Uchiha.png'
+    ability=None
+[3] naruto_04 | 'Sakura Haruno' | base=6 type='Fighter'
+    effect_name='Cherry Blossom Impact'
+    effect_text='Gains +2 points if Naruto or Sasuke is in the same row.'
+    image='assets/art/characters/Naruto/Sakura Haruno.png' full='assets/art/card front/Naruto/Sakura_Haruno.png'
+    ability=None
+[4] naruto_05 | 'Kakashi Hatake' | base=7 type='Fighter'
+    effect_name='Sharingan Copy'
+    effect_text='Copies the bonus points of one opposing character in the same row. Kakashi gains the same number of bonus points.'
+    image='assets/art/characters/Naruto/Kakashi Hatake.png' full='assets/art/card front/Naruto/Kakashi.png'
+    ability=None
+[6] naruto_07 | 'Tobi' | base=4 type='Trickster'
+    effect_name='This Was My Plan All Along'
+    effect_text="The row is won by the player with the lowest total points instead of the highest. This effect does not override All Might's effect."
+    image='assets/art/characters/Naruto/Tobi.jpeg' full='assets/art/card front/Naruto/Tobi.png'
+    ability=None
+[7] naruto_08 | 'Shikamaru Nara' | base=5 type='Regular'
+    effect_name='Shadow Possession'
+    effect_text='Removes the bonus points from one card in the same row. Cannot target GOAT cards.'
+    image='assets/art/characters/Naruto/Shikamaru_Nara.jpg' full='assets/art/card front/Naruto/Shikamaru_Nara.png'
+    ability=None
+[8] naruto_09 | 'Rock Lee' | base=5 type='Regular'
+    effect_name='Eight Gates: First Gate'
+    effect_text='Gains +4 points if there are no other friendly cards in his row.'
+    image='assets/art/characters/Naruto/Rock_Lee.jpg' full='assets/art/card front/Naruto/Rock_Lee.png'
+    ability=None
+[9] naruto_10 | 'Hinata Hyuga' | base=4 type='Regular'
+    effect_name='Byakugan'
+    effect_text='Gains +1 point for each other friendly Regular card in the same row.'
+    image='assets/art/characters/Naruto/Hinata Hyuga.jpg' full='assets/art/card front/Naruto/Hinata_Hyuga.png'
+    ability=None
+[10] mha_01 | 'Izuku Midoriya (Deku)' | base=8 type='Dynamic Duo'
+    effect_name='One For All: United Front'
+    effect_text='If Deku is placed directly next to Bakugo in the same row, he gains +5 points. He also gains +1 point for each allied Fighter in that row.'
+    image='assets/art/characters/My Hero Academia/Izuku_Midoriya_Deku.jpg' full='assets/art/card front/MHA/Midoriya.png'
+    ability=None
+[11] mha_02 | 'Katsuki Bakugo' | base=7 type='Dynamic Duo'
+    effect_name="I've Got Your Back!"
+    effect_text='If Bakugo is placed directly next to Deku in the same row, he gains +5 points.'
+    image='assets/art/characters/My Hero Academia/Katsuki_Bakugo.jpg' full='assets/art/card front/MHA/Bakugo.png'
+    ability=None
+[12] mha_03 | 'Dabi' | base=6 type='Fighter'
+    effect_name='Blueflame Pursuit'
+    effect_text='Each opposing character placed behind Dabi in the same row loses 1 point.'
+    image='assets/art/characters/My Hero Academia/Eijiro_Kirishima.jpg' full='assets/art/card front/MHA/Dabi.png'
+    ability=None
+[13] mha_04 | 'All Might' | base=10 type='GOAT'
+    effect_name='Symbol of Peace'
+    effect_text="If the opposing row contains no GOAT card, you automatically win that row. All Might's automatic-win effect takes priority over all other automatic-win effects."
+    image='assets/art/characters/My Hero Academia/All_Might.jpg' full='assets/art/card front/MHA/All_Might.png'
+    ability=None
+[14] mha_05 | 'Endeavor' | base=8 type='Fighter'
+    effect_name='Number One, No Matter What'
+    effect_text='If Endeavor is the first card placed in an otherwise empty row, he gains +4 points.'
+    image='assets/art/characters/My Hero Academia/Endeavor.jpg' full='assets/art/card front/MHA/Endeavor.png'
+    ability=None
+[15] mha_06 | 'Shoto Todoroki' | base=8 type='Fighter'
+    effect_name='Flashfire and Frost'
+    effect_text="Cancels one opposing character's effect that grants additional points."
+    image='assets/art/characters/My Hero Academia/Shoto_Todoroki.jpg' full='assets/art/card front/MHA/Shoto.png'
+    ability=None
+[20] hxh_01 | 'Gon Freecss' | base=10 type='GOAT'
+    effect_name='Jajanken: Rock'
+    effect_text="All friendly Fighter cards on the board gain +4 points. After activating this ability, Gon's points are reduced to 1. Only characters on the board at the time of activation receive the bonus."
+    image='assets/art/characters/Hunter x Hunter/Gon_Freecss.jpg' full='assets/art/card front/HxH/Gon Freecss_ Gouden GOAT-kaart.png'
+    ability=None
+[21] hxh_02 | 'Killua Zoldyck' | base=7 type='Dynamic Duo'
+    effect_name='Godspeed'
+    effect_text='Eliminates one opposing character anywhere on the board.'
+    image='assets/art/characters/Hunter x Hunter/Killua_Zoldyck.jpg' full='assets/art/card front/HxH/Killua.png'
+    ability=killua_godspeed_eliminate
+[22] hxh_03 | 'Alluka Zoldyck' | base=5 type='Dynamic Duo'
+    effect_name="Nanika's Wish"
+    effect_text='Gain 3 points when Alluka and Killua are both revealed in the same row.'
+    image='assets/art/characters/Hunter x Hunter/Alluka_Zoldyck.jpg' full='assets/art/card front/HxH/Alluka_Zoldyck.png'
+    ability=alluka_killua_row_bonus
+[23] hxh_04 | 'Hisoka' | base=8 type='Fighter'
+    effect_name='Bungee Gum'
+    effect_text='Copies the current bonus points of one opposing character in the same row.'
+    image='assets/art/characters/Hunter x Hunter/Hisoka.jpg' full='assets/art/card front/HxH/Hisoka.png'
+    ability=None
+[24] hxh_05 | 'Chrollo Lucilfer' | base=7 type='Fighter'
+    effect_name='Master Strategist'
+    effect_text='The next opposing character placed in the same row cannot activate its ability or gain additional points.'
+    image='assets/art/characters/Hunter x Hunter/Chrollo_Lucilfer.jpg' full='assets/art/card front/HxH/Chrollo_Lucilfer.png'
+    ability=None
+[25] hxh_06 | 'Isaac Netero' | base=8 type='Fighter'
+    effect_name='100-Type Guanyin Bodhisattva'
+    effect_text='Reduces the points of every opposing character in his row by 2.'
+    image='assets/art/characters/Hunter x Hunter/Isaac_Netero.jpg' full='assets/art/card front/HxH/Isaac_Netero.png'
+    ability=None
+[26] hxh_07 | 'Kite' | base=5 type='Trickster'
+    effect_name='Crazy Slots'
+    effect_text='Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.'
+    image='assets/art/characters/Hunter x Hunter/Tonpa.jpg' full='assets/art/card front/HxH/Kite.png'
+    ability=None
+[27] hxh_08 | 'Kurapika' | base=6 type='Fighter'
+    effect_name='Chain Jail'
+    effect_text='Reduces the points of one opposing Fighter card in the same row by 2.'
+    image='assets/art/characters/Hunter x Hunter/Kurapika.jpg' full='assets/art/card front/HxH/Kurapika.png'
+    ability=None
+[29] hxh_10 | 'Leorio Paradinight' | base=5 type='Regular'
+    effect_name='Emergency Treatment'
+    effect_text='Revives one eliminated friendly character in the same row, restoring its original points and ability.'
+    image='assets/art/characters/Hunter x Hunter/Leorio_Paradinight.jpg' full='assets/art/card front/HxH/Leorio.png'
+    ability=None
+[30] onepiece_01 | 'Monkey D. Luffy' | base=10 type='GOAT'
+    effect_name='Warrior of Liberation'
+    effect_text='Luffy ignores all opposing abilities that would eliminate, weaken, move, or disable him. Eliminates one opposing card in his row, regardless of card type.'
+    image='assets/art/characters/One Piece/Monkey_D_Luffy.jpg' full='assets/art/card front/One_Piece/Monkey_D_Luffy.png'
+    ability=None
+[31] onepiece_02 | 'Roronoa Zoro' | base=7 type='Dynamic Duo'
+    effect_name='Three-Sword Style'
+    effect_text='Eliminates one opposing Fighter card in the same row.'
+    image='assets/art/characters/One Piece/Roronoa_Zoro.jpg' full='assets/art/card front/One_Piece/Roronoa_zoro.png'
+    ability=None
+[32] onepiece_03 | 'Sanji' | base=7 type='Dynamic Duo'
+    effect_name='Wings of the Pirate King'
+    effect_text='Gains +3 points if placed in the same row as Zoro.'
+    image='assets/art/characters/One Piece/Sanji.jpg' full='assets/art/card front/One_Piece/Sanji.png'
+    ability=sanji_zoro_row_bonus
+[33] onepiece_04 | 'Shanks' | base=8 type='Fighter'
+    effect_name="Conqueror's Haki"
+    effect_text='Cancels all abilities in the row, including friendly and opposing abilities. Abilities in that row can no longer activate, and eliminated characters remain eliminated.'
+    image='assets/art/characters/One Piece/Shanks.jpg' full='assets/art/card front/One_Piece/Shanks.png'
+    ability=None
+[35] onepiece_06 | 'Trafalgar D. Water Law' | base=7 type='Fighter'
+    effect_name='Room'
+    effect_text='Moves one opposing card from his row to another row chosen by the player.'
+    image='assets/art/characters/One Piece/Trafalgar_D_Water_Law.jpg' full='assets/art/card front/One_Piece/Trafalgar_Law.png'
+    ability=None
+[37] onepiece_08 | 'Usopp' | base=4 type='Trickster'
+    effect_name='God Usopp'
+    effect_text='Gains +3 points if there is an opposing GOAT card in his row.'
+    image='assets/art/characters/One Piece/Usopp.jpg' full='assets/art/card front/One_Piece/Usopp.png'
+    ability=None
+[38] onepiece_09 | 'Nami' | base=5 type='Regular'
+    effect_name='Cat Burglar'
+    effect_text="Steals up to 2 bonus points from one opposing character in the same row. Nami cannot steal a character's base points."
+    image='assets/art/characters/One Piece/Nami.jpg' full='assets/art/card front/One_Piece/Nami.png'
+    ability=None
+[41] dragonball_02 | 'Vegeta' | base=7 type='Dynamic Duo'
+    effect_name="Prince's Rivalry"
+    effect_text='Gains +3 points if Goku is in the same row.'
+    image='assets/art/characters/Dragon Ball/Vegeta.jpg' full='assets/art/card front/Dragon_Ball/Vegeta.png'
+    ability=vegeta_goku_row_bonus
+[42] dragonball_03 | 'Gogeta (Super Saiyan Blue)' | base=10 type='GOAT'
+    effect_name='Stardust Breaker'
+    effect_text='Gains +3 points for each opposing Fighter card in his row.'
+    image='assets/art/characters/Dragon Ball/Gogeta (Super Saiyan Blue).jpg' full='assets/art/card front/Dragon_Ball/Gogeta.png'
+    ability=None
+[43] dragonball_04 | 'Frieza (Golden)' | base=8 type='Fighter'
+    effect_name='Golden Tyrant'
+    effect_text='Eliminates one opposing card in his row with 5 or fewer base points.'
+    image='assets/art/characters/Dragon Ball/Frieza_Golden.jpg' full='assets/art/card front/Dragon_Ball/Frieza.png'
+    ability=None
+[44] dragonball_05 | 'Broly' | base=8 type='Fighter'
+    effect_name='Legendary Saiyan'
+    effect_text='Gains +2 points for each opposing Fighter card played in his row after Broly, with no maximum bonus.'
+    image='assets/art/characters/Dragon Ball/Broly.jpg' full='assets/art/card front/Dragon_Ball/Broly.png'
+    ability=None
+[45] dragonball_06 | 'Future Trunks' | base=5 type='Trickster'
+    effect_name='Hope of the Future'
+    effect_text='Gains +5 points if another friendly card in his row is eliminated.'
+    image='assets/art/characters/Dragon Ball/Future_Trunks.jpg' full='assets/art/card front/Dragon_Ball/Trunks.png'
+    ability=None
+[46] dragonball_07 | 'Gohan (Beast)' | base=8 type='Fighter'
+    effect_name='Hidden Potential Unlocked'
+    effect_text='Gains +3 points if an opposing card in his row has more points than Gohan before ability bonuses.'
+    image='assets/art/characters/Dragon Ball/Gohan_Beast.jpg' full='assets/art/card front/Dragon_Ball/Gohan.png'
+    ability=None
+[47] dragonball_08 | 'Hit' | base=7 type='Fighter'
+    effect_name='Time Skip'
+    effect_text='The next opposing card played after Hit in the same row cannot activate its ability.'
+    image='assets/art/characters/Dragon Ball/Piccolo_Orange.jpg' full='assets/art/card front/Dragon_Ball/Hit.png'
+    ability=None
+[49] dragonball_10 | 'Whis' | base=4 type='Regular'
+    effect_name='Temporal Rewind'
+    effect_text='Revives one friendly card eliminated in the same row, restoring its original points and ability.'
+    image='assets/art/characters/Dragon Ball/Yamcha.jpg' full='assets/art/card front/Dragon_Ball/Whis.png'
+    ability=None

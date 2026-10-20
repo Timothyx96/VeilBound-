@@ -1,0 +1,172 @@
+﻿        if not isinstance(allowed_types_raw, list):
+            raise AbilityValidationError(
+                f"{context}: targeting 'allowed_types' must be a list."
+            )
+        allowed_types = tuple(str(t) for t in allowed_types_raw)
+        max_base_points = targeting_raw.get("max_base_points")
+        if max_base_points is not None:
+            if isinstance(max_base_points, bool) or not isinstance(max_base_points, int):
+                raise AbilityValidationError(
+                    f"{context}: targeting 'max_base_points' must be an integer or null."
+                )
+        min_base_points = targeting_raw.get("min_base_points")
+        if min_base_points is not None:
+            if isinstance(min_base_points, bool) or not isinstance(min_base_points, int):
+                raise AbilityValidationError(
+                    f"{context}: targeting 'min_base_points' must be an integer or null."
+                )
+        if (min_base_points is not None and max_base_points is not None
+                and min_base_points > max_base_points):
+            raise AbilityValidationError(
+                f"{context}: targeting 'min_base_points' cannot exceed 'max_base_points'."
+            )
+
+    return AbilityDefinition(
+        id=ability_id,
+        name=name,
+        description=description,
+        trigger=trigger,
+        conditions=tuple(conditions),
+        effects=tuple(effects),
+        activation_limit=str(activation_limit),
+        presentation=AbilityPresentation(
+            floating_text=floating_text.strip(), animation=str(animation)
+        ),
+        target_scope=target_scope,
+        target_side=target_side,
+        allowed_types=allowed_types,
+        max_base_points=max_base_points,
+        min_base_points=min_base_points,
+    )
+
+
+def resolve_character_reference(definitions: Mapping[str, Any], reference: str) -> str | None:
+    """Resolve a JSON character reference to a roster id (id first, then exact name)."""
+    if reference in definitions:
+        return reference
+    for card_id, definition in definitions.items():
+        if getattr(definition, "name", None) == reference:
+            return card_id
+    return None
+
+
+def validate_ability_references(definitions: Mapping[str, Any]) -> None:
+    """Validate every loaded ability against the full roster; raises on problems."""
+    seen_ids: dict[str, str] = {}
+    for card_id, definition in definitions.items():
+        ability = getattr(definition, "ability", None)
+        if ability is None:
+            continue
+        if ability.id in seen_ids:
+            raise AbilityValidationError(
+                f"Duplicate ability id {ability.id!r} used by characters "
+                f"{seen_ids[ability.id]!r} and {card_id!r}."
+            )
+        seen_ids[ability.id] = card_id
+        for condition in ability.conditions:
+            if resolve_character_reference(definitions, condition.character) is None:
+                raise AbilityValidationError(
+                    f"Ability {ability.id!r} on character {card_id!r} references unknown "
+                    f"character {condition.character!r}; use a roster id or an exact name."
+                )
+
+
+@dataclass
+class AbilityManager:
+    """Owns pending registrations and resolves abilities deterministically.
+
+    One manager instance lives on the authoritative engine and is reset at the
+    start of every match. Remote clients never resolve abilities; they replay
+    the ``ability_activated`` events the authority broadcasts.
+    """
+
+    definitions: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        self.reset()
+
+    def reset(self) -> None:
+        """Clear registrations for a new match (activation records live on cards)."""
+        self._pending: list[_PendingAbility] = []
+        self._sequence = 0
+        self._resolving = False
+        # Index every ability by its id so bonus removal can look an ability up
+        # without scanning every card definition.
+        self._ability_by_id: dict[str, AbilityDefinition] = {}
+        for definition in self.definitions.values():
+            ability = getattr(definition, "ability", None)
+            if ability is not None:
+                self._ability_by_id[ability.id] = ability
+
+    @property
+    def pending_abilities(self) -> tuple[tuple[int, str, str], ...]:
+        """Registered-but-ineligible abilities as (sequence, ability id, card id)."""
+        return tuple(
+            (item.sequence, item.ability.id, item.owner_card_id)
+            for item in sorted(self._pending, key=lambda item: (item.sequence, item.ability.id))
+        )
+
+    def on_card_revealed(
+        self,
+        state: Any,
+        revealed_card: Any,
+        row: Any,
+        slot_index: int,
+        emit: Callable[[AbilityActivation], None] | None = None,
+    ) -> list[AbilityActivation]:
+        """Run Phase A then Phase B for one freshly revealed card.
+
+        ``emit`` (when provided) receives each activation immediately after its
+        effects are applied, preserving presentation order per the contract.
+        """
+        if self._resolving:
+            # A future effect must not recursively restart resolution.
+            logger.warning("Ability resolution re-entered; skipping nested pass.")
+            return []
+        self._resolving = True
+        try:
+            activations: list[AbilityActivation] = []
+            kept: list[_PendingAbility] = []
+
+            # Phase A - previously registered abilities in deterministic order.
+            for pending in sorted(
+                self._pending, key=lambda item: (item.sequence, item.ability.id)
+            ):
+                owner = _find_card(state, pending.owner_card_id)
+                if owner is None:
+                    continue  # owner left the board; drop the registration
+                owner_row, owner_index, owner_card = owner
+                if self._limit_reached(pending.ability, owner_card):
+                    continue  # already activated; never rerun
+                if self._row_closed_without_partner(pending.ability, owner_card, owner_row):
+                    continue  # closed row without partner; can never activate
+                activation = self._try_activate(
+                    pending.ability, owner_card, owner_row, owner_index, state
+                )
+                if activation is not None:
+                    activations.append(activation)
+                    if emit is not None:
+                        emit(activation)
+                    continue  # activated - removed from pending
+                kept.append(pending)
+
+            # Phase B - the just-revealed character's own on-reveal abilities.
+            definition = self.definitions.get(revealed_card.definition_id)
+            ability = getattr(definition, "ability", None)
+            if (
+                ability is not None
+                and ability.trigger == "on_reveal"
+                and not self._limit_reached(ability, revealed_card)
+            ):
+                already_pending = any(
+                    item.ability.id == ability.id and item.owner_card_id == revealed_card.id
+                    for item in kept
+                )
+                if not already_pending:
+                    activation = self._try_activate(
+                        ability, revealed_card, row, slot_index, state
+                    )
+                    if activation is not None:
+                        activations.append(activation)
+                        if emit is not None:
+                            emit(activation)

@@ -1,0 +1,3 @@
+['character_name', 'description', 'effect_name']
+{'character_name': 'Naruto Uzumaki', 'effect_name': 'Six Paths: Rasen-Shuriken', 'description': 'Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row.'}
+{'character_name': 'Madara Uchiha', 'effect_name': 'Perfect Susanoo', 'description': 'Gains +2 points for each other opposing card in his row, up to a maximum bonus of +6.'}

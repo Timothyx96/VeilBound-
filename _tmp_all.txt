@@ -1,0 +1,316 @@
+﻿........F...F.....FF..............F...F......F.......................... [ 90%]
+........                                                                 [100%]
+================================== FAILURES ===================================
+______ test_two_sasuke_instances_keep_independent_points_and_activations ______
+
+    def test_two_sasuke_instances_keep_independent_points_and_activations():
+        # Same-player synergy: each Sasuke activates off its OWN player's Itachi
+        # sharing its row. Capacity 4 lets both duos share row 0 while keeping
+        # turn order (p1, p2 alternate).
+        engine = make_engine(capacity=4)
+        p1, p2 = engine.state.players
+        give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
+        give(p2, engine, SASUKE, ITACHI, "naruto_06", "naruto_07")
+        sasuke_a, itachi_a = p1.hand[0], p1.hand[1]
+        sasuke_b, itachi_b = p2.hand[0], p2.hand[1]
+        place(engine, sasuke_a, 0, 0)
+        place(engine, pick_filler(p2), 1, 0)
+        place(engine, itachi_a, 0, 1)  # reveals A (p1 Itachi shares row 0)
+        place(engine, pick_filler(p2), 1, 1)
+>       place(engine, sasuke_b, 0, 2)
+
+tests\test_abilities.py:424: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+engine = <veilbound.shared.rules.GameEngine object at 0x000001B7AB1D4750>
+card = {'id': 'test-card-877', 'definition_id': 'naruto_02', 'owner_id': 'player-2', 'revealed': False, 'current_points': 7, 'activated_abilities': [], 'eliminated': False, 'base_points': None, 'applied_bonuses': {}}
+row_index = 0, slot_index = 2
+
+    def place(engine, card, row_index, slot_index):
+        active = engine.state.active_player
+>       assert active.id == card.owner_id, "test sequence must follow turn order"
+E       AssertionError: test sequence must follow turn order
+E       assert 'player-1' == 'player-2'
+E         
+E         - player-2
+E         ?        ^
+E         + player-1
+E         ?        ^
+
+tests\test_abilities.py:127: AssertionError
+_____ test_multiplayer_room_resolves_the_bonus_once_and_syncs_both_peers ______
+
+    def test_multiplayer_room_resolves_the_bonus_once_and_syncs_both_peers():
+        room = Room("SASUKE")
+        writers = {"player-1": FakeWriter(), "player-2": FakeWriter()}
+        asyncio.run(room.attach("player-1", writers["player-1"]))
+        asyncio.run(room.attach("player-2", writers["player-2"]))
+    
+        engine = room.engine
+        p1, p2 = engine.state.players
+        sasuke = instance(engine, SASUKE, p1.id)
+        itachi = instance(engine, ITACHI, p1.id)
+        p1.hand.append(sasuke)
+        p1.hand.append(itachi)
+    
+        async def play_to_reveal():
+            rows = engine.state.rows
+            await room.handle(room.peers["player-1"], {
+                "type": "place", "card_id": sasuke.id,
+                "row_id": rows[0].id, "slot_index": 0,
+            })
+            p2_filler = pick_filler(p2)
+            await room.handle(room.peers["player-2"], {
+                "type": "place", "card_id": p2_filler.id,
+                "row_id": rows[1].id, "slot_index": 0,
+            })
+            await room.handle(room.peers["player-1"], {
+                "type": "place", "card_id": itachi.id,
+                "row_id": rows[0].id, "slot_index": 1,
+            })
+            # Fill the remaining slots with non-duo cards; turns alternate. A
+            # mid-placement reveal (placing Itachi reveals Sasuke) pauses further
+            # placement until both peers ack it, so drain any pending reveal first
+            # -- the same contract `drive_match` in test_multiplayer follows.
+            while engine.state.phase == GamePhase.PLACEMENT:
+                while room.pending_reveal_id is not None:
+                    reveal_id = room.pending_reveal_id
+                    for player_id in ("player-1", "player-2"):
+                        await room.handle(room.peers[player_id], {
+                            "type": "reveal_ack", "reveal_id": reveal_id,
+                        })
+                if engine.state.phase != GamePhase.PLACEMENT:
+                    break
+                active = engine.state.active_player
+                card = pick_filler(active)
+                row_id, slot_index = engine.legal_slots()[0]
+                await room.handle(room.peers[active.id], {
+                    "type": "place", "card_id": card.id,
+                    "row_id": row_id, "slot_index": slot_index,
+                })
+    
+        async def ack_reveals():
+            while room.pending_reveal_id is not None:
+                reveal_id = room.pending_reveal_id
+                for player_id in ("player-1", "player-2"):
+                    await room.handle(room.peers[player_id], {
+                        "type": "reveal_ack", "reveal_id": reveal_id,
+                    })
+    
+>       asyncio.run(play_to_reveal())
+
+tests\test_abilities.py:580: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py:196: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\runners.py:119: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3824.0_x64__qbz5n2kfra8p0\Lib\asyncio\base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_abilities.py:565: in play_to_reveal
+    card = pick_filler(active)
+           ^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+player = {'id': 'player-2', 'name': 'Player 2', 'draw_pile': [{'id': 'card-00041', 'definition_id': 'hxh_10', 'owner_id': 'play...d_abilities': [], 'eliminated': False, 'base_points': 4, 'applied_bonuses': {}}], 'match_points': 0, 'round_points': 0}
+
+    def pick_filler(player):
+        card = next((c for c in player.hand if c.definition_id not in SPECIAL and c.definition_id != NARUTO), None)
+>       assert card is not None, "scenario needs a non-duo filler card in hand"
+E       AssertionError: scenario needs a non-duo filler card in hand
+E       assert None is not None
+
+tests\test_abilities.py:121: AssertionError
+____________ test_naruto_hinata_opponent_partner_does_not_activate ____________
+
+    def test_naruto_hinata_opponent_partner_does_not_activate():
+        engine = make_engine()
+        p1, p2 = engine.state.players
+        give(p1, engine, NARUTO, "naruto_01", "naruto_05", "naruto_08")
+        give(p2, engine, "naruto_10", "naruto_06", "naruto_07", "naruto_08")
+        holder_card, partner_card = p1.hand[0], p2.hand[0]
+        place(engine, holder_card, 0, 0)
+        place(engine, partner_card, 0, 1)  # opponent's Hinata shares the row
+        place(engine, pick_filler(p1), 1, 0)
+        place(engine, pick_filler(p2), 1, 1)
+        fill_rest(engine)
+        finish_reveals(engine)
+        base = engine.cards[NARUTO].base_points
+        assert holder_card.current_points == base
+>       assert holder_card.activated_abilities == []
+E       AssertionError: assert ['naruto_rase...en_eliminate'] == []
+E         
+E         Left contains one more item: 'naruto_rasenshuriken_eliminate'
+E         Use -v to get more diff
+
+tests\test_abilities.py:734: AssertionError
+_________________ test_naruto_hinata_no_bonus_different_rows __________________
+
+    def test_naruto_hinata_no_bonus_different_rows():
+        engine = make_engine()
+        p1, p2 = engine.state.players
+        give(p1, engine, NARUTO, "naruto_05", "naruto_06", "naruto_07")
+        give(p2, engine, "naruto_10", "naruto_06", "naruto_07", "naruto_08")
+        holder_card, partner_card = p1.hand[0], p1.hand[1]
+        place(engine, holder_card, 0, 0)
+        place(engine, pick_filler(p2), 1, 0)
+        place(engine, partner_card, 1, 1)  # different row
+        fill_rest(engine)
+        finish_reveals(engine)
+        base = engine.cards[NARUTO].base_points
+        assert holder_card.current_points == base
+>       assert holder_card.activated_abilities == []
+E       AssertionError: assert ['naruto_rase...en_eliminate'] == []
+E         
+E         Left contains one more item: 'naruto_rasenshuriken_eliminate'
+E         Use -v to get more diff
+
+tests\test_abilities.py:750: AssertionError
+__________ test_final_reveal_pause_resumes_after_selecting_a_target ___________
+
+    def test_final_reveal_pause_resumes_after_selecting_a_target():
+        engine = scripted_engine(capacity=3)
+        p1, p2 = engine.state.players
+        give(p1, engine, GO, LUFFY, KILLUA)
+        give(p2, engine, KAKASHI, HISOKA, ITACHI)
+        go, luffy, killua = p1.hand
+        kakashi, hisoka, itachi = p2.hand
+        place(engine, go, 0, 0)              # GO (p1, hidden)
+        place(engine, kakashi, 0, 1)         # KAKASHI reveals GO
+        place(engine, killua, 0, 2)          # KILLUA reveals KAKASHI; row0 full
+        place(engine, hisoka, 1, 0)
+        place(engine, luffy, 1, 1)           # reveals HISOKA
+        place(engine, itachi, 1, 2)          # reveals LUFFY
+        fill_rest(engine)
+        assert engine.state.phase == GamePhase.REVEAL
+    
+        reveal = engine.reveal_next_card()       # first hidden: row0/s2 = KILLUA
+        assert reveal.accepted
+        pending = engine.state.pending_elimination
+        assert pending is not None
+        assert pending["attacker_card_id"] == killua.id
+        assert pending["attacker_owner_id"] == "player-1"
+        # Row-major order: KAKASHI (row0/s1) first, then HISOKA (row1/s0).
+>       assert [(t["row_id"], t["slot_index"]) for t in pending["valid_targets"]] == [
+            (engine.state.rows[0].id, 1),
+            (engine.state.rows[1].id, 0),
+        ]
+E       AssertionError: assert [('round-1-ro...-1-row-4', 0)] == [('round-1-ro...-1-row-2', 0)]
+E         
+E         Left contains 2 more items, first extra item: ('round-1-row-3', 1)
+E         Use -v to get more diff
+
+tests\test_elimination.py:247: AssertionError
+________ test_roster_loader_warns_for_missing_duplicate_and_extra_ids _________
+
+tmp_path = WindowsPath('C:/Users/Wxnter/AppData/Local/Temp/pytest-of-Wxnter/pytest-93/test_roster_loader_warns_for_m0')
+caplog = <_pytest.logging.LogCaptureFixture object at 0x000001B7AB278830>
+
+    def test_roster_loader_warns_for_missing_duplicate_and_extra_ids(tmp_path, caplog):
+        source_path = DATA_DIR / "anime_bedriegers_bedrogen.json"
+        source = json.loads(source_path.read_text(encoding="utf-8"))
+    
+        missing = deepcopy(source)
+        missing["cards"].pop()
+        missing_path = tmp_path / "missing.json"
+        missing_path.write_text(json.dumps(missing), encoding="utf-8")
+        with caplog.at_level(logging.WARNING):
+            load_card_definitions(missing_path)
+        assert "missing 1 unique character" in caplog.text
+    
+        caplog.clear()
+        duplicate = deepcopy(source)
+        duplicate["cards"].append(deepcopy(duplicate["cards"][0]))
+        duplicate_path = tmp_path / "duplicate.json"
+        duplicate_path.write_text(json.dumps(duplicate), encoding="utf-8")
+        with caplog.at_level(logging.WARNING):
+            load_card_definitions(duplicate_path)
+        assert "duplicate IDs" in caplog.text
+    
+        caplog.clear()
+        extra = deepcopy(source)
+        extra_entry = deepcopy(extra["cards"][0])
+        extra_entry["id"] = "extra_test_character"
+        if isinstance(extra_entry.get("ability"), dict):
+            extra_entry["ability"] = deepcopy(extra_entry["ability"])
+            extra_entry["ability"]["id"] = "extra_test_character_ability"
+        extra["cards"].append(extra_entry)
+        extra_path = tmp_path / "extra.json"
+        extra_path.write_text(json.dumps(extra), encoding="utf-8")
+        with caplog.at_level(logging.WARNING):
+>           load_card_definitions(extra_path)
+
+tests\test_gameplay.py:150: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+veilbound\shared\definitions.py:87: in load_card_definitions
+    validate_ability_references(definitions)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+definitions = {'dragonball_01': CardDefinition(id='dragonball_01', name='Goku (Ultra Instinct)', image='assets/art/characters/Dragon...ewer base points.', full_card_art='assets/art/card front/Dragon_Ball/Frieza.png', type='Fighter', abilities=None), ...}
+
+    def validate_ability_references(definitions: Mapping[str, Any]) -> None:
+        """Validate every loaded ability against the full roster; raises on problems."""
+        seen_ids: dict[str, str] = {}
+        for card_id, definition in definitions.items():
+            abilities = definition.abilities
+            if abilities is None:
+                continue
+            for ability in abilities:
+                if ability.id in seen_ids:
+>                   raise AbilityValidationError(
+                        f"Duplicate ability id {ability.id!r} used by characters "
+                        f"{seen_ids[ability.id]!r} and {card_id!r}."
+                    )
+E                   veilbound.shared.abilities.AbilityValidationError: Duplicate ability id 'naruto_rasenshuriken_eliminate' used by characters 'naruto_01' and 'extra_test_character'.
+
+veilbound\shared\abilities.py:321: AbilityValidationError
+------------------------------ Captured log call ------------------------------
+WARNING  veilbound.shared.definitions:definitions.py:74 Character roster is missing 1 unique character(s): found 49, expected 50.
+WARNING  veilbound.shared.definitions:definitions.py:67 Character roster has duplicate IDs (duplicate entries skipped): naruto_01
+WARNING  veilbound.shared.definitions:definitions.py:79 Character roster has 1 extra unique character(s): found 51, expected 50.
+_______________ test_row_box_totals_include_only_revealed_cards _______________
+
+    def test_row_box_totals_include_only_revealed_cards():
+        engine = fixed_engine(capacity=2)
+        row = engine.state.rows[0]
+        p1, p2 = engine.state.players
+        assert engine.play_card(p1.id, p1.hand[0].id, row.id, 0).accepted
+        assert engine.play_card(p2.id, p2.hand[0].id, row.id, 1).accepted
+    
+        renderer = Renderer.__new__(Renderer)
+        labels = []
+        renderer._text_center_fit = lambda _screen, text, *_args, **_kwargs: labels.append(text)
+        renderer._text_center = lambda _screen, text, *_args, **_kwargs: labels.append(text)
+>       renderer._draw_row_box(
+            pygame.Surface((120, 120)), row, pygame.Rect(0, 0, 80, 90), engine.state, engine.cards,
+        )
+
+tests\test_gameplay.py:285: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+veilbound\client\renderer.py:1246: in _draw_row_box
+    panel = self._row_panel_surface(rect.size)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <veilbound.client.renderer.Renderer object at 0x000001B7AB278980>
+size = (80, 90)
+
+    def _row_panel_surface(self, size: tuple[int, int]) -> pygame.Surface | None:
+        """Load, cover-crop, and round the dark-marble texture for a square panel."""
+>       cached = self._row_panel_cache.get(size)
+                 ^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'Renderer' object has no attribute '_row_panel_cache'. Did you mean: '_row_panel_surface'?
+
+veilbound\client\renderer.py:1226: AttributeError
+=========================== short test summary info ===========================
+FAILED tests/test_abilities.py::test_two_sasuke_instances_keep_independent_points_and_activations
+FAILED tests/test_abilities.py::test_multiplayer_room_resolves_the_bonus_once_and_syncs_both_peers
+FAILED tests/test_abilities.py::test_naruto_hinata_opponent_partner_does_not_activate
+FAILED tests/test_abilities.py::test_naruto_hinata_no_bonus_different_rows - ...
+FAILED tests/test_elimination.py::test_final_reveal_pause_resumes_after_selecting_a_target
+FAILED tests/test_gameplay.py::test_roster_loader_warns_for_missing_duplicate_and_extra_ids
+FAILED tests/test_gameplay.py::test_row_box_totals_include_only_revealed_cards
+7 failed, 73 passed in 0.96s

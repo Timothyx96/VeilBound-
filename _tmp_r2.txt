@@ -1,0 +1,246 @@
+441:             return ActionResult(False, "Select an elimination target before scoring.")
+442:         if not all(
+443:             row.is_full and all(card is not None and card.revealed for card in row.slots)
+444:             for row in state.rows
+445:         ):
+446:             return ActionResult(False, "The final reveal sequence must finish before scoring.")
+447:         row = state.current_row
+448:         if row is None or row.scored:
+449:             return ActionResult(False, "This row has already been scored.")
+450:         scores = calculate_row_scores(row, tuple(player.id for player in state.players), self.cards)
+451:         first, second = state.players
+452:         if scores[first.id] == scores[second.id]:
+453:             row.winner_id = None
+454:             row.awarded_points = 0
+455:             result_text = f"Row {row.number} is tied. No points are awarded."
+456:         else:
+457:             winner = first if scores[first.id] > scores[second.id] else second
+458:             row.winner_id = winner.id
+459:             row.awarded_points = row.point_value
+460:             winner.match_points += row.point_value
+461:             winner.round_points += row.point_value
+462:             result_text = f"{winner.name} wins Row {row.number} and gains {row.point_value} match points."
+463:         row.scores = scores
+464:         row.scored = True
+465:         state.scored_row_order.append(row.id)
+466:         state.phase = GamePhase.ROW_RESULTS
+467:         event_start = len(state.events)
+468:         self._emit("row_scored", result_text, {
+469:             "row_id": row.id,
+470:             "row_number": row.number,
+471:             "scores": dict(scores),
+472:             "winner_id": row.winner_id,
+473:             "row_points": row.awarded_points,
+474:             "tie_break_applied": False,
+475:             "match_points": {player.id: player.match_points for player in state.players},
+476:             "round_points": {player.id: player.round_points for player in state.players},
+477:         })
+478:         return ActionResult(True, events=tuple(state.events[event_start:]))
+479: 
+480:     def advance_after_row_result(self) -> ActionResult:
+481:         state = self.state
+482:         if state.phase != GamePhase.ROW_RESULTS:
+483:             return ActionResult(False, "There is no row result to advance from.")
+484:         if state.row_index < len(state.rows) - 1:
+485:             next_row = state.rows[state.row_index + 1]
+486:             if not next_row.is_full or not all(card is not None and card.revealed for card in next_row.slots):
+487:                 return ActionResult(False, "The final reveal sequence must finish before scoring advances.")
+488:         event_start = len(state.events)
+489:         if state.row_index == len(state.rows) - 1:
+490:             state.phase = GamePhase.ROUND_RESULTS
+491:             first, second = state.players
+492:             if first.round_points == second.round_points:
+493:                 state.round_winner_id = None
+494:             else:
+495:                 state.round_winner_id = first.id if first.round_points > second.round_points else second.id
+496:             self._emit("round_results", f"Round {state.round_number} is complete.", {
+497:                 "round": state.round_number,
+498:                 "match_points": {player.id: player.match_points for player in state.players},
+499:                 "round_points": {player.id: player.round_points for player in state.players},
+500:                 "winner_id": state.round_winner_id,
+501:             })
+502:         else:
+503:             state.row_index += 1
+504:             state.reveal_card_index = 0
+505:             row = state.current_row
+506:             state.phase = GamePhase.ROW_SCORING
+507:             self._emit("next_row", f"Proceeding to Row {row.number}.", {"row_id": row.id, "row_number": row.number})
+508:         return ActionResult(True, events=tuple(state.events[event_start:]))
+509: 
+510:     def continue_after_round_results(self) -> ActionResult:
+511:         state = self.state
+512:         if state.phase != GamePhase.ROUND_RESULTS:
+513:             return ActionResult(False, "Round results are not ready to continue.")
+514:         if state.round_number < state.rounds_per_match:
+515:             state.round_number += 1
+516:             starter_index = (state.round_number - 1) % len(state.players)
+517:             self._prepare_round(starter_index)
+518:             events = tuple(state.events)
+519:         else:
+520:             event_start = len(state.events)
+521:             points = [player.match_points for player in state.players]
+522:             if points[0] == points[1]:
+523:                 state.winner_id = None
+524:                 message = f"The match ends in a draw at {points[0]} points."
+525:                 kind = "match_draw"
+526:             else:
+527:                 winner = max(state.players, key=lambda player: player.match_points)
+528:                 state.winner_id = winner.id
+529:                 message = f"{winner.name} wins the match with {winner.match_points} points."
+530:                 kind = "match_win"
+531:             state.phase = GamePhase.MATCH_RESULTS
+532:             self._emit(kind, message, {"winner_id": state.winner_id, "match_points": points})
+533:             events = tuple(state.events[event_start:])
+534:         return ActionResult(True, events=events)
+535: 
+536:     def view_for(self, player_id: str) -> dict:
+537:         """Return a JSON-compatible view with all unrevealed card identities masked."""
+538:         try:
+539:             viewer = self.state.player(player_id)
+540:         except KeyError as error:
+541:             raise ValueError(f"Unknown player: {player_id}") from error
+542:         player_views = []
+543:         for player in self.state.players:
+544:             own = player.id == viewer.id
+545:             player_views.append({
+546:                 "id": player.id,
+547:                 "name": player.name,
+548:                 "match_points": player.match_points,
+549:                 "round_points": player.round_points,
+550:                 "hand_count": len(player.hand),
+551:                 # Private hand cards are identified by local catalog IDs only. Ability
+552:                 # descriptions are sent to peers only with public reveal events.
+553:                 "hand": [{"id": card.id, "definition_id": card.definition_id} for card in player.hand] if own else None,
+554:                 "deck_count": len(player.draw_pile),
+555:                 "draw_pile_count": len(player.draw_pile),
+556:                 "used_count": len(player.used),
+557:             })
+558:         rows = []
+559:         for row in self.state.rows:
+560:             rows.append({
+561:                 "id": row.id,
+562:                 "number": row.number,
+563:                 "capacity": row.capacity,
+564:                 "point_value": row.point_value,
+565:                 "slots": [
+566:                     {"occupied": False} if card is None else {
+567:                         "occupied": True,
+568:                         "owner_id": card.owner_id,
+569:                         "card": self._card_view(card) if card.revealed else None,
+570:                     }
+571:                     for card in row.slots
+572:                 ],
+573:                 "scores": dict(row.scores) if row.scored else None,
+574:                 "winner_id": row.winner_id if row.scored else None,
+575:                 "scored": row.scored,
+576:                 "awarded_points": row.awarded_points,
+577:                 "eliminated_slots": list(row.get("eliminated_slots") or []),
+578:             })
+579:         return {
+580:             "viewer_id": viewer.id,
+581:             "players": player_views,
+582:             "rows": rows,
+583:             "active_player_id": self.state.active_player.id,
+584:             "turn_number": self.state.turn_number,
+585:             "round_number": self.state.round_number,
+586:             "rounds_per_match": self.state.rounds_per_match,
+587:             "phase": self.state.phase.value,
+588:             "current_row_id": self.state.current_row.id if self.state.phase in {GamePhase.REVEAL, GamePhase.ROW_SCORING, GamePhase.ROW_RESULTS} and self.state.current_row else None,
+589:             "scored_row_order": list(self.state.scored_row_order),
+590:             "winner_id": self.state.winner_id,
+591:             "events": [{"kind": event.kind, "message": event.message, "data": dict(event.data)} for event in self.state.events],
+592:             "legal_slots": [[row_id, index] for row_id, index in self.legal_slots(viewer.id)],
+593:             # JSON-safe pause payload; None while no elimination awaits input.
+594:             "pending_elimination": dict(self.state.get("pending_elimination") or {}) or None,
+595:         }
+596: 
+597:     def _card_view(self, card: CardInstance) -> dict:
+598:         definition = self.cards[card.definition_id]
+599:         return {
+600:             "id": card.id,
+601:             "definition_id": definition.id,
+602:             "name": definition.name,
+603:             "image": definition.image,
+604:             "base_points": definition.base_points,
+605:             "effect_name": definition.effect_name,
+606:             "effect_text": definition.effect_text,
+607:             "owner_id": card.owner_id,
+608:             "revealed": card.revealed,
+609:             "current_points": card.get("current_points"),
+610:             "activated_abilities": list(card.get("activated_abilities") or []),
+611:             "eliminated": bool(card.get("eliminated", False)),
+612:             "applied_bonuses": dict(card.get("applied_bonuses") or {}),
+613:         }
+614: 
+615:     def _draw_for_active_player(self) -> None:
+616:         player = self.state.active_player
+617:         requested = self.config.draw_per_turn
+618:         drawn = min(requested, len(player.draw_pile))
+619:         for _ in range(drawn):
+620:             player.hand.append(player.draw_pile.pop())
+621:         if drawn:
+622:             self._emit("draw", f"{player.name} draws {drawn} card{'s' if drawn != 1 else ''}.", {"player_id": player.id, "count": drawn})
+623:         if requested and drawn < requested and player.id not in self._empty_draw_piles_warned:
+624:             logger.warning(
+625:                 "%s's draw pile ran out while drawing; played cards will not be recycled.",
+626:                 player.name,
+627:             )
+628:             self._empty_draw_piles_warned.add(player.id)
+629: 
+630:     def _advance_turn(self) -> None:
+631:         self.state.active_player_index = (self.state.active_player_index + 1) % len(self.state.players)
+632:         self.state.turn_number += 1
+633:         self._emit("turn", f"It is {self.state.active_player.name}'s turn.", {
+634:             "player_id": self.state.active_player.id, "turn": self.state.turn_number,
+635:         })
+636: 
+637:     def _reveal_card(self, row: BattleRow, slot_index: int, card: CardInstance) -> None:
+638:         """Reveal one card, resolve abilities, then queue presentation events.
+639: 
+640:         Order matters: the authoritative reveal flag flips first, the reveal
+641:         presentation is queued (so flips and audio start immediately), then
+642:         ability phases A/B resolve with each activation's presentation queued
+643:         right after that ability's effects apply.
+644:         """
+645:         if card.revealed:
+646:             return
+647:         card.revealed = True
+648:         definition = self.cards[card.definition_id]
+649:         owner = self.state.player(card.owner_id)
+650:         self._emit("card_revealed", f"{owner.name} reveals {definition.name} (base {definition.base_points}).", {
+651:             "row_id": row.id,
+652:             "row_number": row.number,
+653:             "slot_index": slot_index,
+654:             "card_id": card.id,
+655:             "player_id": owner.id,
+656:             "name": definition.name,
+657:             "image": definition.image,
+658:             "full_card_art": definition.full_card_art,
+659:             "base_points": definition.base_points,
+660:             "effect_name": definition.effect_name,
+661:             "effect_text": definition.effect_text,
+662:         })
+663:         self._resolve_reveal_triggers(card, row, slot_index)
+664: 
+665:     def _resolve_reveal_triggers(self, card: CardInstance, row: BattleRow, slot_index: int) -> None:
+666:         """Run the central ability manager: Phase A pending, Phase B this card."""
+667:         self.abilities.on_card_revealed(
+668:             self.state, card, row, slot_index, emit=self._emit_ability_activation,
+669:         )
+670: 
+671:     def _emit_ability_activation(self, activation: AbilityActivation) -> None:
+672:         """Queue presentation for an ability whose effects have just applied."""
+673:         self._emit(
+674:             "ability_activated",
+675:             (
+676:                 f"{activation.owner_name}'s {activation.ability.name} activates: "
+677:                 f"{activation.ability.presentation.floating_text} "
+678:                 f"({activation.current_points - activation.delta} -> "
+679:                 f"{activation.current_points} points)."
+680:             ),
+681:             activation.event_data(),
+682:         )
+683: 
+684:     def _emit(self, kind: str, message: str, data: dict) -> None:
+685:         self.state.events.append(GameEvent(kind, message, data))
+686: 

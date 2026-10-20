@@ -140,6 +140,9 @@ def test_roster_loader_warns_for_missing_duplicate_and_extra_ids(tmp_path, caplo
     extra = deepcopy(source)
     extra_entry = deepcopy(extra["cards"][0])
     extra_entry["id"] = "extra_test_character"
+    if isinstance(extra_entry.get("ability"), dict):
+        extra_entry["ability"] = deepcopy(extra_entry["ability"])
+        extra_entry["ability"]["id"] = "extra_test_character_ability"
     extra["cards"].append(extra_entry)
     extra_path = tmp_path / "extra.json"
     extra_path.write_text(json.dumps(extra), encoding="utf-8")

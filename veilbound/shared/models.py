@@ -41,8 +41,13 @@ class CardDefinition:
     # Roster classification (e.g. "Fighter", "Dynamic Duo"); used by
     # elimination targeting's allowed_types filter.
     type: str = ""
-    # Optional JSON-declared ability; None for characters without one.
-    ability: AbilityDefinition | None = None
+    # Optional JSON-declared abilities; None for characters without any.
+    abilities: list[AbilityDefinition] | None = None
+
+    @property
+    def ability(self) -> AbilityDefinition | None:
+        """Backward-compatible single-ability accessor."""
+        return self.abilities[0] if self.abilities else None
 
 
 class CardInstance(StateRecord):

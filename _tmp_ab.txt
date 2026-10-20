@@ -1,0 +1,51 @@
+395:                 if owner is None:
+396:                     continue  # owner left the board; drop the registration
+397:                 owner_row, owner_index, owner_card = owner
+398:                 if self._limit_reached(pending.ability, owner_card):
+399:                     continue  # already activated; never rerun
+400:                 if self._row_closed_without_partner(pending.ability, owner_card, owner_row):
+401:                     continue  # closed row without partner; can never activate
+402:                 activation = self._try_activate(
+403:                     pending.ability, owner_card, owner_row, owner_index, state
+404:                 )
+405:                 if activation is not None:
+406:                     activations.append(activation)
+407:                     if emit is not None:
+408:                         emit(activation)
+409:                     continue  # activated - removed from pending
+410:                 kept.append(pending)
+411: 
+412:             # Phase B - the just-revealed character's own on-reveal abilities.
+413:             definition = self.definitions.get(revealed_card.definition_id)
+414:             ability = getattr(definition, "ability", None)
+415:             if (
+416:                 ability is not None
+417:                 and ability.trigger == "on_reveal"
+418:                 and not self._limit_reached(ability, revealed_card)
+419:             ):
+420:                 already_pending = any(
+421:                     item.ability.id == ability.id and item.owner_card_id == revealed_card.id
+422:                     for item in kept
+423:                 )
+424:                 if not already_pending:
+425:                     activation = self._try_activate(
+426:                         ability, revealed_card, row, slot_index, state
+427:                     )
+428:                     if activation is not None:
+429:                         activations.append(activation)
+430:                         if emit is not None:
+431:                             emit(activation)
+432:                     else:
+433:                         self._sequence += 1
+434:                         kept.append(
+435:                             _PendingAbility(self._sequence, ability, revealed_card.id)
+436:                         )
+437: 
+438:             self._pending = kept
+439:             return activations
+440:         finally:
+441:             self._resolving = False
+442: 
+443:     # ---------------------------------------------------------------- helpers
+444: 
+445:     def _limit_reached(self, ability: AbilityDefinition, card: Any) -> bool:

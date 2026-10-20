@@ -1,0 +1,37 @@
+﻿........F..................F..........F................................. [ 98%]
+.                                                                        [100%]
+================================== FAILURES ===================================
+______ test_two_sasuke_instances_keep_independent_points_and_activations ______
+tests\test_abilities.py:423: in test_two_sasuke_instances_keep_independent_points_and_activations
+    place(engine, sasuke_b, 0, 2)
+tests\test_abilities.py:126: in place
+    assert active.id == card.owner_id, "test sequence must follow turn order"
+E   AssertionError: test sequence must follow turn order
+E   assert 'player-1' == 'player-2'
+E     
+E     - player-2
+E     ?        ^
+E     + player-1
+E     ?        ^
+__________ test_final_reveal_pause_resumes_after_selecting_a_target ___________
+tests\test_elimination.py:247: in test_final_reveal_pause_resumes_after_selecting_a_target
+    assert [(t["row_id"], t["slot_index"]) for t in pending["valid_targets"]] == [
+E   AssertionError: assert [('round-1-ro...-1-row-4', 0)] == [('round-1-ro...-1-row-2', 0)]
+E     
+E     Left contains 2 more items, first extra item: ('round-1-row-3', 1)
+E     Use -v to get more diff
+_______________ test_row_box_totals_include_only_revealed_cards _______________
+tests\test_gameplay.py:282: in test_row_box_totals_include_only_revealed_cards
+    renderer._draw_row_box(
+veilbound\client\renderer.py:1246: in _draw_row_box
+    panel = self._row_panel_surface(rect.size)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+veilbound\client\renderer.py:1226: in _row_panel_surface
+    cached = self._row_panel_cache.get(size)
+             ^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'Renderer' object has no attribute '_row_panel_cache'. Did you mean: '_row_panel_surface'?
+=========================== short test summary info ===========================
+FAILED tests/test_abilities.py::test_two_sasuke_instances_keep_independent_points_and_activations
+FAILED tests/test_elimination.py::test_final_reveal_pause_resumes_after_selecting_a_target
+FAILED tests/test_gameplay.py::test_row_box_totals_include_only_revealed_cards
+3 failed, 70 passed in 0.81s

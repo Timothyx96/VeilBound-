@@ -1,0 +1,20 @@
+    effect: Bungee Gum | Copies the current bonus points of one opposing character in the same row.
+[24] Chrollo Lucilfer (id=hxh_05, base=7, type=Fighter)
+    effect: Master Strategist | The next opposing character placed in the same row cannot activate its ability or gain additional points.
+[25] Isaac Netero (id=hxh_06, base=8, type=Fighter)
+    effect: 100-Type Guanyin Bodhisattva | Reduces the points of every opposing character in his row by 2.
+[26] Kite (id=hxh_07, base=5, type=Trickster)
+    effect: Crazy Slots | Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.
+[27] Kurapika (id=hxh_08, base=6, type=Fighter)
+    effect: Chain Jail | Reduces the points of one opposing Fighter card in the same row by 2.
+[28] Illumi (id=hxh_09, base=5, type=Regular)
+    effect: Needle | Gains +2 points if there are three other friendly characters in his row.
+[29] Leorio Paradinight (id=hxh_10, base=5, type=Regular)
+    effect: Emergency Treatment | Revives one eliminated friendly character in the same row, restoring its original points and ability.
+[30] Monkey D. Luffy (id=onepiece_01, base=10, type=GOAT)
+    effect: Warrior of Liberation | Luffy ignores all opposing abilities that would eliminate, weaken, move, or disable him. Eliminates one opposing card in his row, regardless of card type.
+[31] Roronoa Zoro (id=onepiece_02, base=7, type=Dynamic Duo)
+    effect: Three-Sword Style | Eliminates one opposing Fighter card in the same row.
+[32] Sanji (id=onepiece_03, base=7, type=Dynamic Duo)
+    effect: Wings of the Pirate King | Gains +3 points if placed in the same row as Zoro.
+    abil: {"id": "sanji_zoro_row_bonus", "name": "Shared Row Bonus", "description": "Gain 3 points when Sanji and Zoro are both revealed in the same row.", "trigger": "on_reveal", "conditions": [{"type": "character_revealed", "character": "onepiece_02"}, {"type": "same_row", "character": "onepiece_02"}], "effects": [{"type": "add_current_points", "amount": 3}], "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "+3", "animation": "points_gain"}}

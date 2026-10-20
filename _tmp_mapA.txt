@@ -1,0 +1,93 @@
+[14] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Endeavor'
+    effect_name: 'Number One, No Matter What'
+    description: 'If Endeavor is the first card placed in an otherwise empty row, he gains +4 points.'
+[15] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Shoto Todoroki'
+    effect_name: 'Flashfire and Frost'
+    description: "Cancels one opposing character's effect that grants additional points."
+[16] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Toga'
+    effect_name: 'Transform'
+    description: "If the next character placed in the row belongs to the opposing team, Toga copies that character's base points."
+[17] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Lady Nagant'
+    effect_name: 'Deadeye'
+    description: 'If the next character placed in the row belongs to the opposing team, that character loses 3 points.'
+[18] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Keigo (Hawks)'
+    effect_name: 'Fierce Wings'
+    description: 'After Hawks is placed, you may move one other allied card to a different row.'
+[19] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Star and Stripes'
+    effect_name: 'Last-Minute Hero'
+    description: 'If Star and Stripes is the last card placed in the row, she gains +3 points.'
+[20] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Gon Freecss'
+    effect_name: 'Jajanken: Rock'
+    description: "All friendly Fighter cards on the board gain +4 points. After activating this ability, Gon's points are reduced to 1. Only characters on the board at the time of activation receive the bonus."
+[21] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Killua Zoldyck'
+    effect_name: 'Godspeed'
+    description: 'Eliminates one opposing character anywhere on the board.'
+[22] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Alluka Zoldyck'
+    effect_name: "Nanika's Wish"
+    description: 'Revives one eliminated friendly character anywhere on the board, restoring its original points and ability.'
+[23] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Hisoka'
+    effect_name: 'Bungee Gum'
+    description: 'Copies the current bonus points of one opposing character in the same row.'
+[24] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Chrollo Lucilfer'
+    effect_name: 'Master Strategist'
+    description: 'The next opposing character placed in the same row cannot activate its ability or gain additional points.'
+[25] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Isaac Netero'
+    effect_name: '100-Type Guanyin Bodhisattva'
+    description: 'Reduces the points of every opposing character in his row by 2.'
+[26] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Kurapika'
+    effect_name: 'Chain Jail'
+    description: 'Reduces the points of one opposing Fighter card in the same row by 2.'
+[27] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Kite'
+    effect_name: 'Crazy Slots'
+    description: 'Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.'
+[28] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Biscuit Krueger'
+    effect_name: 'True Form'
+    description: 'Gains +2 points if there are three other friendly characters in her row.'
+[29] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Leorio Paradinight'
+    effect_name: 'Emergency Treatment'
+    description: 'Revives one eliminated friendly character in the same row, restoring its original points and ability.'
+[30] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Monkey D. Luffy'
+    effect_name: 'Warrior of Liberation'
+    description: 'Luffy ignores all opposing abilities that would eliminate, weaken, move, or disable him. Eliminates one opposing card in his row, regardless of card type.'
+[31] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Roronoa Zoro'
+    effect_name: 'Three-Sword Style'
+    description: 'Eliminates one opposing Fighter card in the same row.'
+[32] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Sanji'
+    effect_name: 'Wings of the Pirate King'
+    description: 'Gains +3 points if placed in the same row as Zoro.'
+[33] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Shanks'
+    effect_name: "Conqueror's Haki"
+    description: 'Cancels all abilities in the row, including friendly and opposing abilities. Abilities in that row can no longer activate, and eliminated characters remain eliminated.'
+[34] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Trafalgar D. Water Law'
+    effect_name: 'Room'
+    description: 'Moves one opposing card from his row to another row chosen by the player.'
+[35] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Usopp'
+    effect_name: 'God Usopp'
+    description: 'Gains +3 points if there is an opposing GOAT card in his row.'
+[36] keys=['character_name', 'effect_name', 'description']
+    character_name: 'Buggy the Clown'
+    effect_name: 'Chop-Chop Escape'
+    description: 'Cannot be eliminated by an opposing ability.'
+[37] keys=['character_name', 'effect_name', 'description']

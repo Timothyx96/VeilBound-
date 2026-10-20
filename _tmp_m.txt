@@ -1,0 +1,187 @@
+2: from __future__ import annotations
+3: 
+4: from dataclasses import dataclass, field
+5: from enum import Enum
+6: from typing import Any
+7: 
+8: from .abilities import AbilityDefinition
+9: 
+10: 
+11: class GamePhase(str, Enum):
+12:     PLACEMENT = "placement"
+13:     REVEAL = "reveal"
+14:     ROW_SCORING = "row_scoring"
+15:     ROW_RESULTS = "row_results"
+16:     ROUND_RESULTS = "round_results"
+17:     MATCH_RESULTS = "match_results"
+18: 
+19: 
+20: class StateRecord(dict):
+21:     """A JSON-serializable record that keeps the prototype's attribute API."""
+22: 
+23:     def __getattr__(self, name: str):
+24:         try:
+25:             return self[name]
+26:         except KeyError as error:
+27:             raise AttributeError(name) from error
+28: 
+29:     def __setattr__(self, name: str, value) -> None:
+30:         self[name] = value
+31: 
+32: 
+33: @dataclass(frozen=True)
+34: class CardDefinition:
+35:     id: str
+36:     name: str
+37:     image: str
+38:     base_points: int
+39:     effect_name: str
+40:     effect_text: str
+41:     full_card_art: str = ""
+42:     # Roster classification (e.g. "Fighter", "Dynamic Duo"); used by
+43:     # elimination targeting's allowed_types filter.
+44:     type: str = ""
+45:     # Optional JSON-declared ability; None for characters without one.
+46:     ability: AbilityDefinition | None = None
+47: 
+48: 
+49: class CardInstance(StateRecord):
+50:     """One dealt/played card.
+51: 
+52:     ``base_points`` lives on the frozen definition and never changes;
+53:     ``current_points`` is this instance's runtime value, initialized from the
+54:     definition when the match deals the card and only ever modified by
+55:     ability effects. ``activated_abilities`` records which abilities this
+56:     specific instance has already used during the match.
+57:     """
+58: 
+59:     def __init__(
+60:         self,
+61:         id: str,
+62:         definition_id: str,
+63:         owner_id: str,
+64:         revealed: bool = False,
+65:         current_points: int | None = None,
+66:         activated_abilities: list[str] | None = None,
+67:         eliminated: bool = False,
+68:         base_points: int | None = None,
+69:         applied_bonuses: dict[str, int] | None = None,
+70:     ):
+71:         super().__init__(
+72:             id=id,
+73:             definition_id=definition_id,
+74:             owner_id=owner_id,
+75:             revealed=revealed,
+76:             current_points=current_points,
+77:             activated_abilities=list(activated_abilities or []),
+78:             eliminated=eliminated,
+79:             base_points=base_points,
+80:             # Dynamic bonuses granted by abilities (ability_id -> amount). Kept
+81:             # separate from the immutable base so removing a bonus never
+82:             # corrupts the character's original points.
+83:             applied_bonuses=dict(applied_bonuses) if applied_bonuses is not None else {},
+84:         )
+85: 
+86: 
+87: class PlayerState(StateRecord):
+88:     def __init__(
+89:         self,
+90:         id: str,
+91:         name: str,
+92:         draw_pile: list[CardInstance] | None = None,
+93:         hand: list[CardInstance] | None = None,
+94:         used: list[CardInstance] | None = None,
+95:         match_points: int = 0,
+96:         round_points: int = 0,
+97:     ):
+98:         super().__init__(
+99:             id=id, name=name, draw_pile=draw_pile or [], hand=hand or [], used=used or [],
+100:             match_points=match_points, round_points=round_points,
+101:         )
+102: 
+103: 
+104: class BattleRow(StateRecord):
+105:     def __init__(
+106:         self,
+107:         id: str,
+108:         number: int,
+109:         capacity: int,
+110:         slots: list[CardInstance | None],
+111:         scores: dict[str, int] | None = None,
+112:         winner_id: str | None = None,
+113:         scored: bool = False,
+114:         awarded_points: int = 0,
+115:         point_value: int | None = None,
+116:         eliminated_slots: list[int] | None = None,
+117:     ):
+118:         super().__init__(
+119:             id=id, number=number, capacity=capacity, point_value=capacity if point_value is None else point_value,
+120:             slots=slots, scores=scores or {}, winner_id=winner_id, scored=scored,
+121:             awarded_points=awarded_points, eliminated_slots=eliminated_slots or [],
+122:         )
+123: 
+124:     @property
+125:     def is_full(self) -> bool:
+126:         return all(card is not None for card in self.slots)
+127: 
+128:     @property
+129:     def placed_count(self) -> int:
+130:         return sum(card is not None for card in self.slots)
+131: 
+132: 
+133: class GameEvent(StateRecord):
+134:     def __init__(self, kind: str, message: str, data: dict[str, Any] | None = None):
+135:         super().__init__(kind=kind, message=message, data=data or {})
+136: 
+137: 
+138: class GameState(StateRecord):
+139:     def __init__(
+140:         self,
+141:         players: list[PlayerState],
+142:         rows: list[BattleRow],
+143:         rounds_per_match: int,
+144:         active_player_index: int = 0,
+145:         turn_number: int = 1,
+146:         round_number: int = 1,
+147:         phase: GamePhase = GamePhase.PLACEMENT,
+148:         row_index: int = 0,
+149:         reveal_card_index: int = 0,
+150:         final_reveal_active: bool = False,
+151:         winner_id: str | None = None,
+152:         round_winner_id: str | None = None,
+153:         scored_row_order: list[str] | None = None,
+154:         events: list[GameEvent] | None = None,
+155:         viewer_id: str | None = None,
+156:     ):
+157:         super().__init__(
+158:             players=players, rows=rows, rounds_per_match=rounds_per_match,
+159:             active_player_index=active_player_index, turn_number=turn_number, round_number=round_number,
+160:             phase=phase, row_index=row_index, reveal_card_index=reveal_card_index,
+161:             final_reveal_active=final_reveal_active, winner_id=winner_id, round_winner_id=round_winner_id,
+162:             scored_row_order=scored_row_order or [], events=events or [], pending_ability_choice=None,
+163:             pending_elimination=None,
+164:             viewer_id=viewer_id,
+165:         )
+166: 
+167:     @property
+168:     def active_player(self) -> PlayerState:
+169:         return self.players[self.active_player_index]
+170: 
+171:     @property
+172:     def current_row(self) -> BattleRow | None:
+173:         if 0 <= self.row_index < len(self.rows):
+174:             return self.rows[self.row_index]
+175:         return None
+176: 
+177:     def player(self, player_id: str) -> PlayerState:
+178:         for player in self.players:
+179:             if player.id == player_id:
+180:                 return player
+181:         raise KeyError(player_id)
+182: 
+183: 
+184: @dataclass(frozen=True)
+185: class ActionResult:
+186:     accepted: bool
+187:     reason: str = ""
+188:     events: tuple[GameEvent, ...] = ()

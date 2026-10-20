@@ -1,0 +1,46 @@
+237: 
+238:     def reveal_next_card(self) -> ActionResult:
+239:         state = self.state
+240:         if state.phase != GamePhase.REVEAL or not state.final_reveal_active:
+241:             return ActionResult(False, "The game is not revealing a row.")
+242:         if state.get("pending_elimination"):
+243:             return ActionResult(False, "Select an elimination target before continuing the reveal.")
+244:         event_start = len(state.events)
+245:         next_card = next((
+246:             (row, index, card)
+247:             for row in state.rows
+248:             for index, card in enumerate(row.slots)
+249:             if card is not None and not card.revealed
+250:         ), None)
+251:         if next_card is None:
+252:             return ActionResult(False, "Every card is already revealed.")
+253:         row, hidden, card = next_card
+254:         self._reveal_card(row, hidden, card)
+255:         state.reveal_card_index += 1
+256: 
+257:         # A reveal may trigger an elimination ability: pause the reveal flow
+258:         # for player target selection (fails through when no target exists).
+259:         if self._begin_pending_elimination(event_start):
+260:             # Do not advance to the next card; wait for target selection.
+261:             return ActionResult(True, events=tuple(state.events[event_start:]))
+262: 
+263:         if all(placed is not None and placed.revealed for full_row in state.rows for placed in full_row.slots):
+264:             state.final_reveal_active = False
+265:             state.phase = GamePhase.ROW_SCORING
+266:             self._emit("final_reveal_complete", "All cards are revealed. Compare scores starting with Row 1.", {})
+267:         return ActionResult(True, events=tuple(state.events[event_start:]))
+268: 
+269:     # ---------------------------------------------------------------- elimination
+270: 
+271:     def _begin_pending_elimination(self, event_start: int) -> bool:
+272:         """Arm the pending-elimination pause when a reveal activated one.
+273: 
+274:         Scans the events appended since ``event_start`` for an elimination
+275:         ability activation. When found, arms ``state.pending_elimination``
+276:         with a JSON-safe targeting payload and the current valid targets.
+277:         If no valid targets exist the attempt fails immediately (emitting
+278:         ``elimination_failed``) and False is returned so the caller continues
+279:         the normal flow. Returns True when the flow must pause for player
+280:         target selection.
+281:         """
+282:         state = self.state

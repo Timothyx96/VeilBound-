@@ -1,0 +1,55 @@
+== naruto_01 | name=Naruto Uzumaki | type=GOAT | base=10
+== naruto_02 | name=Sasuke Uchiha | type=Dynamic Duo | base=7
+   {"id": "sasuke_shared_row_bonus", "name": "Shared Row Bonus", "description": "Gain 3 points when Sasuke and Itachi are both revealed in the same row.", "trigger": "on_reveal", "conditions": [{"type": "character_revealed", "character": "naruto_03"}, {"type": "same_row", "character": "naruto_03"}], "effects": [{"type": "add_current_points", "amount": 3}], "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "+3", "animation": "points_gain"}}
+== naruto_03 | name=Itachi Uchiha | type=Dynamic Duo | base=6
+== naruto_04 | name=Sakura Haruno | type=Fighter | base=6
+== naruto_05 | name=Kakashi Hatake | type=Fighter | base=7
+== naruto_06 | name=Minato | type=Fighter | base=8
+== naruto_07 | name=Tobi | type=Trickster | base=4
+== naruto_08 | name=Shikamaru Nara | type=Regular | base=5
+== naruto_09 | name=Rock Lee | type=Regular | base=5
+== naruto_10 | name=Hinata Hyuga | type=Regular | base=4
+== mha_01 | name=Izuku Midoriya (Deku) | type=Dynamic Duo | base=8
+== mha_02 | name=Katsuki Bakugo | type=Dynamic Duo | base=7
+== mha_03 | name=Dabi | type=Fighter | base=6
+== mha_04 | name=All Might | type=GOAT | base=10
+== mha_05 | name=Endeavor | type=Fighter | base=8
+== mha_06 | name=Shoto Todoroki | type=Fighter | base=8
+== mha_07 | name=Lady_Nagant | type=Regular | base=4
+== mha_08 | name=Keigo | type=Regular | base=5
+== mha_09 | name=Toga | type=Trickster | base=2
+== mha_10 | name=Star_And_Stripes | type=Regular | base=5
+== hxh_01 | name=Gon Freecss | type=GOAT | base=10
+== hxh_02 | name=Killua Zoldyck | type=Dynamic Duo | base=7
+   {"id": "killua_godspeed_eliminate", "name": "Godspeed", "description": "Eliminates one opposing character anywhere on the board.", "trigger": "on_reveal", "conditions": [], "effects": [{"type": "eliminate_target"}], "targeting": {"target_scope": "any_row", "target_side": "opposing"}, "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "GODSPEED", "animation": "elimination"}}
+== hxh_03 | name=Alluka Zoldyck | type=Dynamic Duo | base=5
+   {"id": "alluka_killua_row_bonus", "name": "Shared Row Bonus", "description": "Gain 3 points when Alluka and Killua are both revealed in the same row.", "trigger": "on_reveal", "conditions": [{"type": "character_revealed", "character": "hxh_02"}, {"type": "same_row", "character": "hxh_02"}], "effects": [{"type": "add_current_points", "amount": 3}], "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "+3", "animation": "points_gain"}}
+== hxh_04 | name=Hisoka | type=Fighter | base=8
+== hxh_05 | name=Chrollo Lucilfer | type=Fighter | base=7
+== hxh_06 | name=Isaac Netero | type=Fighter | base=8
+== hxh_07 | name=Kite | type=Trickster | base=5
+== hxh_08 | name=Kurapika | type=Fighter | base=6
+== hxh_09 | name=Illumi | type=Regular | base=5
+== hxh_10 | name=Leorio Paradinight | type=Regular | base=5
+== onepiece_01 | name=Monkey D. Luffy | type=GOAT | base=10
+== onepiece_02 | name=Roronoa Zoro | type=Dynamic Duo | base=7
+== onepiece_03 | name=Sanji | type=Dynamic Duo | base=7
+   {"id": "sanji_zoro_row_bonus", "name": "Shared Row Bonus", "description": "Gain 3 points when Sanji and Zoro are both revealed in the same row.", "trigger": "on_reveal", "conditions": [{"type": "character_revealed", "character": "onepiece_02"}, {"type": "same_row", "character": "onepiece_02"}], "effects": [{"type": "add_current_points", "amount": 3}], "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "+3", "animation": "points_gain"}}
+== onepiece_04 | name=Shanks | type=Fighter | base=8
+== onepiece_05 | name=Nico Robin | type=Regular | base=4
+== onepiece_06 | name=Trafalgar D. Water Law | type=Fighter | base=7
+== onepiece_07 | name=Whitebeard | type=Regular | base=4
+== onepiece_08 | name=Usopp | type=Trickster | base=4
+== onepiece_09 | name=Nami | type=Regular | base=5
+== onepiece_10 | name=Tony Tony Chopper | type=Regular | base=4
+== dragonball_01 | name=Goku (Ultra Instinct) | type=Dynamic Duo | base=9
+== dragonball_02 | name=Vegeta | type=Dynamic Duo | base=7
+   {"id": "vegeta_goku_row_bonus", "name": "Shared Row Bonus", "description": "Gain 3 points when Vegeta and Goku are both revealed in the same row.", "trigger": "on_reveal", "conditions": [{"type": "character_revealed", "character": "dragonball_01"}, {"type": "same_row", "character": "dragonball_01"}], "effects": [{"type": "add_current_points", "amount": 3}], "activation_limit": "once_per_card_per_match", "presentation": {"floating_text": "+3", "animation": "points_gain"}}
+== dragonball_03 | name=Gogeta (Super Saiyan Blue) | type=GOAT | base=10
+== dragonball_04 | name=Frieza (Golden) | type=Fighter | base=8
+== dragonball_05 | name=Broly | type=Fighter | base=8
+== dragonball_06 | name=Future Trunks | type=Trickster | base=5
+== dragonball_07 | name=Gohan (Beast) | type=Fighter | base=8
+== dragonball_08 | name=Hit | type=Fighter | base=7
+== dragonball_09 | name=Zeno | type=Regular | base=4
+== dragonball_10 | name=Whis | type=Regular | base=4

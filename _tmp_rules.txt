@@ -1,0 +1,686 @@
+   1: from __future__ import annotations
+   2: 
+   3: import logging
+   4: import random
+   5: from collections.abc import Iterable, Mapping
+   6: 
+   7: from .abilities import AbilityActivation, AbilityManager
+   8: from .config import MATCH_ROUNDS, PLAYER_POOL_SIZE, GameConfig
+   9: from .definitions import load_card_definitions
+  10: from .elimination import EliminationManager, EliminationTargeting
+  11: from .models import (
+  12:     ActionResult, BattleRow, CardInstance, GameEvent, GamePhase, GameState,
+  13:     PlayerState,
+  14: )
+  15: 
+  16: 
+  17: ROW_COUNT = 4
+  18: logger = logging.getLogger(__name__)
+  19: 
+  20: 
+  21: def deal_player_pool(roster: Mapping[str, object] | Iterable[str], pool_size: int = PLAYER_POOL_SIZE, seed: int | None = None) -> list[str]:
+  22:     """Draw a unique character pool for a player."""
+  23:     character_ids = list(roster.keys() if isinstance(roster, Mapping) else roster)
+  24:     if pool_size < 0:
+  25:         raise ValueError("Pool size cannot be negative")
+  26:     if pool_size > len(character_ids):
+  27:         raise ValueError(
+  28:             f"Cannot deal a {pool_size}-card pool from a {len(character_ids)}-character roster"
+  29:         )
+  30:     chooser = random if seed is None else random.Random(seed)
+  31:     return chooser.sample(character_ids, pool_size)
+  32: 
+  33: 
+  34: def calculate_row_scores(row, player_ids: tuple[str, str], cards) -> dict[str, int]:
+  35:     """Score revealed cards only, using each instance's current points.
+  36: 
+  37:     ``current_points`` starts at the character's immutable ``base_points`` and
+  38:     is the only value ability effects modify, so row scoring always reflects
+  39:     bonuses granted during reveals. Instances without runtime points (masked
+  40:     proxies built by remote views) fall back to the definition's base value.
+  41:     """
+  42:     scores = {player_id: 0 for player_id in player_ids}
+  43:     for card in row.slots:
+  44:         if card is not None and card.revealed:
+  45:             definition = cards[card.definition_id]
+  46:             current = card.get("current_points")
+  47:             scores[card.owner_id] += definition.base_points if current is None else int(current)
+  48:     return scores
+  49: 
+  50: 
+  51: class GameEngine:
+  52:     """Pygame-independent authority for card placement and round scoring."""
+  53: 
+  54:     def __init__(self, config: GameConfig | None = None, seed: int | None = None, debug_mode: bool = False):
+  55:         self.config = config or GameConfig()
+  56:         self.cards = load_card_definitions()
+  57:         # Debug Mode behaves exactly like Local Mode, except both players can
+  58:         # access all 50 roster cards instead of the normal 5-card hand.
+  59:         self.debug_mode = debug_mode
+  60:         # Single authority for ability registration and resolution.
+  61:         self.abilities = AbilityManager(self.cards)
+  62:         # Single authority for elimination targeting and resolution.
+  63:         self.elimination = EliminationManager(self.cards)
+  64:         if self.config.deck_size != PLAYER_POOL_SIZE:
+  65:             raise ValueError(f"Each player must have a {PLAYER_POOL_SIZE}-card pool")
+  66:         if self.config.initial_hand_size < 0 or self.config.draw_per_turn < 0:
+  67:             raise ValueError("Hand and draw sizes cannot be negative")
+  68:         if not 1 <= self.config.capacity_min <= self.config.capacity_max <= 10:
+  69:             raise ValueError("Row capacities must be between 1 and 10")
+  70:         if self.config.rounds_per_match != MATCH_ROUNDS:
+  71:             raise ValueError(f"A match must contain exactly {MATCH_ROUNDS} rounds")
+  72:         self._rng = random.Random(seed)
+  73:         self._card_serial = 0
+  74:         self._empty_draw_piles_warned: set[str] = set()
+  75:         self.state: GameState
+  76:         self.start_new_match(seed=seed)
+  77: 
+  78:     def _new_card(self, definition_id: str, owner_id: str) -> CardInstance:
+  79:         self._card_serial += 1
+  80:         definition = self.cards[definition_id]
+  81:         # Fresh instances per match: runtime points start at the base value.
+  82:         # base_points is snapshotted on the instance so dynamic bonuses can be
+  83:         # added and removed without ever corrupting the original value.
+  84:         return CardInstance(
+  85:             f"card-{self._card_serial:05d}",
+  86:             definition_id,
+  87:             owner_id,
+  88:             current_points=definition.base_points,
+  89:             base_points=definition.base_points,
+  90:             applied_bonuses={},
+  91:         )
+  92: 
+  93:     def start_new_match(self, seed: int | None = None) -> GameState:
+  94:         if seed is not None:
+  95:             self._rng = random.Random(seed)
+  96:         players = [PlayerState("player-1", "Player 1"), PlayerState("player-2", "Player 2")]
+  97:         self.state = GameState(players=players, rows=[], rounds_per_match=self.config.rounds_per_match)
+  98:         self._empty_draw_piles_warned.clear()
+  99:         # Pending ability registrations never carry across matches.
+ 100:         self.abilities.reset()
+ 101:         for player in players:
+ 102:             # Debug Mode: both players get all 50 roster cards directly in the
+ 103:             # hand (sorted roster order) with an empty draw pile. Standard
+ 104:             # Local Mode keeps its normal 5-card hand untouched.
+ 105:             if self.debug_mode:
+ 106:                 player.draw_pile = []
+ 107:                 player.hand = [
+ 108:                     self._new_card(definition_id, player.id)
+ 109:                     for definition_id in sorted(self.cards.keys())
+ 110:                 ]
+ 111:                 continue
+ 112:             pool = deal_player_pool(
+ 113:                 self.cards,
+ 114:                 pool_size=self.config.deck_size,
+ 115:                 seed=self._rng.getrandbits(64),
+ 116:             )
+ 117:             player.draw_pile = [self._new_card(definition_id, player.id) for definition_id in pool]
+ 118:             for _ in range(min(self.config.initial_hand_size, len(player.draw_pile))):
+ 119:                 player.hand.append(player.draw_pile.pop())
+ 120:         self._prepare_round(starter_index=0)
+ 121:         return self.state
+ 122: 
+ 123:     def _prepare_round(self, starter_index: int) -> None:
+ 124:         state = self.state
+ 125:         # A new round rebuilds the board, so pending ability registrations tied
+ 126:         # to the previous round's card positions are discarded. Per-instance
+ 127:         # activation records live on the cards themselves and are unaffected.
+ 128:         self.abilities.reset()
+ 129:         state.rows = [
+ 130:             BattleRow(
+ 131:                 id=f"round-{state.round_number}-row-{number}",
+ 132:                 number=number,
+ 133:                 capacity=self._rng.randint(self.config.capacity_min, self.config.capacity_max),
+ 134:                 slots=[],
+ 135:             )
+ 136:             for number in range(1, ROW_COUNT + 1)
+ 137:         ]
+ 138:         for row in state.rows:
+ 139:             row.slots = [None] * row.capacity
+ 140:         state.active_player_index = starter_index
+ 141:         state.turn_number = 1
+ 142:         state.row_index = 0
+ 143:         state.reveal_card_index = 0
+ 144:         state.final_reveal_active = False
+ 145:         state.pending_elimination = None
+ 146:         state.phase = GamePhase.PLACEMENT
+ 147:         state.winner_id = None
+ 148:         state.round_winner_id = None
+ 149:         state.scored_row_order = []
+ 150:         state.events = []
+ 151: 
+ 152:         for player in state.players:
+ 153:             player.round_points = 0
+ 154:         self._emit("round_started", f"Round {state.round_number} begins. Fill every slot in the four rows.", {"round": state.round_number})
+ 155: 
+ 156:     def legal_slots(self, player_id: str | None = None) -> list[tuple[str, int]]:
+ 157:         state = self.state
+ 158:         if state.phase != GamePhase.PLACEMENT:
+ 159:             return []
+ 160:         # A pending elimination pauses all placement until a target is chosen.
+ 161:         if state.get("pending_elimination"):
+ 162:             return []
+ 163:         player = state.active_player if player_id is None else state.player(player_id)
+ 164:         if player.id != state.active_player.id or not player.hand:
+ 165:             return []
+ 166:         legal: list[tuple[str, int]] = []
+ 167:         for row in state.rows:
+ 168:             next_index = next((index for index, card in enumerate(row.slots) if card is None), None)
+ 169:             if next_index is not None:
+ 170:                 legal.append((row.id, next_index))
+ 171:         return legal
+ 172: 
+ 173:     def play_card(self, player_id: str, card_id: str, row_id: str, slot_index: int) -> ActionResult:
+ 174:         """Place into one empty slot; rejection paths do not mutate the state."""
+ 175:         state = self.state
+ 176:         if state.phase != GamePhase.PLACEMENT:
+ 177:             return ActionResult(False, "Card placement is closed for this round.")
+ 178:         if state.get("pending_elimination"):
+ 179:             return ActionResult(False, "Select an elimination target before continuing.")
+ 180:         try:
+ 181:             player = state.player(player_id)
+ 182:         except KeyError:
+ 183:             return ActionResult(False, "Unknown player.")
+ 184:         if player.id != state.active_player.id:
+ 185:             return ActionResult(False, "It is not that player's turn.")
+ 186:         card = next((item for item in player.hand if item.id == card_id), None)
+ 187:         if card is None:
+ 188:             return ActionResult(False, "That card is not in the player's hand.")
+ 189:         row = next((item for item in state.rows if item.id == row_id), None)
+ 190:         if row is None:
+ 191:             return ActionResult(False, "Unknown row.")
+ 192:         if not isinstance(slot_index, int) or not 0 <= slot_index < row.capacity:
+ 193:             return ActionResult(False, "Unknown slot.")
+ 194:         if row.slots[slot_index] is not None:
+ 195:             return ActionResult(False, "That slot is already occupied.")
+ 196:         next_slot = next((index for index, placed in enumerate(row.slots) if placed is None), None)
+ 197:         if slot_index != next_slot:
+ 198:             return ActionResult(False, "Place the card in the next empty slot from left to right.")
+ 199: 
+ 200:         event_start = len(state.events)
+ 201:         player.hand.remove(card)
+ 202:         player.used.append(card)
+ 203:         row.slots[slot_index] = card
+ 204:         self._emit("placement", f"{player.name} places a face-down card in Row {row.number}.", {
+ 205:             "player_id": player.id, "row_id": row.id, "slot_index": slot_index,
+ 206:         })
+ 207:         if slot_index > 0:
+ 208:             previous = row.slots[slot_index - 1]
+ 209:             if previous is not None:
+ 210:                 self._reveal_card(row, slot_index - 1, previous)
+ 211:         # A placement reveal may trigger an elimination ability: arm the pause
+ 212:         # before turn bookkeeping so the choice resolves with this turn's
+ 213:         # events. Subsequent placements are blocked until a target is chosen.
+ 214:         self._begin_pending_elimination(event_start)
+ 215:         self._draw_for_active_player()
+ 216:         if all(item.is_full for item in state.rows):
+ 217:             state.row_index = 0
+ 218:             state.reveal_card_index = 0
+ 219:             state.final_reveal_active = True
+ 220:             hidden_remains = any(
+ 221:                 card is not None and not card.revealed
+ 222:                 for full_row in state.rows
+ 223:                 for card in full_row.slots
+ 224:             )
+ 225:             if hidden_remains:
+ 226:                 state.phase = GamePhase.REVEAL
+ 227:                 message = "All slots are filled. Final reveals begin with Row 1."
+ 228:             else:
+ 229:                 state.phase = GamePhase.ROW_SCORING
+ 230:                 state.final_reveal_active = False
+ 231:                 message = "All slots are filled and revealed. Scoring begins with Row 1."
+ 232:                 self._emit("final_reveal_complete", message, {})
+ 233:             self._emit("placement_complete", message, {})
+ 234:         else:
+ 235:             self._advance_turn()
+ 236:         return ActionResult(True, events=tuple(state.events[event_start:]))
+ 237: 
+ 238:     def reveal_next_card(self) -> ActionResult:
+ 239:         state = self.state
+ 240:         if state.phase != GamePhase.REVEAL or not state.final_reveal_active:
+ 241:             return ActionResult(False, "The game is not revealing a row.")
+ 242:         if state.get("pending_elimination"):
+ 243:             return ActionResult(False, "Select an elimination target before continuing the reveal.")
+ 244:         event_start = len(state.events)
+ 245:         next_card = next((
+ 246:             (row, index, card)
+ 247:             for row in state.rows
+ 248:             for index, card in enumerate(row.slots)
+ 249:             if card is not None and not card.revealed
+ 250:         ), None)
+ 251:         if next_card is None:
+ 252:             return ActionResult(False, "Every card is already revealed.")
+ 253:         row, hidden, card = next_card
+ 254:         self._reveal_card(row, hidden, card)
+ 255:         state.reveal_card_index += 1
+ 256: 
+ 257:         # A reveal may trigger an elimination ability: pause the reveal flow
+ 258:         # for player target selection (fails through when no target exists).
+ 259:         if self._begin_pending_elimination(event_start):
+ 260:             # Do not advance to the next card; wait for target selection.
+ 261:             return ActionResult(True, events=tuple(state.events[event_start:]))
+ 262: 
+ 263:         if all(placed is not None and placed.revealed for full_row in state.rows for placed in full_row.slots):
+ 264:             state.final_reveal_active = False
+ 265:             state.phase = GamePhase.ROW_SCORING
+ 266:             self._emit("final_reveal_complete", "All cards are revealed. Compare scores starting with Row 1.", {})
+ 267:         return ActionResult(True, events=tuple(state.events[event_start:]))
+ 268: 
+ 269:     # ---------------------------------------------------------------- elimination
+ 270: 
+ 271:     def _begin_pending_elimination(self, event_start: int) -> bool:
+ 272:         """Arm the pending-elimination pause when a reveal activated one.
+ 273: 
+ 274:         Scans the events appended since ``event_start`` for an elimination
+ 275:         ability activation. When found, arms ``state.pending_elimination``
+ 276:         with a JSON-safe targeting payload and the current valid targets.
+ 277:         If no valid targets exist the attempt fails immediately (emitting
+ 278:         ``elimination_failed``) and False is returned so the caller continues
+ 279:         the normal flow. Returns True when the flow must pause for player
+ 280:         target selection.
+ 281:         """
+ 282:         state = self.state
+ 283:         elimination_activation = next((
+ 284:             event for event in state.events[event_start:]
+ 285:             if event.kind == "ability_activated"
+ 286:             and event.data.get("is_elimination")
+ 287:         ), None)
+ 288:         if elimination_activation is None:
+ 289:             return False
+ 290:         owner_card_id = str(elimination_activation.data.get("owner_card_id", ""))
+ 291:         owner_card = next((
+ 292:             slot for r in state.rows for slot in r.slots
+ 293:             if slot is not None and slot.id == owner_card_id
+ 294:         ), None)
+ 295:         if owner_card is None:
+ 296:             return False
+ 297:         definition = self.cards[owner_card.definition_id]
+ 298:         ability = getattr(definition, "ability", None)
+ 299:         if ability is None:
+ 300:             return False
+ 301:         targeting = EliminationTargeting(
+ 302:             target_scope=ability.target_scope,
+ 303:             target_side=ability.target_side,
+ 304:             allowed_types=ability.allowed_types,
+ 305:             max_base_points=ability.max_base_points,
+ 306:             min_base_points=ability.min_base_points,
+ 307:         )
+ 308:         valid_targets = self.elimination.get_valid_targets(state, owner_card, targeting)
+ 309:         # JSON-safe pending payload: plain scalars only, so the authority can
+ 310:         # serialize it into network views.
+ 311:         state.pending_elimination = {
+ 312:             "attacker_card_id": owner_card.id,
+ 313:             "attacker_owner_id": owner_card.owner_id,
+ 314:             "attacker_name": str(definition.name),
+ 315:             "targeting": {
+ 316:                 "target_scope": targeting.target_scope,
+ 317:                 "target_side": targeting.target_side,
+ 318:                 "allowed_types": list(targeting.allowed_types),
+ 319:                 "max_base_points": targeting.max_base_points,
+ 320:                 "min_base_points": targeting.min_base_points,
+ 321:             },
+ 322:             "valid_targets": [
+ 323:                 {"row_id": r.id, "slot_index": i, "card_id": c.id}
+ 324:                 for r, i, c in valid_targets
+ 325:             ],
+ 326:         }
+ 327:         if not valid_targets:
+ 328:             # No legal targets: fail the elimination attempt, then continue
+ 329:             # so a fully revealed board still scores.
+ 330:             self.fail_elimination()
+ 331:             return False
+ 332:         return True
+ 333: 
+ 334:     def select_elimination_target(
+ 335:         self, target_row_id: str, target_slot_index: int
+ 336:     ) -> ActionResult:
+ 337:         """Resolve a player's elimination target selection.
+ 338: 
+ 339:         Validates that the chosen slot is still a legal target, eliminates it,
+ 340:         clears the pending-elimination state, and returns the resolution event.
+ 341:         Returns a rejected ActionResult if the target is no longer valid or no
+ 342:         elimination is pending.
+ 343:         """
+ 344:         state = self.state
+ 345:         pending = state.get("pending_elimination")
+ 346:         if not pending:
+ 347:             return ActionResult(False, "No elimination is awaiting target selection.")
+ 348: 
+ 349:         # Locate the chosen card.
+ 350:         row = next((r for r in state.rows if r.id == target_row_id), None)
+ 351:         if row is None or not 0 <= target_slot_index < len(row.slots):
+ 352:             return ActionResult(False, "Unknown target slot.")
+ 353:         target_card = row.slots[target_slot_index]
+ 354:         if target_card is None:
+ 355:             return ActionResult(False, "That slot is empty.")
+ 356: 
+ 357:         # Re-validate against live state: the card must still be a legal target.
+ 358:         attacker_card = next((
+ 359:             slot for r in state.rows for slot in r.slots
+ 360:             if slot is not None and slot.id == str(pending["attacker_card_id"])
+ 361:         ), None)
+ 362:         if attacker_card is None:
+ 363:             state.pending_elimination = None
+ 364:             return ActionResult(False, "The ability's owner card left the board.")
+ 365: 
+ 366:         targeting = EliminationTargeting(
+ 367:             target_scope=str(pending["targeting"].get("target_scope", "any_row")),
+ 368:             target_side=str(pending["targeting"].get("target_side", "opposing")),
+ 369:             allowed_types=tuple(pending["targeting"].get("allowed_types") or ()),
+ 370:             max_base_points=pending["targeting"].get("max_base_points"),
+ 371:             min_base_points=pending["targeting"].get("min_base_points"),
+ 372:         )
+ 373:         valid_targets = self.elimination.get_valid_targets(state, attacker_card, targeting)
+ 374:         valid_keys = {(r.id, i) for r, i, _ in valid_targets}
+ 375:         if (target_row_id, target_slot_index) not in valid_keys:
+ 376:             return ActionResult(False, "That card is no longer a valid elimination target.")
+ 377: 
+ 378:         # Resolve the elimination through the centralized elimination function.
+ 379:         attacker_name = str(pending.get("attacker_name", "Unknown character"))
+ 380:         target_definition = self.cards.get(target_card.definition_id)
+ 381:         target_name = str(getattr(target_definition, "name", "Unknown character"))
+ 382:         self.elimination.eliminate_target(state, target_card, attacker_card)
+ 383:         # Dynamic Duo bonuses that depended on the eliminated partner are
+ 384:         # removed now; every card keeps its own persistent elimination state.
+ 385:         self.abilities.recalculate_after_elimination(state, target_card)
+ 386: 
+ 387:         event_start = len(state.events)
+ 388:         self._emit(
+ 389:             "elimination",
+ 390:             f"{target_name} has been eliminated by {attacker_name}.",
+ 391:             {
+ 392:                 "attacker_card_id": str(pending["attacker_card_id"]),
+ 393:                 "attacker_name": attacker_name,
+ 394:                 "target_card_id": target_card.id,
+ 395:                 "target_name": target_name,
+ 396:                 "row_id": target_row_id,
+ 397:                 "slot_index": target_slot_index,
+ 398:                 "definition_id": target_card.definition_id,
+ 399:             },
+ 400:         )
+ 401:         state.pending_elimination = None
+ 402:         # The pause skipped the reveal-completion check; re-run it so a fully
+ 403:         # revealed board proceeds to row scoring instead of stalling.
+ 404:         if state.phase == GamePhase.REVEAL and all(
+ 405:             placed is not None and placed.revealed
+ 406:             for full_row in state.rows for placed in full_row.slots
+ 407:         ):
+ 408:             state.final_reveal_active = False
+ 409:             state.phase = GamePhase.ROW_SCORING
+ 410:             self._emit("final_reveal_complete", "All cards are revealed. Compare scores starting with Row 1.", {})
+ 411:         return ActionResult(True, events=tuple(state.events[event_start:]))
+ 412: 
+ 413:     def fail_elimination(self) -> ActionResult:
+ 414:         """Call when an elimination ability has no valid targets.
+ 415: 
+ 416:         Clears pending elimination state and returns a failed-elimination event
+ 417:         so the client can show the ``ELIMINATION ATTEMPT FAILED`` message.
+ 418:         """
+ 419:         state = self.state
+ 420:         pending = state.get("pending_elimination")
+ 421:         if not pending:
+ 422:             return ActionResult(False, "No elimination is awaiting target selection.")
+ 423:         attacker_name = str(pending.get("attacker_name", "Unknown character"))
+ 424:         event_start = len(state.events)
+ 425:         self._emit(
+ 426:             "elimination_failed",
+ 427:             f"{attacker_name}'s elimination attempt failed: no valid targets.",
+ 428:             {
+ 429:                 "attacker_card_id": str(pending["attacker_card_id"]),
+ 430:                 "attacker_name": attacker_name,
+ 431:             },
+ 432:         )
+ 433:         state.pending_elimination = None
+ 434:         return ActionResult(True, events=tuple(state.events[event_start:]))
+ 435: 
+ 436:     def score_current_row(self) -> ActionResult:
+ 437:         state = self.state
+ 438:         if state.phase != GamePhase.ROW_SCORING:
+ 439:             return ActionResult(False, "A row can be scored only after all its cards are revealed.")
+ 440:         if state.get("pending_elimination"):
+ 441:             return ActionResult(False, "Select an elimination target before scoring.")
+ 442:         if not all(
+ 443:             row.is_full and all(card is not None and card.revealed for card in row.slots)
+ 444:             for row in state.rows
+ 445:         ):
+ 446:             return ActionResult(False, "The final reveal sequence must finish before scoring.")
+ 447:         row = state.current_row
+ 448:         if row is None or row.scored:
+ 449:             return ActionResult(False, "This row has already been scored.")
+ 450:         scores = calculate_row_scores(row, tuple(player.id for player in state.players), self.cards)
+ 451:         first, second = state.players
+ 452:         if scores[first.id] == scores[second.id]:
+ 453:             row.winner_id = None
+ 454:             row.awarded_points = 0
+ 455:             result_text = f"Row {row.number} is tied. No points are awarded."
+ 456:         else:
+ 457:             winner = first if scores[first.id] > scores[second.id] else second
+ 458:             row.winner_id = winner.id
+ 459:             row.awarded_points = row.point_value
+ 460:             winner.match_points += row.point_value
+ 461:             winner.round_points += row.point_value
+ 462:             result_text = f"{winner.name} wins Row {row.number} and gains {row.point_value} match points."
+ 463:         row.scores = scores
+ 464:         row.scored = True
+ 465:         state.scored_row_order.append(row.id)
+ 466:         state.phase = GamePhase.ROW_RESULTS
+ 467:         event_start = len(state.events)
+ 468:         self._emit("row_scored", result_text, {
+ 469:             "row_id": row.id,
+ 470:             "row_number": row.number,
+ 471:             "scores": dict(scores),
+ 472:             "winner_id": row.winner_id,
+ 473:             "row_points": row.awarded_points,
+ 474:             "tie_break_applied": False,
+ 475:             "match_points": {player.id: player.match_points for player in state.players},
+ 476:             "round_points": {player.id: player.round_points for player in state.players},
+ 477:         })
+ 478:         return ActionResult(True, events=tuple(state.events[event_start:]))
+ 479: 
+ 480:     def advance_after_row_result(self) -> ActionResult:
+ 481:         state = self.state
+ 482:         if state.phase != GamePhase.ROW_RESULTS:
+ 483:             return ActionResult(False, "There is no row result to advance from.")
+ 484:         if state.row_index < len(state.rows) - 1:
+ 485:             next_row = state.rows[state.row_index + 1]
+ 486:             if not next_row.is_full or not all(card is not None and card.revealed for card in next_row.slots):
+ 487:                 return ActionResult(False, "The final reveal sequence must finish before scoring advances.")
+ 488:         event_start = len(state.events)
+ 489:         if state.row_index == len(state.rows) - 1:
+ 490:             state.phase = GamePhase.ROUND_RESULTS
+ 491:             first, second = state.players
+ 492:             if first.round_points == second.round_points:
+ 493:                 state.round_winner_id = None
+ 494:             else:
+ 495:                 state.round_winner_id = first.id if first.round_points > second.round_points else second.id
+ 496:             self._emit("round_results", f"Round {state.round_number} is complete.", {
+ 497:                 "round": state.round_number,
+ 498:                 "match_points": {player.id: player.match_points for player in state.players},
+ 499:                 "round_points": {player.id: player.round_points for player in state.players},
+ 500:                 "winner_id": state.round_winner_id,
+ 501:             })
+ 502:         else:
+ 503:             state.row_index += 1
+ 504:             state.reveal_card_index = 0
+ 505:             row = state.current_row
+ 506:             state.phase = GamePhase.ROW_SCORING
+ 507:             self._emit("next_row", f"Proceeding to Row {row.number}.", {"row_id": row.id, "row_number": row.number})
+ 508:         return ActionResult(True, events=tuple(state.events[event_start:]))
+ 509: 
+ 510:     def continue_after_round_results(self) -> ActionResult:
+ 511:         state = self.state
+ 512:         if state.phase != GamePhase.ROUND_RESULTS:
+ 513:             return ActionResult(False, "Round results are not ready to continue.")
+ 514:         if state.round_number < state.rounds_per_match:
+ 515:             state.round_number += 1
+ 516:             starter_index = (state.round_number - 1) % len(state.players)
+ 517:             self._prepare_round(starter_index)
+ 518:             events = tuple(state.events)
+ 519:         else:
+ 520:             event_start = len(state.events)
+ 521:             points = [player.match_points for player in state.players]
+ 522:             if points[0] == points[1]:
+ 523:                 state.winner_id = None
+ 524:                 message = f"The match ends in a draw at {points[0]} points."
+ 525:                 kind = "match_draw"
+ 526:             else:
+ 527:                 winner = max(state.players, key=lambda player: player.match_points)
+ 528:                 state.winner_id = winner.id
+ 529:                 message = f"{winner.name} wins the match with {winner.match_points} points."
+ 530:                 kind = "match_win"
+ 531:             state.phase = GamePhase.MATCH_RESULTS
+ 532:             self._emit(kind, message, {"winner_id": state.winner_id, "match_points": points})
+ 533:             events = tuple(state.events[event_start:])
+ 534:         return ActionResult(True, events=events)
+ 535: 
+ 536:     def view_for(self, player_id: str) -> dict:
+ 537:         """Return a JSON-compatible view with all unrevealed card identities masked."""
+ 538:         try:
+ 539:             viewer = self.state.player(player_id)
+ 540:         except KeyError as error:
+ 541:             raise ValueError(f"Unknown player: {player_id}") from error
+ 542:         player_views = []
+ 543:         for player in self.state.players:
+ 544:             own = player.id == viewer.id
+ 545:             player_views.append({
+ 546:                 "id": player.id,
+ 547:                 "name": player.name,
+ 548:                 "match_points": player.match_points,
+ 549:                 "round_points": player.round_points,
+ 550:                 "hand_count": len(player.hand),
+ 551:                 # Private hand cards are identified by local catalog IDs only. Ability
+ 552:                 # descriptions are sent to peers only with public reveal events.
+ 553:                 "hand": [{"id": card.id, "definition_id": card.definition_id} for card in player.hand] if own else None,
+ 554:                 "deck_count": len(player.draw_pile),
+ 555:                 "draw_pile_count": len(player.draw_pile),
+ 556:                 "used_count": len(player.used),
+ 557:             })
+ 558:         rows = []
+ 559:         for row in self.state.rows:
+ 560:             rows.append({
+ 561:                 "id": row.id,
+ 562:                 "number": row.number,
+ 563:                 "capacity": row.capacity,
+ 564:                 "point_value": row.point_value,
+ 565:                 "slots": [
+ 566:                     {"occupied": False} if card is None else {
+ 567:                         "occupied": True,
+ 568:                         "owner_id": card.owner_id,
+ 569:                         "card": self._card_view(card) if card.revealed else None,
+ 570:                     }
+ 571:                     for card in row.slots
+ 572:                 ],
+ 573:                 "scores": dict(row.scores) if row.scored else None,
+ 574:                 "winner_id": row.winner_id if row.scored else None,
+ 575:                 "scored": row.scored,
+ 576:                 "awarded_points": row.awarded_points,
+ 577:                 "eliminated_slots": list(row.get("eliminated_slots") or []),
+ 578:             })
+ 579:         return {
+ 580:             "viewer_id": viewer.id,
+ 581:             "players": player_views,
+ 582:             "rows": rows,
+ 583:             "active_player_id": self.state.active_player.id,
+ 584:             "turn_number": self.state.turn_number,
+ 585:             "round_number": self.state.round_number,
+ 586:             "rounds_per_match": self.state.rounds_per_match,
+ 587:             "phase": self.state.phase.value,
+ 588:             "current_row_id": self.state.current_row.id if self.state.phase in {GamePhase.REVEAL, GamePhase.ROW_SCORING, GamePhase.ROW_RESULTS} and self.state.current_row else None,
+ 589:             "scored_row_order": list(self.state.scored_row_order),
+ 590:             "winner_id": self.state.winner_id,
+ 591:             "events": [{"kind": event.kind, "message": event.message, "data": dict(event.data)} for event in self.state.events],
+ 592:             "legal_slots": [[row_id, index] for row_id, index in self.legal_slots(viewer.id)],
+ 593:             # JSON-safe pause payload; None while no elimination awaits input.
+ 594:             "pending_elimination": dict(self.state.get("pending_elimination") or {}) or None,
+ 595:         }
+ 596: 
+ 597:     def _card_view(self, card: CardInstance) -> dict:
+ 598:         definition = self.cards[card.definition_id]
+ 599:         return {
+ 600:             "id": card.id,
+ 601:             "definition_id": definition.id,
+ 602:             "name": definition.name,
+ 603:             "image": definition.image,
+ 604:             "base_points": definition.base_points,
+ 605:             "effect_name": definition.effect_name,
+ 606:             "effect_text": definition.effect_text,
+ 607:             "owner_id": card.owner_id,
+ 608:             "revealed": card.revealed,
+ 609:             "current_points": card.get("current_points"),
+ 610:             "activated_abilities": list(card.get("activated_abilities") or []),
+ 611:             "eliminated": bool(card.get("eliminated", False)),
+ 612:             "applied_bonuses": dict(card.get("applied_bonuses") or {}),
+ 613:         }
+ 614: 
+ 615:     def _draw_for_active_player(self) -> None:
+ 616:         player = self.state.active_player
+ 617:         requested = self.config.draw_per_turn
+ 618:         drawn = min(requested, len(player.draw_pile))
+ 619:         for _ in range(drawn):
+ 620:             player.hand.append(player.draw_pile.pop())
+ 621:         if drawn:
+ 622:             self._emit("draw", f"{player.name} draws {drawn} card{'s' if drawn != 1 else ''}.", {"player_id": player.id, "count": drawn})
+ 623:         if requested and drawn < requested and player.id not in self._empty_draw_piles_warned:
+ 624:             logger.warning(
+ 625:                 "%s's draw pile ran out while drawing; played cards will not be recycled.",
+ 626:                 player.name,
+ 627:             )
+ 628:             self._empty_draw_piles_warned.add(player.id)
+ 629: 
+ 630:     def _advance_turn(self) -> None:
+ 631:         self.state.active_player_index = (self.state.active_player_index + 1) % len(self.state.players)
+ 632:         self.state.turn_number += 1
+ 633:         self._emit("turn", f"It is {self.state.active_player.name}'s turn.", {
+ 634:             "player_id": self.state.active_player.id, "turn": self.state.turn_number,
+ 635:         })
+ 636: 
+ 637:     def _reveal_card(self, row: BattleRow, slot_index: int, card: CardInstance) -> None:
+ 638:         """Reveal one card, resolve abilities, then queue presentation events.
+ 639: 
+ 640:         Order matters: the authoritative reveal flag flips first, the reveal
+ 641:         presentation is queued (so flips and audio start immediately), then
+ 642:         ability phases A/B resolve with each activation's presentation queued
+ 643:         right after that ability's effects apply.
+ 644:         """
+ 645:         if card.revealed:
+ 646:             return
+ 647:         card.revealed = True
+ 648:         definition = self.cards[card.definition_id]
+ 649:         owner = self.state.player(card.owner_id)
+ 650:         self._emit("card_revealed", f"{owner.name} reveals {definition.name} (base {definition.base_points}).", {
+ 651:             "row_id": row.id,
+ 652:             "row_number": row.number,
+ 653:             "slot_index": slot_index,
+ 654:             "card_id": card.id,
+ 655:             "player_id": owner.id,
+ 656:             "name": definition.name,
+ 657:             "image": definition.image,
+ 658:             "full_card_art": definition.full_card_art,
+ 659:             "base_points": definition.base_points,
+ 660:             "effect_name": definition.effect_name,
+ 661:             "effect_text": definition.effect_text,
+ 662:         })
+ 663:         self._resolve_reveal_triggers(card, row, slot_index)
+ 664: 
+ 665:     def _resolve_reveal_triggers(self, card: CardInstance, row: BattleRow, slot_index: int) -> None:
+ 666:         """Run the central ability manager: Phase A pending, Phase B this card."""
+ 667:         self.abilities.on_card_revealed(
+ 668:             self.state, card, row, slot_index, emit=self._emit_ability_activation,
+ 669:         )
+ 670: 
+ 671:     def _emit_ability_activation(self, activation: AbilityActivation) -> None:
+ 672:         """Queue presentation for an ability whose effects have just applied."""
+ 673:         self._emit(
+ 674:             "ability_activated",
+ 675:             (
+ 676:                 f"{activation.owner_name}'s {activation.ability.name} activates: "
+ 677:                 f"{activation.ability.presentation.floating_text} "
+ 678:                 f"({activation.current_points - activation.delta} -> "
+ 679:                 f"{activation.current_points} points)."
+ 680:             ),
+ 681:             activation.event_data(),
+ 682:         )
+ 683: 
+ 684:     def _emit(self, kind: str, message: str, data: dict) -> None:
+ 685:         self.state.events.append(GameEvent(kind, message, data))
+ 686: 

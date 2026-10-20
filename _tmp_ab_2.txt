@@ -1,0 +1,230 @@
+331: 
+332: 
+333: @dataclass
+334: class AbilityManager:
+335:     """Owns pending registrations and resolves abilities deterministically.
+336: 
+337:     One manager instance lives on the authoritative engine and is reset at the
+338:     start of every match. Remote clients never resolve abilities; they replay
+339:     the ``ability_activated`` events the authority broadcasts.
+340:     """
+341: 
+342:     definitions: Mapping[str, Any]
+343: 
+344:     def __post_init__(self) -> None:
+345:         self.reset()
+346: 
+347:     def reset(self) -> None:
+348:         """Clear registrations for a new match (activation records live on cards)."""
+349:         self._pending: list[_PendingAbility] = []
+350:         self._sequence = 0
+351:         self._resolving = False
+352:         # Index every ability by its id so bonus removal can look an ability up
+353:         # without scanning every card definition.
+354:         self._ability_by_id: dict[str, AbilityDefinition] = {}
+355:         for definition in self.definitions.values():
+356:             ability = getattr(definition, "ability", None)
+357:             if ability is not None:
+358:                 self._ability_by_id[ability.id] = ability
+359: 
+360:     @property
+361:     def pending_abilities(self) -> tuple[tuple[int, str, str], ...]:
+362:         """Registered-but-ineligible abilities as (sequence, ability id, card id)."""
+363:         return tuple(
+364:             (item.sequence, item.ability.id, item.owner_card_id)
+365:             for item in sorted(self._pending, key=lambda item: (item.sequence, item.ability.id))
+366:         )
+367: 
+368:     def on_card_revealed(
+369:         self,
+370:         state: Any,
+371:         revealed_card: Any,
+372:         row: Any,
+373:         slot_index: int,
+374:         emit: Callable[[AbilityActivation], None] | None = None,
+375:     ) -> list[AbilityActivation]:
+376:         """Run Phase A then Phase B for one freshly revealed card.
+377: 
+378:         ``emit`` (when provided) receives each activation immediately after its
+379:         effects are applied, preserving presentation order per the contract.
+380:         """
+381:         if self._resolving:
+382:             # A future effect must not recursively restart resolution.
+383:             logger.warning("Ability resolution re-entered; skipping nested pass.")
+384:             return []
+385:         self._resolving = True
+386:         try:
+387:             activations: list[AbilityActivation] = []
+388:             kept: list[_PendingAbility] = []
+389: 
+390:             # Phase A - previously registered abilities in deterministic order.
+391:             for pending in sorted(
+392:                 self._pending, key=lambda item: (item.sequence, item.ability.id)
+393:             ):
+394:                 owner = _find_card(state, pending.owner_card_id)
+395:                 if owner is None:
+396:                     continue  # owner left the board; drop the registration
+397:                 owner_row, owner_index, owner_card = owner
+398:                 if self._limit_reached(pending.ability, owner_card):
+399:                     continue  # already activated; never rerun
+400:                 if self._row_closed_without_partner(pending.ability, owner_card, owner_row):
+401:                     continue  # closed row without partner; can never activate
+402:                 activation = self._try_activate(
+403:                     pending.ability, owner_card, owner_row, owner_index, state
+404:                 )
+405:                 if activation is not None:
+406:                     activations.append(activation)
+407:                     if emit is not None:
+408:                         emit(activation)
+409:                     continue  # activated - removed from pending
+410:                 kept.append(pending)
+411: 
+412:             # Phase B - the just-revealed character's own on-reveal abilities.
+413:             definition = self.definitions.get(revealed_card.definition_id)
+414:             ability = getattr(definition, "ability", None)
+415:             if (
+416:                 ability is not None
+417:                 and ability.trigger == "on_reveal"
+418:                 and not self._limit_reached(ability, revealed_card)
+419:             ):
+420:                 already_pending = any(
+421:                     item.ability.id == ability.id and item.owner_card_id == revealed_card.id
+422:                     for item in kept
+423:                 )
+424:                 if not already_pending:
+425:                     activation = self._try_activate(
+426:                         ability, revealed_card, row, slot_index, state
+427:                     )
+428:                     if activation is not None:
+429:                         activations.append(activation)
+430:                         if emit is not None:
+431:                             emit(activation)
+432:                     else:
+433:                         self._sequence += 1
+434:                         kept.append(
+435:                             _PendingAbility(self._sequence, ability, revealed_card.id)
+436:                         )
+437: 
+438:             self._pending = kept
+439:             return activations
+440:         finally:
+441:             self._resolving = False
+442: 
+443:     # ---------------------------------------------------------------- helpers
+444: 
+445:     def _limit_reached(self, ability: AbilityDefinition, card: Any) -> bool:
+446:         if ability.activation_limit == "once_per_card_per_match":
+447:             return ability.id in (card.get("activated_abilities") or [])
+448:         return False
+449: 
+450:     def _row_closed_without_partner(
+451:         self, ability: AbilityDefinition, owner_card: Any, owner_row: Any
+452:     ) -> bool:
+453:         """True when a pending same-row synergy can never become eligible.
+454: 
+455:         Board positions never change after placement, so once the owner's row
+456:         is completely filled and revealed without a revealed same-player
+457:         partner, the ``same_row`` condition can never turn true. Dropping the
+458:         registration keeps ``pending_abilities`` truthful instead of leaking
+459:         stale entries. Returns False while the row could still change (empty
+460:         slots or hidden cards).
+461:         """
+462:         for condition in ability.conditions:
+463:             if condition.type != "same_row":
+464:                 continue
+465:             partner_id = resolve_character_reference(self.definitions, condition.character)
+466:             if partner_id is None:
+467:                 continue
+468:             if not all(slot is not None and slot.revealed for slot in owner_row.slots):
+469:                 return False  # row still in flux; partner may yet arrive/reveal
+470:             in_row = any(
+471:                 slot.definition_id == partner_id and slot.owner_id == owner_card.owner_id
+472:                 for slot in owner_row.slots
+473:             )
+474:             if not in_row:
+475:                 return True  # closed row without the partner: impossible
+476:         return False
+477: 
+478:     def _condition_holds(
+479:         self, condition: Condition, owner_card: Any, owner_row: Any, state: Any
+480:     ) -> bool:
+481:         partner_id = resolve_character_reference(self.definitions, condition.character)
+482:         if partner_id is None:
+483:             logger.warning(
+484:                 "Ability condition references unknown character %r; treating as failed.",
+485:                 condition.character,
+486:             )
+487:             return False
+488:         if condition.type == "character_revealed":
+489:             # Hidden cards can never satisfy a reveal condition, and an
+490:             # eliminated partner is no longer an active ally on the board.
+491:             return any(
+492:                 slot is not None
+493:                 and slot.revealed
+494:                 and not getattr(slot, "eliminated", False)
+495:                 and slot.definition_id == partner_id
+496:                 for row in state.rows
+497:                 for slot in row.slots
+498:             )
+499:         if condition.type == "same_row":
+500:             # The partner must share the owner's row *and* belong to the same
+501:             # player *and* be revealed *and* still be in play: an eliminated
+502:             # partner no longer satisfies a same-row synergy.
+503:             return any(
+504:                 slot is not None
+505:                 and slot.revealed
+506:                 and not getattr(slot, "eliminated", False)
+507:                 and slot.definition_id == partner_id
+508:                 and slot.owner_id == owner_card.owner_id
+509:                 for slot in owner_row.slots
+510:             )
+511:         return False  # unreachable: parsing rejects unknown types
+512: 
+513:     def _current_points(self, card: Any, base_points: int) -> int:
+514:         value = card.get("current_points")
+515:         return base_points if value is None else int(value)
+516: 
+517:     def _try_activate(
+518:         self,
+519:         ability: AbilityDefinition,
+520:         owner_card: Any,
+521:         owner_row: Any,
+522:         owner_index: int,
+523:         state: Any,
+524:     ) -> AbilityActivation | None:
+525:         """Check every condition; if satisfied, apply effects once and record it."""
+526:         for condition in ability.conditions:
+527:             if not self._condition_holds(condition, owner_card, owner_row, state):
+528:                 return None
+529: 
+530:         definition = self.definitions[owner_card.definition_id]
+531:         base_points = int(definition.base_points)
+532:         delta = 0
+533:         bonuses = dict(owner_card.get("applied_bonuses") or {})
+534:         for effect in ability.effects:
+535:             if effect.type == "add_current_points":
+536:                 # Track each dynamic bonus by the ability that granted it so it
+537:                 # can be removed later (for example when a Dynamic Duo partner
+538:                 # is eliminated) without ever touching the immutable base.
+539:                 bonuses[ability.id] = effect.amount
+540:                 delta += effect.amount
+541:             # eliminate_target effects are not applied here: target selection
+542:             # happens in the client layer via the pending-elimination state.
+543:         owner_card.applied_bonuses = bonuses
+544:         owner_card.current_points = base_points + sum(bonuses.values())
+545:         after = owner_card.current_points
+546: 
+547:         activated = list(owner_card.get("activated_abilities") or [])
+548:         activated.append(ability.id)
+549:         owner_card.activated_abilities = activated
+550: 
+551:         return AbilityActivation(
+552:             ability=ability,
+553:             owner_card_id=owner_card.id,
+554:             target_card_id=owner_card.id,  # effects target the ability's owner
+555:             row_id=owner_row.id,
+556:             slot_index=owner_index,
+557:             definition_id=owner_card.definition_id,
+558:             owner_name=str(definition.name),
+559:             delta=delta,
+560:             base_points=base_points,

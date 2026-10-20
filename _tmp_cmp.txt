@@ -1,0 +1,162 @@
+SPEC COUNT 50 / ROSTER COUNT 50
+
+[0] Naruto Uzumaki           | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[1] Sasuke Uchiha            | name_match=True effect_name_match=True effect_text_match=True | ability=sasuke_shared_row_bonus
+    cond=[{"type": "character_revealed", "character": "naruto_03"}, {"type": "same_row", "character": "naruto_03"}]
+    eff =[{"type": "add_current_points", "amount": 3}]
+    trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "+3", "animation": "points_gain"}
+[2] Itachi Uchiha            | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[3] Sakura Haruno            | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[4] Kakashi Hatake           | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[5] Minato                   | name_match=False effect_name_match=False effect_text_match=True | ability=None
+    SPEC NAME: 'Madara Uchiha'
+    SPEC EFFECT NAME: 'Perfect Susanoo'   CARD EFFECT NAME: 'Flying Raijin'
+[6] Tobi                     | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[7] Shikamaru Nara           | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[8] Rock Lee                 | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[9] Hinata Hyuga             | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[10] Izuku Midoriya (Deku)    | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : If the opposing row contains no GOAT card, you automatically win that row. All Might's automatic-win effect takes priority over all other automatic-win effects.
+    CARD : If Deku is placed directly next to Bakugo in the same row, he gains +5 points. He also gains +1 point for each allied Fighter in that row.
+    SPEC NAME: 'All Might'
+    SPEC EFFECT NAME: 'Symbol of Peace'   CARD EFFECT NAME: 'One For All: United Front'
+[11] Katsuki Bakugo           | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : If Deku is placed directly next to Bakugo in the same row, he gains +5 points. He also gains +1 point for each allied Fighter in that row.
+    CARD : If Bakugo is placed directly next to Deku in the same row, he gains +5 points.
+    SPEC NAME: 'Izuku Midoriya (Deku)'
+    SPEC EFFECT NAME: 'One For All: United Front'   CARD EFFECT NAME: "I've Got Your Back!"
+[12] Dabi                     | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : If Bakugo is placed directly next to Deku in the same row, he gains +5 points.
+    CARD : Each opposing character placed behind Dabi in the same row loses 1 point.
+    SPEC NAME: 'Katsuki Bakugo'
+    SPEC EFFECT NAME: "I've Got Your Back!"   CARD EFFECT NAME: 'Blueflame Pursuit'
+[13] All Might                | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Each opposing character placed behind Dabi in the same row loses 1 point.
+    CARD : If the opposing row contains no GOAT card, you automatically win that row. All Might's automatic-win effect takes priority over all other automatic-win effects.
+    SPEC NAME: 'Dabi'
+    SPEC EFFECT NAME: 'Blueflame Pursuit'   CARD EFFECT NAME: 'Symbol of Peace'
+[14] Endeavor                 | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[15] Shoto Todoroki           | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[16] Lady_Nagant              | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.
+    CARD : De volgende kaart in de rij krijgt -3 punten als deze vijandelijk is.
+    SPEC NAME: 'Toga'
+    SPEC EFFECT NAME: 'Transform'   CARD EFFECT NAME: 'Deadeye'
+[17] Keigo                    | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : If the next character placed in the row belongs to the opposing team, that character loses 3 points.
+    CARD : Verwijder maximaal 3 bonuspunten van één vijandelijke kaart. De basispunten blijven gewoon staan.
+    SPEC NAME: 'Lady Nagant'
+    SPEC EFFECT NAME: 'Deadeye'   CARD EFFECT NAME: 'Zero Gravity'
+[18] Toga                     | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : After Hawks is placed, you may move one other allied card to a different row.
+    CARD : If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.
+    SPEC NAME: 'Keigo (Hawks)'
+    SPEC EFFECT NAME: 'Fierce Wings'   CARD EFFECT NAME: 'Transform'
+[19] Star_And_Stripes         | name_match=False effect_name_match=True effect_text_match=True | ability=None
+    SPEC NAME: 'Star and Stripes'
+[20] Gon Freecss              | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[21] Killua Zoldyck           | name_match=True effect_name_match=True effect_text_match=True | ability=killua_godspeed_eliminate
+    cond=[]
+    eff =[{"type": "eliminate_target"}]
+    trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "GODSPEED", "animation": "elimination"}
+    tgt ={"target_scope": "any_row", "target_side": "opposing"}
+[22] Alluka Zoldyck           | name_match=True effect_name_match=True effect_text_match=False | ability=alluka_killua_row_bonus
+    SPEC : Revives one eliminated friendly character anywhere on the board, restoring its original points and ability.
+    CARD : Gain 3 points when Alluka and Killua are both revealed in the same row.
+    cond=[{"type": "character_revealed", "character": "hxh_02"}, {"type": "same_row", "character": "hxh_02"}]
+    eff =[{"type": "add_current_points", "amount": 3}]
+    trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "+3", "animation": "points_gain"}
+[23] Hisoka                   | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[24] Chrollo Lucilfer         | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[25] Isaac Netero             | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[26] Kite                     | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Reduces the points of one opposing Fighter card in the same row by 2.
+    CARD : Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.
+    SPEC NAME: 'Kurapika'
+    SPEC EFFECT NAME: 'Chain Jail'   CARD EFFECT NAME: 'Crazy Slots'
+[27] Kurapika                 | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.
+    CARD : Reduces the points of one opposing Fighter card in the same row by 2.
+    SPEC NAME: 'Kite'
+    SPEC EFFECT NAME: 'Crazy Slots'   CARD EFFECT NAME: 'Chain Jail'
+[28] Illumi                   | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Gains +2 points if there are three other friendly characters in her row.
+    CARD : Gains +2 points if there are three other friendly characters in his row.
+    SPEC NAME: 'Biscuit Krueger'
+    SPEC EFFECT NAME: 'True Form'   CARD EFFECT NAME: 'Needle'
+[29] Leorio Paradinight       | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[30] Monkey D. Luffy          | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[31] Roronoa Zoro             | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[32] Sanji                    | name_match=True effect_name_match=True effect_text_match=True | ability=sanji_zoro_row_bonus
+    cond=[{"type": "character_revealed", "character": "onepiece_02"}, {"type": "same_row", "character": "onepiece_02"}]
+    eff =[{"type": "add_current_points", "amount": 3}]
+    trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "+3", "animation": "points_gain"}
+[33] Shanks                   | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[34] Nico Robin               | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Moves one opposing card from his row to another row chosen by the player.
+    CARD : Reduces the points of one opposing card in her row by 2.
+    SPEC NAME: 'Trafalgar D. Water Law'
+    SPEC EFFECT NAME: 'Room'   CARD EFFECT NAME: 'Clutch'
+[35] Trafalgar D. Water Law   | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Gains +3 points if there is an opposing GOAT card in his row.
+    CARD : Moves one opposing card from his row to another row chosen by the player.
+    SPEC NAME: 'Usopp'
+    SPEC EFFECT NAME: 'God Usopp'   CARD EFFECT NAME: 'Room'
+[36] Whitebeard               | name_match=False effect_name_match=False effect_text_match=True | ability=None
+    SPEC NAME: 'Buggy the Clown'
+    SPEC EFFECT NAME: 'Chop-Chop Escape'   CARD EFFECT NAME: 'The one piece is real'
+[37] Usopp                    | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Reduces the points of one opposing card in her row by 2.
+    CARD : Gains +3 points if there is an opposing GOAT card in his row.
+    SPEC NAME: 'Nico Robin'
+    SPEC EFFECT NAME: 'Clutch'   CARD EFFECT NAME: 'God Usopp'
+[38] Nami                     | name_match=True effect_name_match=True effect_text_match=True | ability=None
+[39] Tony Tony Chopper        | name_match=True effect_name_match=False effect_text_match=True | ability=None
+    SPEC EFFECT NAME: 'Emergency Medicine'   CARD EFFECT NAME: 'Doctor Chopper Arrives'
+[40] Goku (Ultra Instinct)    | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Gains +3 points for each opposing Fighter card in his row.
+    CARD : The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself.
+    SPEC NAME: 'Gogeta (Super Saiyan Blue)'
+    SPEC EFFECT NAME: 'Stardust Breaker'   CARD EFFECT NAME: 'Autonomous Ultra Instinct'
+[41] Vegeta                   | name_match=False effect_name_match=False effect_text_match=False | ability=vegeta_goku_row_bonus
+    SPEC : The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself.
+    CARD : Gains +3 points if Goku is in the same row.
+    SPEC NAME: 'Goku (Ultra Instinct)'
+    SPEC EFFECT NAME: 'Autonomous Ultra Instinct'   CARD EFFECT NAME: "Prince's Rivalry"
+    cond=[{"type": "character_revealed", "character": "dragonball_01"}, {"type": "same_row", "character": "dragonball_01"}]
+    eff =[{"type": "add_current_points", "amount": 3}]
+    trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "+3", "animation": "points_gain"}
+[42] Gogeta (Super Saiyan Blue) | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Gains +3 points if Goku is in the same row.
+    CARD : Gains +3 points for each opposing Fighter card in his row.
+    SPEC NAME: 'Vegeta'
+    SPEC EFFECT NAME: "Prince's Rivalry"   CARD EFFECT NAME: 'Stardust Breaker'
+[43] Frieza (Golden)          | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Gains +2 points for each opposing Fighter card played in his row after Broly, with no maximum bonus.
+    CARD : Eliminates one opposing card in his row with 5 or fewer base points.
+    SPEC NAME: 'Broly'
+    SPEC EFFECT NAME: 'Legendary Saiyan'   CARD EFFECT NAME: 'Golden Tyrant'
+[44] Broly                    | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Eliminates one opposing card in his row with 5 or fewer base points.
+    CARD : Gains +2 points for each opposing Fighter card played in his row after Broly, with no maximum bonus.
+    SPEC NAME: 'Frieza (Golden)'
+    SPEC EFFECT NAME: 'Golden Tyrant'   CARD EFFECT NAME: 'Legendary Saiyan'
+[45] Future Trunks            | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Gains +3 points if an opposing card in his row has more points than Gohan before ability bonuses.
+    CARD : Gains +5 points if another friendly card in his row is eliminated.
+    SPEC NAME: 'Gohan (Beast)'
+    SPEC EFFECT NAME: 'Hidden Potential Unlocked'   CARD EFFECT NAME: 'Hope of the Future'
+[46] Gohan (Beast)            | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : The next opposing card played after Hit in the same row cannot activate its ability.
+    CARD : Gains +3 points if an opposing card in his row has more points than Gohan before ability bonuses.
+    SPEC NAME: 'Hit'
+    SPEC EFFECT NAME: 'Time Skip'   CARD EFFECT NAME: 'Hidden Potential Unlocked'
+[47] Hit                      | name_match=False effect_name_match=False effect_text_match=False | ability=None
+    SPEC : Gains +5 points if another friendly card in his row is eliminated.
+    CARD : The next opposing card played after Hit in the same row cannot activate its ability.
+    SPEC NAME: 'Future Trunks'
+    SPEC EFFECT NAME: 'Hope of the Future'   CARD EFFECT NAME: 'Time Skip'
+[48] Zeno                     | name_match=True effect_name_match=True effect_text_match=False | ability=None
+    SPEC : If an opposing ability would eliminate Zeno, he cancels that elimination and eliminates the opposing card that caused it instead.
+    CARD : If Zeno is the first character placed in an empty row, eliminate the next character in that row if it belongs to the opposing player.
+[49] Whis                     | name_match=True effect_name_match=True effect_text_match=True | ability=None

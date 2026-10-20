@@ -1,0 +1,113 @@
+{
+  "id": "naruto_01",
+  "name": "Naruto Uzumaki",
+  "base_points": 10,
+  "type": "GOAT",
+  "effect_name": "Six Paths: Rasen-Shuriken",
+  "effect_text": "Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row.",
+  "image": "assets/art/characters/Naruto/Naruto Uzumaki .png",
+  "full_card_art": "assets/art/card front/Naruto/Naruto.png"
+}
+
+{
+  "id": "naruto_02",
+  "name": "Sasuke Uchiha",
+  "base_points": 7,
+  "type": "Dynamic Duo",
+  "effect_name": "Eternal Rivalry",
+  "effect_text": "Gains +3 points if allied Itachi is in the same row.",
+  "ability": {
+    "id": "sasuke_shared_row_bonus",
+    "name": "Shared Row Bonus",
+    "description": "Gain 3 points when Sasuke and Itachi are both revealed in the same row.",
+    "trigger": "on_reveal",
+    "conditions": [
+      {
+        "type": "character_revealed",
+        "character": "naruto_03"
+      },
+      {
+        "type": "same_row",
+        "character": "naruto_03"
+      }
+    ],
+    "effects": [
+      {
+        "type": "add_current_points",
+        "amount": 3
+      }
+    ],
+    "activation_limit": "once_per_card_per_match",
+    "presentation": {
+      "floating_text": "+3",
+      "animation": "points_gain"
+    }
+  },
+  "image": "assets/art/characters/Naruto/Sasuke Uchiha .png",
+  "full_card_art": "assets/art/card front/Naruto/Sasuke_Uchiha.png"
+}
+
+{
+  "id": "hxh_02",
+  "name": "Killua Zoldyck",
+  "base_points": 7,
+  "type": "Dynamic Duo",
+  "effect_name": "Godspeed",
+  "effect_text": "Eliminates one opposing character anywhere on the board.",
+  "ability": {
+    "id": "killua_godspeed_eliminate",
+    "name": "Godspeed",
+    "description": "Eliminates one opposing character anywhere on the board.",
+    "trigger": "on_reveal",
+    "conditions": [],
+    "effects": [
+      {
+        "type": "eliminate_target"
+      }
+    ],
+    "targeting": {
+      "target_scope": "any_row",
+      "target_side": "opposing"
+    },
+    "activation_limit": "once_per_card_per_match",
+    "presentation": {
+      "floating_text": "GODSPEED",
+      "animation": "elimination"
+    }
+  },
+  "image": "assets/art/characters/Hunter x Hunter/Killua_Zoldyck.jpg",
+  "full_card_art": "assets/art/card front/HxH/Killua.png"
+}
+
+{
+  "id": "onepiece_02",
+  "name": "Roronoa Zoro",
+  "base_points": 7,
+  "type": "Dynamic Duo",
+  "effect_name": "Three-Sword Style",
+  "effect_text": "Eliminates one opposing Fighter card in the same row.",
+  "image": "assets/art/characters/One Piece/Roronoa_Zoro.jpg",
+  "full_card_art": "assets/art/card front/One_Piece/Roronoa_zoro.png"
+}
+
+{
+  "id": "dragonball_01",
+  "name": "Goku (Ultra Instinct)",
+  "base_points": 9,
+  "type": "Dynamic Duo",
+  "effect_name": "Autonomous Ultra Instinct",
+  "effect_text": "The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself.",
+  "image": "assets/art/characters/Dragon Ball/Goku_Ultra_Instinct.jpg",
+  "full_card_art": "assets/art/card front/Dragon_Ball/Goku.png"
+}
+
+{
+  "id": "dragonball_04",
+  "name": "Frieza (Golden)",
+  "base_points": 8,
+  "type": "Fighter",
+  "effect_name": "Golden Tyrant",
+  "effect_text": "Eliminates one opposing card in his row with 5 or fewer base points.",
+  "image": "assets/art/characters/Dragon Ball/Frieza_Golden.jpg",
+  "full_card_art": "assets/art/card front/Dragon_Ball/Frieza.png"
+}

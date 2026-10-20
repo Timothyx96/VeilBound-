@@ -1,0 +1,301 @@
+1|     # Scrub random pools so only scripted cards can carry duo synergies.
+2|     # The roster now has several Dynamic Duo abilities; random draw piles
+3|     # would otherwise leak unrelated activations into exact-count asserts.
+4|     filler_ids = NON_ABILITY_FILLERS
+5|     serial = 0
+6| 
+7|     def _filler(owner_id: str) -> CardInstance:
+8|         nonlocal serial
+9|         definition_id = filler_ids[serial % len(filler_ids)]
+10|         serial += 1
+11|         return instance(engine, definition_id, owner_id)
+12| 
+13|     for player in engine.state.players:
+14|         player.draw_pile = [_filler(player.id) for _ in player.draw_pile]
+15|         player.hand = [_filler(player.id) for _ in player.hand]
+16|     return engine
+17| 
+18| 
+19| def pick_filler(player):
+20|     card = next((c for c in player.hand if c.definition_id not in SPECIAL), None)
+21|     assert card is not None, "scenario needs a non-duo filler card in hand"
+22|     return card
+23| 
+24| 
+25| def place(engine, card, row_index, slot_index):
+26|     active = engine.state.active_player
+27|     assert active.id == card.owner_id, "test sequence must follow turn order"
+28|     result = engine.play_card(active.id, card.id, engine.state.rows[row_index].id, slot_index)
+29|     assert result.accepted, result.reason
+30|     return result
+31| 
+32| 
+33| def fill_rest(engine):
+34|     """Finish the placement phase with filler cards (turns alternate)."""
+35|     results = []
+36|     while engine.state.phase == GamePhase.PLACEMENT:
+37|         resolve_eliminations(engine)
+38|         if engine.state.phase != GamePhase.PLACEMENT:
+39|             break  # resolving an elimination closed the placement phase
+40|         active = engine.state.active_player
+41|         card = pick_filler(active)
+42|         row_id, slot_index = engine.legal_slots()[0]
+43|         result = engine.play_card(active.id, card.id, row_id, slot_index)
+44|         assert result.accepted, result.reason
+45|         results.append(result)
+46|     resolve_eliminations(engine)
+47|     return results
+48| 
+49| 
+50| def finish_reveals(engine):
+51|     """Run the final reveal sequence; returns one result per revealed card."""
+52|     results = []
+53|     while engine.state.phase == GamePhase.REVEAL:
+54|         resolve_eliminations(engine)
+55|         if engine.state.phase != GamePhase.REVEAL:
+56|             # Resolving the final reveal's elimination completed the pass.
+57|             break
+58|         result = engine.reveal_next_card()
+59|         assert result.accepted, result.reason
+60|         results.append(result)
+61|     resolve_eliminations(engine)
+62|     assert engine.state.phase == GamePhase.ROW_SCORING
+63|     return results
+64| 
+65| 
+66| def ability_events(results):
+67|     if hasattr(results, "events"):
+68|         results = [results]
+69|     return [
+70|         event
+71|         for result in results
+72|         for event in result.events
+73|         if event.kind == "ability_activated"
+74|     ]
+75| 
+76| 
+77| def build_sasuke_first():
+78|     """Sasuke revealed while Itachi stays hidden in the same row.
+79| 
+80|     Returns the filled engine plus the duo instances; the bonus has not been
+81|     granted yet (final reveals still pending).
+82|     """
+83|     engine = make_engine()
+84|     p1, p2 = engine.state.players
+85|     give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
+86|     give(p2, engine, "naruto_06", "naruto_07", "naruto_08", "naruto_10")
+87|     sasuke, itachi = p1.hand[0], p1.hand[1]
+88|     place(engine, sasuke, 0, 0)
+89|     place(engine, pick_filler(p2), 1, 0)
+90|     placement = place(engine, itachi, 0, 1)  # reveals Sasuke only
+91|     place(engine, pick_filler(p2), 1, 1)
+92|     fill_rest(engine)
+93|     return engine, sasuke, itachi, placement
+94| 
+95| 
+96| def test_sasuke_revealed_first_gains_bonus_when_itachi_later_revealed_same_row():
+97|     engine, sasuke, itachi, placement = build_sasuke_first()
+98| 
+99|     # Rules 3-4: Sasuke is revealed, Itachi is not -> registered, no award.
+100|     assert sasuke.revealed and not itachi.revealed
+101|     assert ability_events(placement) == []
+102|     assert sasuke.current_points == 7
+103|     assert engine.abilities.pending_abilities  # Phase A candidate exists
+104| 
+105|     reveals = finish_reveals(engine)
+106|     # First final reveal is Itachi (row 1, slot 1): reveal first, then Phase A.
+107|     assert [event.kind for event in reveals[0].events] == [
+108|         "card_revealed",
+109|         "ability_activated",
+110|     ]
+111|     granted = ability_events(reveals[0])
+112|     assert len(granted) == 1
+113|     data = granted[0].data
+114|     assert data["ability_id"] == ABILITY_ID
+115|     assert data["ability_name"] == "Shared Row Bonus"
+116|     assert data["owner_card_id"] == sasuke.id
+117|     assert data["target_card_id"] == sasuke.id  # targets Sasuke, not Itachi
+118|     assert data["row_id"] == engine.state.rows[0].id
+119|     assert data["slot_index"] == 0
+120|     assert data["delta"] == 3
+121|     assert data["base_points"] == 7
+122|     assert data["current_points"] == 10
+123|     assert data["floating_text"] == "+3"
+124|     assert data["animation"] == "points_gain"
+125|     assert sasuke.current_points == 10
+126|     assert itachi.current_points == 6
+127|     # Exactly one activation across every remaining reveal of the round.
+128|     assert ability_events(reveals[1:]) == []
+129|     assert len(ability_events(reveals)) == 1
+130| 
+131| 
+132| def test_itachi_revealed_first_grants_bonus_when_sasuke_revealed_after():
+133|     engine = make_engine()
+134|     p1, p2 = engine.state.players
+135|     give(p1, engine, ITACHI, SASUKE, "naruto_01", "naruto_05")
+136|     give(p2, engine, "naruto_06", "naruto_07", "naruto_08", "naruto_10")
+137|     itachi, sasuke = p1.hand[0], p1.hand[1]
+138| 
+139|     place(engine, itachi, 0, 0)
+140|     place(engine, pick_filler(p2), 1, 0)
+141|     placement = place(engine, sasuke, 0, 1)  # reveals Itachi only
+142|     # Itachi carries no ability, so its reveal awards nothing (rule 7 order).
+143|     assert ability_events(placement) == []
+144|     place(engine, pick_filler(p2), 1, 1)
+145|     fill_rest(engine)
+146| 
+147|     reveals = finish_reveals(engine)
+148|     # Phase B: the bonus resolves on Sasuke's own reveal, same batch order.
+149|     assert [event.kind for event in reveals[0].events] == [
+150|         "card_revealed",
+151|         "ability_activated",
+152|     ]
+153|     granted = ability_events(reveals[0])
+154|     assert len(granted) == 1
+155|     assert granted[0].data["owner_card_id"] == sasuke.id
+156|     assert sasuke.current_points == 10
+157|     assert itachi.current_points == 6  # bonus targets Sasuke only
+158| 
+159| 
+160| def test_different_rows_never_activate_the_bonus():
+161|     engine = make_engine()
+162|     p1, p2 = engine.state.players
+163|     give(p1, engine, SASUKE, "naruto_01", "naruto_05", "naruto_08")
+164|     give(p2, engine, ITACHI, "naruto_06", "naruto_07", "naruto_10")
+165|     sasuke, itachi = p1.hand[0], p2.hand[0]
+166| 
+167|     placements = [
+168|         place(engine, sasuke, 0, 0),
+169|         place(engine, itachi, 1, 0),
+170|         place(engine, pick_filler(p1), 0, 1),  # reveals Sasuke
+171|         place(engine, pick_filler(p2), 1, 1),  # reveals Itachi
+172|     ]
+173|     fill_rest(engine)
+174|     reveals = finish_reveals(engine)
+175| 
+176|     # Different rows -> nothing happens, ever (same-player synergy requires
+177|     # both partners to share the row *and* the owner).
+178|     assert ability_events(placements) == []
+179|     assert ability_events(reveals) == []
+180|     assert sasuke.current_points == 7
+181|     assert itachi.current_points == 6
+182|     assert sasuke.activated_abilities == []
+183|     # No stale registration survives: a pending Sasuke whose revealed partner
+184|     # sits in another row can never become eligible, so the engine prunes it.
+185|     assert engine.abilities.pending_abilities == ()
+186| 
+187| 
+188| def test_no_bonus_while_either_character_is_hidden():
+189|     # Case A: Sasuke revealed first, Itachi stays hidden this whole time.
+190|     engine = make_engine()
+191|     p1, p2 = engine.state.players
+192|     give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
+193|     give(p2, engine, "naruto_06", "naruto_07", "naruto_08", "naruto_10")
+194|     sasuke, itachi = p1.hand[0], p1.hand[1]
+195|     place(engine, sasuke, 0, 0)
+196|     place(engine, pick_filler(p2), 1, 0)
+197|     placement = place(engine, itachi, 0, 1)  # reveals Sasuke; Itachi hidden
+198|     assert ability_events(placement) == []
+199|     assert sasuke.current_points == 7
+200|     assert not itachi.revealed
+201|     assert engine.abilities.pending_abilities  # waiting, not awarded
+202| 
+203|     # Case B (fresh match): Itachi revealed first while Sasuke stays hidden.
+204|     engine = make_engine()
+205|     p1, p2 = engine.state.players
+206|     give(p1, engine, ITACHI, SASUKE, "naruto_01", "naruto_05")
+207|     give(p2, engine, "naruto_06", "naruto_07", "naruto_08", "naruto_10")
+208|     itachi, sasuke = p1.hand[0], p1.hand[1]
+209|     place(engine, itachi, 0, 0)
+210|     place(engine, pick_filler(p2), 1, 0)
+211|     placement = place(engine, sasuke, 0, 1)  # reveals Itachi; Sasuke hidden
+212|     assert ability_events(placement) == []
+213|     assert not sasuke.revealed
+214|     assert sasuke.current_points == 7
+215|     # A hidden owner never registers; only revealed owners enter Phase A.
+216|     assert engine.abilities.pending_abilities == ()
+217| 
+218| 
+219| def test_repeated_evaluation_grants_the_bonus_only_once():
+220|     engine, sasuke, itachi, _ = build_sasuke_first()
+221|     reveals = finish_reveals(engine)
+222|     assert sasuke.current_points == 10
+223|     assert len(ability_events(reveals)) == 1
+224| 
+225|     # Re-run the manager over the finished board many times (rule 9/10).
+226|     row, index = engine.state.rows[0], 1
+227|     for card in (itachi, sasuke, itachi, sasuke):
+228|         again = engine.abilities.on_card_revealed(engine.state, card, row, index)
+229|         assert again == []
+230|     assert sasuke.current_points == 10
+231| 
+232|     # Scoring never re-grants; duplicate event delivery is renderer-guarded.
+233|     score = engine.score_current_row()
+234|     assert ability_events(score) == []
+235|     assert sasuke.current_points == 10
+236|     assert sasuke.activated_abilities == [ABILITY_ID]
+237| 
+238| 
+239| def test_reveal_animation_flow_runs_with_a_single_activation():
+240|     # Same-player synergy: Sasuke + Itachi both belong to player 1 and share
+241|     # row 0, so exactly one activation flows through the animation pipeline.
+242|     engine = make_engine()
+243|     p1, p2 = engine.state.players
+244|     give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
+245|     give(p2, engine, "naruto_06", "naruto_07", "naruto_08", "naruto_10")
+246|     renderer = RecordingRenderer()
+247|     controller = InputController(engine, renderer)
+248| 
+249|     # Mirror the app pipeline: every action result feeds renderer + audio.
+250|     # After Sasuke (hand[0]) is placed, Itachi shifts to hand[0]; placing it at
+251|     # row0/slot1 shares the row with Sasuke and reveals the already-placed card.
+252|     controller._apply(place(engine, p1.hand[0], 0, 0), 0.0)
+253|     controller._apply(place(engine, pick_filler(p2), 1, 0), 0.0)
+254|     controller._apply(place(engine, p1.hand[0], 0, 1), 0.0)  # Itachi reveals Sasuke
+255|     assert controller.animation_stage == "card_flip"
+256|     controller._apply(place(engine, pick_filler(p2), 1, 1), 0.0)
+257|     for result in fill_rest(engine):
+258|         controller._apply(result, 0.0)
+259| 
+260|     # Drive final reveals and scoring through the real deadline loop.
+261|     now = 0.0
+262|     for _ in range(400):
+263|         controller.update(now)
+264|         now += 0.1
+265|         if engine.state.phase in {
+266|             GamePhase.ROW_RESULTS,
+267|             GamePhase.ROUND_RESULTS,
+268|             GamePhase.MATCH_RESULTS,
+269|         }:
+270|             break
+271| 
+272|     kinds = [event.kind for event in renderer.events]
+273|     assert engine.state.phase in {
+274|         GamePhase.ROW_RESULTS,
+275|         GamePhase.ROUND_RESULTS,
+276|         GamePhase.MATCH_RESULTS,
+277|     }
+278|     # Every card flipped exactly once through the animation machinery...
+279|     assert kinds.count("card_revealed") == 8
+280|     # ...while the ability activated exactly once overall (no frame duplicates).
+281|     assert kinds.count("ability_activated") == 1
+282| 
+283| 
+284| def test_base_points_remain_unchanged_after_the_bonus():
+285|     engine, sasuke, _, _ = build_sasuke_first()
+286|     finish_reveals(engine)
+287|     assert sasuke.current_points == 10
+288|     assert engine.cards[SASUKE].base_points == 7
+289|     # Reloading the roster JSON is untouched as well.
+290|     fresh = load_card_definitions()
+291|     assert fresh[SASUKE].base_points == 7
+292|     assert fresh[SASUKE].ability is not None
+293|     assert fresh[SASUKE].ability.id == ABILITY_ID
+294| 
+295| 
+296| def test_new_match_resets_current_points_and_activation_records():
+297|     engine, sasuke, _, _ = build_sasuke_first()
+298|     finish_reveals(engine)
+299|     assert sasuke.current_points == 10
+300|     assert sasuke.activated_abilities == [ABILITY_ID]
+301| 

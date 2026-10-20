@@ -1,0 +1,262 @@
+SPEC[0] 'Naruto Uzumaki'
+   -> CARD[0] id=naruto_01 name='Naruto Uzumaki' type='GOAT' base=10
+      effect_name: CARD='Six Paths: Rasen-Shuriken' SPEC='Six Paths: Rasen-Shuriken'  SAME
+      effect_text SAME
+      ability=None
+SPEC[1] 'Sasuke Uchiha'
+   -> CARD[1] id=naruto_02 name='Sasuke Uchiha' type='Dynamic Duo' base=7
+      effect_name: CARD='Eternal Rivalry' SPEC='Eternal Rivalry'  SAME
+      effect_text SAME
+      ability=sasuke_shared_row_bonus
+         cond=[{"type": "character_revealed", "character": "naruto_03"}, {"type": "same_row", "character": "naruto_03"}]
+         eff =[{"type": "add_current_points", "amount": 3}]
+         trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "+3", "animation": "points_gain"}
+SPEC[2] 'Itachi Uchiha'
+   -> CARD[2] id=naruto_03 name='Itachi Uchiha' type='Dynamic Duo' base=6
+      effect_name: CARD='Tsukuyomi' SPEC='Tsukuyomi'  SAME
+      effect_text SAME
+      ability=None
+SPEC[3] 'Sakura Haruno'
+   -> CARD[3] id=naruto_04 name='Sakura Haruno' type='Fighter' base=6
+      effect_name: CARD='Cherry Blossom Impact' SPEC='Cherry Blossom Impact'  SAME
+      effect_text SAME
+      ability=None
+SPEC[4] 'Kakashi Hatake'
+   -> CARD[4] id=naruto_05 name='Kakashi Hatake' type='Fighter' base=7
+      effect_name: CARD='Sharingan Copy' SPEC='Sharingan Copy'  SAME
+      effect_text SAME
+      ability=None
+SPEC[5] 'Madara Uchiha'
+   !! NO/AMBIGUOUS MATCH (0 hits)
+SPEC[6] 'Tobi'
+   -> CARD[6] id=naruto_07 name='Tobi' type='Trickster' base=4
+      effect_name: CARD='This Was My Plan All Along' SPEC='This Was My Plan All Along'  SAME
+      effect_text SAME
+      ability=None
+SPEC[7] 'Shikamaru Nara'
+   -> CARD[7] id=naruto_08 name='Shikamaru Nara' type='Regular' base=5
+      effect_name: CARD='Shadow Possession' SPEC='Shadow Possession'  SAME
+      effect_text SAME
+      ability=None
+SPEC[8] 'Rock Lee'
+   -> CARD[8] id=naruto_09 name='Rock Lee' type='Regular' base=5
+      effect_name: CARD='Eight Gates: First Gate' SPEC='Eight Gates: First Gate'  SAME
+      effect_text SAME
+      ability=None
+SPEC[9] 'Hinata Hyuga'
+   -> CARD[9] id=naruto_10 name='Hinata Hyuga' type='Regular' base=4
+      effect_name: CARD='Byakugan' SPEC='Byakugan'  SAME
+      effect_text SAME
+      ability=None
+SPEC[10] 'All Might'
+   -> CARD[13] id=mha_04 name='All Might' type='GOAT' base=10
+      effect_name: CARD='Symbol of Peace' SPEC='Symbol of Peace'  SAME
+      effect_text SAME
+      ability=None
+SPEC[11] 'Izuku Midoriya (Deku)'
+   -> CARD[10] id=mha_01 name='Izuku Midoriya (Deku)' type='Dynamic Duo' base=8
+      effect_name: CARD='One For All: United Front' SPEC='One For All: United Front'  SAME
+      effect_text SAME
+      ability=None
+SPEC[12] 'Katsuki Bakugo'
+   -> CARD[11] id=mha_02 name='Katsuki Bakugo' type='Dynamic Duo' base=7
+      effect_name: CARD="I've Got Your Back!" SPEC="I've Got Your Back!"  SAME
+      effect_text SAME
+      ability=None
+SPEC[13] 'Dabi'
+   -> CARD[12] id=mha_03 name='Dabi' type='Fighter' base=6
+      effect_name: CARD='Blueflame Pursuit' SPEC='Blueflame Pursuit'  SAME
+      effect_text SAME
+      ability=None
+SPEC[14] 'Endeavor'
+   -> CARD[14] id=mha_05 name='Endeavor' type='Fighter' base=8
+      effect_name: CARD='Number One, No Matter What' SPEC='Number One, No Matter What'  SAME
+      effect_text SAME
+      ability=None
+SPEC[15] 'Shoto Todoroki'
+   -> CARD[15] id=mha_06 name='Shoto Todoroki' type='Fighter' base=8
+      effect_name: CARD='Flashfire and Frost' SPEC='Flashfire and Frost'  SAME
+      effect_text SAME
+      ability=None
+SPEC[16] 'Toga'
+   -> CARD[18] id=mha_09 name='Toga' type='Trickster' base=2
+      effect_name: CARD='Transform' SPEC='Transform'  SAME
+      effect_text SAME
+      ability=None
+SPEC[17] 'Lady Nagant'
+   -> CARD[16] id=mha_07 name='Lady_Nagant' type='Regular' base=4
+      effect_name: CARD='Deadeye' SPEC='Deadeye'  SAME
+      effect_text DIFF
+        CARD: De volgende kaart in de rij krijgt -3 punten als deze vijandelijk is.
+        SPEC: If the next character placed in the row belongs to the opposing team, that character loses 3 points.
+      ability=None
+SPEC[18] 'Keigo (Hawks)'
+   !! NO/AMBIGUOUS MATCH (0 hits)
+SPEC[19] 'Star and Stripes'
+   -> CARD[19] id=mha_10 name='Star_And_Stripes' type='Regular' base=5
+      effect_name: CARD='Last-Minute Hero' SPEC='Last-Minute Hero'  SAME
+      effect_text SAME
+      ability=None
+SPEC[20] 'Gon Freecss'
+   -> CARD[20] id=hxh_01 name='Gon Freecss' type='GOAT' base=10
+      effect_name: CARD='Jajanken: Rock' SPEC='Jajanken: Rock'  SAME
+      effect_text SAME
+      ability=None
+SPEC[21] 'Killua Zoldyck'
+   -> CARD[21] id=hxh_02 name='Killua Zoldyck' type='Dynamic Duo' base=7
+      effect_name: CARD='Godspeed' SPEC='Godspeed'  SAME
+      effect_text SAME
+      ability=killua_godspeed_eliminate
+         cond=[]
+         eff =[{"type": "eliminate_target"}]
+         trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "GODSPEED", "animation": "elimination"}
+         tgt ={"target_scope": "any_row", "target_side": "opposing"}
+SPEC[22] 'Alluka Zoldyck'
+   -> CARD[22] id=hxh_03 name='Alluka Zoldyck' type='Dynamic Duo' base=5
+      effect_name: CARD="Nanika's Wish" SPEC="Nanika's Wish"  SAME
+      effect_text DIFF
+        CARD: Gain 3 points when Alluka and Killua are both revealed in the same row.
+        SPEC: Revives one eliminated friendly character anywhere on the board, restoring its original points and ability.
+      ability=alluka_killua_row_bonus
+         cond=[{"type": "character_revealed", "character": "hxh_02"}, {"type": "same_row", "character": "hxh_02"}]
+         eff =[{"type": "add_current_points", "amount": 3}]
+         trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "+3", "animation": "points_gain"}
+SPEC[23] 'Hisoka'
+   -> CARD[23] id=hxh_04 name='Hisoka' type='Fighter' base=8
+      effect_name: CARD='Bungee Gum' SPEC='Bungee Gum'  SAME
+      effect_text SAME
+      ability=None
+SPEC[24] 'Chrollo Lucilfer'
+   -> CARD[24] id=hxh_05 name='Chrollo Lucilfer' type='Fighter' base=7
+      effect_name: CARD='Master Strategist' SPEC='Master Strategist'  SAME
+      effect_text SAME
+      ability=None
+SPEC[25] 'Isaac Netero'
+   -> CARD[25] id=hxh_06 name='Isaac Netero' type='Fighter' base=8
+      effect_name: CARD='100-Type Guanyin Bodhisattva' SPEC='100-Type Guanyin Bodhisattva'  SAME
+      effect_text SAME
+      ability=None
+SPEC[26] 'Kurapika'
+   -> CARD[27] id=hxh_08 name='Kurapika' type='Fighter' base=6
+      effect_name: CARD='Chain Jail' SPEC='Chain Jail'  SAME
+      effect_text SAME
+      ability=None
+SPEC[27] 'Kite'
+   -> CARD[26] id=hxh_07 name='Kite' type='Trickster' base=5
+      effect_name: CARD='Crazy Slots' SPEC='Crazy Slots'  SAME
+      effect_text SAME
+      ability=None
+SPEC[28] 'Biscuit Krueger'
+   !! NO/AMBIGUOUS MATCH (0 hits)
+SPEC[29] 'Leorio Paradinight'
+   -> CARD[29] id=hxh_10 name='Leorio Paradinight' type='Regular' base=5
+      effect_name: CARD='Emergency Treatment' SPEC='Emergency Treatment'  SAME
+      effect_text SAME
+      ability=None
+SPEC[30] 'Monkey D. Luffy'
+   -> CARD[30] id=onepiece_01 name='Monkey D. Luffy' type='GOAT' base=10
+      effect_name: CARD='Warrior of Liberation' SPEC='Warrior of Liberation'  SAME
+      effect_text SAME
+      ability=None
+SPEC[31] 'Roronoa Zoro'
+   -> CARD[31] id=onepiece_02 name='Roronoa Zoro' type='Dynamic Duo' base=7
+      effect_name: CARD='Three-Sword Style' SPEC='Three-Sword Style'  SAME
+      effect_text SAME
+      ability=None
+SPEC[32] 'Sanji'
+   -> CARD[32] id=onepiece_03 name='Sanji' type='Dynamic Duo' base=7
+      effect_name: CARD='Wings of the Pirate King' SPEC='Wings of the Pirate King'  SAME
+      effect_text SAME
+      ability=sanji_zoro_row_bonus
+         cond=[{"type": "character_revealed", "character": "onepiece_02"}, {"type": "same_row", "character": "onepiece_02"}]
+         eff =[{"type": "add_current_points", "amount": 3}]
+         trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "+3", "animation": "points_gain"}
+SPEC[33] 'Shanks'
+   -> CARD[33] id=onepiece_04 name='Shanks' type='Fighter' base=8
+      effect_name: CARD="Conqueror's Haki" SPEC="Conqueror's Haki"  SAME
+      effect_text SAME
+      ability=None
+SPEC[34] 'Trafalgar D. Water Law'
+   -> CARD[35] id=onepiece_06 name='Trafalgar D. Water Law' type='Fighter' base=7
+      effect_name: CARD='Room' SPEC='Room'  SAME
+      effect_text SAME
+      ability=None
+SPEC[35] 'Usopp'
+   -> CARD[37] id=onepiece_08 name='Usopp' type='Trickster' base=4
+      effect_name: CARD='God Usopp' SPEC='God Usopp'  SAME
+      effect_text SAME
+      ability=None
+SPEC[36] 'Buggy the Clown'
+   !! NO/AMBIGUOUS MATCH (0 hits)
+SPEC[37] 'Nico Robin'
+   -> CARD[34] id=onepiece_05 name='Nico Robin' type='Regular' base=4
+      effect_name: CARD='Clutch' SPEC='Clutch'  SAME
+      effect_text SAME
+      ability=None
+SPEC[38] 'Nami'
+   -> CARD[38] id=onepiece_09 name='Nami' type='Regular' base=5
+      effect_name: CARD='Cat Burglar' SPEC='Cat Burglar'  SAME
+      effect_text SAME
+      ability=None
+SPEC[39] 'Tony Tony Chopper'
+   -> CARD[39] id=onepiece_10 name='Tony Tony Chopper' type='Regular' base=4
+      effect_name: CARD='Doctor Chopper Arrives' SPEC='Emergency Medicine'  DIFF
+      effect_text SAME
+      ability=None
+SPEC[40] 'Gogeta (Super Saiyan Blue)'
+   -> CARD[42] id=dragonball_03 name='Gogeta (Super Saiyan Blue)' type='GOAT' base=10
+      effect_name: CARD='Stardust Breaker' SPEC='Stardust Breaker'  SAME
+      effect_text SAME
+      ability=None
+SPEC[41] 'Goku (Ultra Instinct)'
+   -> CARD[40] id=dragonball_01 name='Goku (Ultra Instinct)' type='Dynamic Duo' base=9
+      effect_name: CARD='Autonomous Ultra Instinct' SPEC='Autonomous Ultra Instinct'  SAME
+      effect_text SAME
+      ability=None
+SPEC[42] 'Vegeta'
+   -> CARD[41] id=dragonball_02 name='Vegeta' type='Dynamic Duo' base=7
+      effect_name: CARD="Prince's Rivalry" SPEC="Prince's Rivalry"  SAME
+      effect_text SAME
+      ability=vegeta_goku_row_bonus
+         cond=[{"type": "character_revealed", "character": "dragonball_01"}, {"type": "same_row", "character": "dragonball_01"}]
+         eff =[{"type": "add_current_points", "amount": 3}]
+         trig=on_reveal lim=once_per_card_per_match pres={"floating_text": "+3", "animation": "points_gain"}
+SPEC[43] 'Broly'
+   -> CARD[44] id=dragonball_05 name='Broly' type='Fighter' base=8
+      effect_name: CARD='Legendary Saiyan' SPEC='Legendary Saiyan'  SAME
+      effect_text SAME
+      ability=None
+SPEC[44] 'Frieza (Golden)'
+   -> CARD[43] id=dragonball_04 name='Frieza (Golden)' type='Fighter' base=8
+      effect_name: CARD='Golden Tyrant' SPEC='Golden Tyrant'  SAME
+      effect_text SAME
+      ability=None
+SPEC[45] 'Gohan (Beast)'
+   -> CARD[46] id=dragonball_07 name='Gohan (Beast)' type='Fighter' base=8
+      effect_name: CARD='Hidden Potential Unlocked' SPEC='Hidden Potential Unlocked'  SAME
+      effect_text SAME
+      ability=None
+SPEC[46] 'Hit'
+   -> CARD[47] id=dragonball_08 name='Hit' type='Fighter' base=7
+      effect_name: CARD='Time Skip' SPEC='Time Skip'  SAME
+      effect_text SAME
+      ability=None
+SPEC[47] 'Future Trunks'
+   -> CARD[45] id=dragonball_06 name='Future Trunks' type='Trickster' base=5
+      effect_name: CARD='Hope of the Future' SPEC='Hope of the Future'  SAME
+      effect_text SAME
+      ability=None
+SPEC[48] 'Zeno'
+   -> CARD[48] id=dragonball_09 name='Zeno' type='Regular' base=4
+      effect_name: CARD='Erase from Existence' SPEC='Erase from Existence'  SAME
+      effect_text DIFF
+        CARD: If Zeno is the first character placed in an empty row, eliminate the next character in that row if it belongs to the opposing player.
+        SPEC: If an opposing ability would eliminate Zeno, he cancels that elimination and eliminates the opposing card that caused it instead.
+      ability=None
+SPEC[49] 'Whis'
+   -> CARD[49] id=dragonball_10 name='Whis' type='Regular' base=4
+      effect_name: CARD='Temporal Rewind' SPEC='Temporal Rewind'  SAME
+      effect_text SAME
+      ability=None
+
+UNMATCHED CARDS: [(5, 'Minato'), (17, 'Keigo'), (28, 'Illumi'), (36, 'Whitebeard')]

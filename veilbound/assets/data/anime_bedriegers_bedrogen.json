@@ -7,6 +7,59 @@
       "type": "GOAT",
       "effect_name": "Six Paths: Rasen-Shuriken",
       "effect_text": "Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row.",
+      "abilities": [
+        {
+          "id": "naruto_rasenshuriken_eliminate",
+          "name": "Six Paths: Rasen-Shuriken",
+          "description": "Eliminates one opposing Fighter card in any row.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "eliminate_target"
+            }
+          ],
+          "targeting": {
+            "target_scope": "any_row",
+            "target_side": "opposing",
+            "allowed_types": [
+              "Fighter"
+            ]
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "RASEN-SHURIKEN",
+            "animation": "elimination"
+          }
+        },
+        {
+          "id": "naruto_hinata_bond_of_love",
+          "name": "Bonds of Love",
+          "description": "Gain 3 points when Naruto and Hinata are both revealed in the same row.",
+          "trigger": "on_reveal",
+          "conditions": [
+            {
+              "type": "character_revealed",
+              "character": "naruto_10"
+            },
+            {
+              "type": "same_row",
+              "character": "naruto_10"
+            }
+          ],
+          "effects": [
+            {
+              "type": "add_current_points",
+              "amount": 3
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+3",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/Naruto/Naruto Uzumaki .png",
       "full_card_art": "assets/art/card front/Naruto/Naruto.png"
     },
@@ -23,11 +76,20 @@
         "description": "Gain 3 points when Sasuke and Itachi are both revealed in the same row.",
         "trigger": "on_reveal",
         "conditions": [
-          { "type": "character_revealed", "character": "naruto_03" },
-          { "type": "same_row", "character": "naruto_03" }
+          {
+            "type": "character_revealed",
+            "character": "naruto_03"
+          },
+          {
+            "type": "same_row",
+            "character": "naruto_03"
+          }
         ],
         "effects": [
-          { "type": "add_current_points", "amount": 3 }
+          {
+            "type": "add_current_points",
+            "amount": 3
+          }
         ],
         "activation_limit": "once_per_card_per_match",
         "presentation": {
@@ -242,7 +304,9 @@
         "trigger": "on_reveal",
         "conditions": [],
         "effects": [
-          { "type": "eliminate_target" }
+          {
+            "type": "eliminate_target"
+          }
         ],
         "targeting": {
           "target_scope": "any_row",
@@ -270,11 +334,20 @@
         "description": "Gain 3 points when Alluka and Killua are both revealed in the same row.",
         "trigger": "on_reveal",
         "conditions": [
-          { "type": "character_revealed", "character": "hxh_02" },
-          { "type": "same_row", "character": "hxh_02" }
+          {
+            "type": "character_revealed",
+            "character": "hxh_02"
+          },
+          {
+            "type": "same_row",
+            "character": "hxh_02"
+          }
         ],
         "effects": [
-          { "type": "add_current_points", "amount": 3 }
+          {
+            "type": "add_current_points",
+            "amount": 3
+          }
         ],
         "activation_limit": "once_per_card_per_match",
         "presentation": {
@@ -314,7 +387,6 @@
       "effect_text": "Reduces the points of every opposing character in his row by 2.",
       "image": "assets/art/characters/Hunter x Hunter/Isaac_Netero.jpg",
       "full_card_art": "assets/art/card front/HxH/Isaac_Netero.png"
-
     },
     {
       "id": "hxh_07",
@@ -322,7 +394,7 @@
       "base_points": 5,
       "type": "Trickster",
       "effect_name": "Crazy Slots",
-      "effect_text": "Randomly gains one of three bonuses: +4 points, immunity to elimination, or the ability to eliminate one opposing Regular card in his row.",
+      "effect_text": "Randomly gains one of three bonuses: 1: +4 points, 2: immunity to elimination, 3: the ability to eliminate one opposing Regular card in his row.",
       "image": "assets/art/characters/Hunter x Hunter/Tonpa.jpg",
       "full_card_art": "assets/art/card front/HxH/Kite.png"
     },
@@ -374,7 +446,31 @@
       "effect_name": "Three-Sword Style",
       "effect_text": "Eliminates one opposing Fighter card in the same row.",
       "image": "assets/art/characters/One Piece/Roronoa_Zoro.jpg",
-      "full_card_art": "assets/art/card front/One_Piece/Roronoa_zoro.png"
+      "full_card_art": "assets/art/card front/One_Piece/Roronoa_zoro.png",
+      "ability": {
+        "id": "zoro_oni_giri_eliminate",
+        "name": "Oni Giri",
+        "description": "Eliminates one opposing Fighter card in the same row.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "eliminate_target"
+          }
+        ],
+        "targeting": {
+          "target_scope": "same_row",
+          "target_side": "opposing",
+          "allowed_types": [
+            "Fighter"
+          ]
+        },
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "ONI GIRI",
+          "animation": "elimination"
+        }
+      }
     },
     {
       "id": "onepiece_03",
@@ -389,11 +485,20 @@
         "description": "Gain 3 points when Sanji and Zoro are both revealed in the same row.",
         "trigger": "on_reveal",
         "conditions": [
-          { "type": "character_revealed", "character": "onepiece_02" },
-          { "type": "same_row", "character": "onepiece_02" }
+          {
+            "type": "character_revealed",
+            "character": "onepiece_02"
+          },
+          {
+            "type": "same_row",
+            "character": "onepiece_02"
+          }
         ],
         "effects": [
-          { "type": "add_current_points", "amount": 3 }
+          {
+            "type": "add_current_points",
+            "amount": 3
+          }
         ],
         "activation_limit": "once_per_card_per_match",
         "presentation": {
@@ -497,11 +602,20 @@
         "description": "Gain 3 points when Vegeta and Goku are both revealed in the same row.",
         "trigger": "on_reveal",
         "conditions": [
-          { "type": "character_revealed", "character": "dragonball_01" },
-          { "type": "same_row", "character": "dragonball_01" }
+          {
+            "type": "character_revealed",
+            "character": "dragonball_01"
+          },
+          {
+            "type": "same_row",
+            "character": "dragonball_01"
+          }
         ],
         "effects": [
-          { "type": "add_current_points", "amount": 3 }
+          {
+            "type": "add_current_points",
+            "amount": 3
+          }
         ],
         "activation_limit": "once_per_card_per_match",
         "presentation": {
@@ -530,7 +644,30 @@
       "effect_name": "Golden Tyrant",
       "effect_text": "Eliminates one opposing card in his row with 5 or fewer base points.",
       "image": "assets/art/characters/Dragon Ball/Frieza_Golden.jpg",
-      "full_card_art": "assets/art/card front/Dragon_Ball/Frieza.png"
+      "full_card_art": "assets/art/card front/Dragon_Ball/Frieza.png",
+      "ability": {
+        "id": "frieza_golden_tyrant_eliminate",
+        "name": "Golden Tyrant",
+        "description": "Eliminates one opposing card in his row with 5 or fewer base points.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "eliminate_target"
+          }
+        ],
+        "targeting": {
+          "target_scope": "same_row",
+          "target_side": "opposing",
+          "allowed_types": [],
+          "max_base_points": 5
+        },
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "GOLDEN TYRANT",
+          "animation": "elimination"
+        }
+      }
     },
     {
       "id": "dragonball_05",

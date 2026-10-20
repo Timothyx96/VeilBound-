@@ -1,0 +1,175 @@
+2: """Central character-ability system: JSON definitions and reveal-time resolution.
+3: 
+4: Abilities are declared per character in the roster JSON and executed only by
+5: :class:`AbilityManager`, which the authoritative
+6: :class:`~veilbound.shared.rules.GameEngine` owns. Rendering, animation, and
+7: scoring code never implement ability rules.
+8: 
+9: Resolution order when a card becomes revealed (documented contract):
+10: 
+11: 1. The board state is updated first (``card.revealed = True``) by the caller.
+12: 2. **Phase A** - previously registered abilities (owner revealed earlier, not
+13:    yet eligible) are re-evaluated in registration order - which equals owner
+14:    reveal order - ties broken by ascending ability id.
+15: 3. **Phase B** - the newly revealed card's own on-reveal abilities run next.
+16: 4. **Phase C** - each eligible ability applies its effects exactly once
+17:    (guarded by the owner card instance's ``activated_abilities`` record) and
+18:    its presentation is emitted immediately after that ability's effects.
+19: 
+20: Duplicate activation is prevented by both the pending-registration bookkeeping
+21: and the per-card-instance activation record, so repeated condition checks,
+22: animation frames, or duplicated events cannot grant the bonus twice. A
+23: re-entrancy guard makes circular ability chains impossible: a nested
+24: resolution pass is logged and skipped.
+25: """
+26: 
+27: from __future__ import annotations
+28: 
+29: import logging
+30: from collections.abc import Callable, Mapping
+31: from dataclasses import dataclass
+32: from typing import Any
+33: 
+34: logger = logging.getLogger(__name__)
+35: 
+36: # Supported vocabulary - unsupported values fail loudly at load time so a typo
+37: # can never silently disable an ability.
+38: SUPPORTED_TRIGGERS = frozenset({"on_reveal"})
+39: SUPPORTED_CONDITION_TYPES = frozenset({"character_revealed", "same_row"})
+40: SUPPORTED_EFFECT_TYPES = frozenset({"add_current_points", "eliminate_target"})
+41: SUPPORTED_ACTIVATION_LIMITS = frozenset({"once_per_card_per_match"})
+42: SUPPORTED_ANIMATIONS = frozenset({"points_gain", "elimination"})
+43: 
+44: 
+45: class AbilityValidationError(ValueError):
+46:     """Raised when a character's ability definition is malformed or unsupported."""
+47: 
+48: 
+49: @dataclass(frozen=True)
+50: class Condition:
+51:     """A requirement that must hold before the ability activates.
+52: 
+53:     ``character`` stores the raw JSON reference (roster id or exact character
+54:     name); it is validated against the roster when character data is loaded.
+55:     """
+56: 
+57:     type: str
+58:     character: str
+59: 
+60: 
+61: @dataclass(frozen=True)
+62: class Effect:
+63:     """A single gameplay mutation; currently only point adjustments."""
+64: 
+65:     type: str
+66:     amount: int = 0
+67: 
+68: 
+69: @dataclass(frozen=True)
+70: class AbilityPresentation:
+71:     """UI feedback description; presentation never mutates game state."""
+72: 
+73:     floating_text: str
+74:     animation: str
+75: 
+76: 
+77: @dataclass(frozen=True)
+78: class AbilityDefinition:
+79:     """Validated, immutable ability schema parsed from one character's JSON."""
+80: 
+81:     id: str
+82:     name: str
+83:     description: str
+84:     trigger: str
+85:     conditions: tuple[Condition, ...]
+86:     effects: tuple[Effect, ...]
+87:     activation_limit: str
+88:     presentation: AbilityPresentation
+89:     # Elimination targeting; only meaningful when an effect is eliminate_target.
+90:     target_scope: str = "any_row"
+91:     target_side: str = "opposing"
+92:     allowed_types: tuple[str, ...] = ()
+93:     max_base_points: int | None = None
+94:     min_base_points: int | None = None
+95: 
+96: 
+97: @dataclass(frozen=True)
+98: class AbilityActivation:
+99:     """One resolved activation: effects are already applied when this exists."""
+100: 
+101:     ability: AbilityDefinition
+102:     owner_card_id: str
+103:     target_card_id: str
+104:     row_id: str
+105:     slot_index: int
+106:     definition_id: str
+107:     owner_name: str
+108:     delta: int
+109:     base_points: int
+110:     current_points: int
+111:     is_elimination: bool = False
+112: 
+113:     def event_data(self) -> dict[str, Any]:
+114:         """JSON-safe payload for the ``ability_activated`` presentation event."""
+115:         return {
+116:             "ability_id": self.ability.id,
+117:             "ability_name": self.ability.name,
+118:             "owner_card_id": self.owner_card_id,
+119:             "target_card_id": self.target_card_id,
+120:             "row_id": self.row_id,
+121:             "slot_index": self.slot_index,
+122:             "definition_id": self.definition_id,
+123:             "name": self.owner_name,
+124:             "delta": self.delta,
+125:             "base_points": self.base_points,
+126:             "current_points": self.current_points,
+127:             "floating_text": self.ability.presentation.floating_text,
+128:             "animation": self.ability.presentation.animation,
+129:             "is_elimination": self.is_elimination,
+130:         }
+131: 
+132: 
+133: @dataclass(frozen=True)
+134: class _PendingAbility:
+135:     """A registered ability whose conditions were not satisfied at reveal time."""
+136: 
+137:     sequence: int
+138:     ability: AbilityDefinition
+139:     owner_card_id: str
+140: 
+141: 
+142: def _require_str(raw: dict, key: str, context: str) -> str:
+143:     value = raw.get(key)
+144:     if not isinstance(value, str) or not value.strip():
+145:         raise AbilityValidationError(f"{context}: '{key}' must be a non-empty string.")
+146:     return value.strip()
+147: 
+148: 
+149: def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
+150:     """Parse and validate one ``ability`` object from character JSON.
+151: 
+152:     Raises :class:`AbilityValidationError` naming the offending character and
+153:     field so bad data is caught while character data loads.
+154:     """
+155:     if not isinstance(raw, dict):
+156:         raise AbilityValidationError(f"{context}: 'ability' must be a JSON object.")
+157:     ability_id = _require_str(raw, "id", context)
+158:     name = _require_str(raw, "name", context)
+159:     description = str(raw.get("description", ""))
+160: 
+161:     trigger = _require_str(raw, "trigger", context)
+162:     if trigger not in SUPPORTED_TRIGGERS:
+163:         raise AbilityValidationError(
+164:             f"{context}: unsupported trigger {trigger!r} for ability {ability_id!r}; "
+165:             f"supported triggers: {sorted(SUPPORTED_TRIGGERS)}."
+166:         )
+167: 
+168:     conditions_raw = raw.get("conditions", [])
+169:     if not isinstance(conditions_raw, list):
+170:         raise AbilityValidationError(f"{context}: 'conditions' must be a list.")
+171:     conditions: list[Condition] = []
+172:     for index, item in enumerate(conditions_raw, start=1):
+173:         where = f"{context}: condition #{index} of ability {ability_id!r}"
+174:         if not isinstance(item, dict):
+175:             raise AbilityValidationError(f"{where} must be a JSON object.")
+176:         condition_type = item.get("type")
