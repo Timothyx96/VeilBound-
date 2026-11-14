@@ -33,6 +33,7 @@ ZENO = "dragonball_09"
 NICO_ROBIN = "onepiece_05"
 NAMI = "onepiece_09"
 CHOPPER = "onepiece_10"
+KURAPIKA = "hxh_08"   # 6 / Fighter
 GON = "hxh_01"
 KILLUA = "hxh_02"
 SASUKE = "naruto_02"
@@ -115,6 +116,12 @@ def _arm_itachi_bonus_selection(engine, itachi, row):
 def _arm_nico_robin_selection(engine, robin, row):
     event_start = len(engine.state.events)
     engine._reveal_card(row, 0, robin)
+    return engine._begin_pending_elimination(event_start)
+
+
+def _arm_kurapika_selection(engine, kurapika, row):
+    event_start = len(engine.state.events)
+    engine._reveal_card(row, 0, kurapika)
     return engine._begin_pending_elimination(event_start)
 
 
@@ -1073,7 +1080,7 @@ def test_gon_no_target_attempt_retries_after_killua_elimination_and_chopper_revi
         assert fighter_view["applied_bonuses"][gon_bonus_key] == 4
 
 
-def test_chopper_without_valid_revive_target_fails_without_consuming_ability():
+def test_chopper_failed_revive_is_consumed_and_does_not_retry():
     engine = scripted_engine(capacity=3)
     p1, p2 = engine.state.players
     chopper = card(engine, CHOPPER, p1.id)
@@ -1086,67 +1093,100 @@ def test_chopper_without_valid_revive_target_fails_without_consuming_ability():
     row = engine.state.rows[0]
     row.slots[:] = [chopper, living_friend, eliminated_enemy]
 
+    # No eliminated friendly target: the revive attempt fails and, as a
+    # once-per-match reveal-only ability, is consumed. It must not retry
+    # when an eligible target appears later.
     assert not _arm_chopper_selection(engine, chopper, row)
     assert engine.state.pending_elimination is None
-    assert "chopper_doctor_revive_friendly" not in chopper.activated_abilities
+    assert "chopper_doctor_revive_friendly" in chopper.activated_abilities
     assert "chopper_doctor_revive_friendly" not in chopper.resolved_abilities
+    assert "chopper_doctor_revive_friendly" not in [
+        aid for _, aid, _ in engine.abilities.pending_abilities
+    ]
     assert any(
         event.kind == "ability_failed"
         and event.data.get("ability_id") == "chopper_doctor_revive_friendly"
         for event in engine.state.events
     )
 
+    # An eliminated friendly card appearing later must not retrigger Chopper.
+    # Reveal a new card (re-running Phase A) and confirm Chopper does not
+    # activate again now that his once-per-match ability is consumed.
+    later_friend = card(engine, KILLUA, p1.id)
+    later_friend.revealed = True
+    before = len(engine.state.events)
+    engine._reveal_card(row, 2, later_friend)
+    assert "chopper_doctor_revive_friendly" not in [
+        event.data.get("ability_id")
+        for event in engine.state.events[before:]
+        if event.kind == "ability_activated"
+    ]
+    assert "chopper_doctor_revive_friendly" not in [
+        aid for _, aid, _ in engine.abilities.pending_abilities
+    ]
 
-def test_killua_can_retry_after_failed_attempt_and_success_stays_used_after_revival():
-    engine = scripted_engine(capacity=5)
+
+def test_killua_failed_attempt_consumed_and_success_stays_used_after_revival():
+    engine = scripted_engine(capacity=6)
     p1, p2 = engine.state.players
-    chopper_one = card(engine, CHOPPER, p1.id)
+    chopper = card(engine, CHOPPER, p1.id)
     killua = card(engine, KILLUA, p1.id)
-    target = card(engine, LUFFY, p2.id)
-    chopper_two = card(engine, CHOPPER, p1.id)
+    hidden = card(engine, LUFFY, p2.id)
     row = engine.state.rows[0]
-    row.slots[:] = [chopper_one, killua, target, chopper_two, None]
+    row.slots[:] = [chopper, killua, hidden, None, None, None]
 
-    # Killua's first attempt fails because the only opposing card is hidden.
+    # Killua reveals with only a hidden opposing card: the attempt fails and
+    # the once-per-match ability is consumed. It must not retry later when a
+    # target becomes eligible.
     event_start = len(engine.state.events)
     engine._reveal_card(row, 1, killua)
     assert not engine._begin_pending_elimination(event_start)
     killua_ability_id = engine.cards[KILLUA].abilities[0].id
-    assert killua_ability_id not in killua.activated_abilities
+    assert killua_ability_id in killua.activated_abilities
     assert killua_ability_id not in killua.resolved_abilities
+    assert killua_ability_id not in [
+        aid for _, aid, _ in engine.abilities.pending_abilities
+    ]
 
-    engine._reveal_card(row, 2, target)
-    engine.elimination.eliminate_target(engine.state, killua, target)
-    assert _arm_chopper_selection(engine, chopper_one, row)
-    revived = engine.select_elimination_target(row.id, 1)
-    assert revived.accepted
-    assert not killua.eliminated
-    # Revival re-attempts Killua's unresolved on-reveal ability.
-    assert engine.state.pending_elimination is not None
-    assert engine.state.pending_elimination["attacker_card_id"] == killua.id
+    # Revealing the (now eligible) target must not retry Killua.
+    engine._reveal_card(row, 2, hidden)
+    assert not hidden.eliminated
     assert killua_ability_id not in killua.resolved_abilities
+    assert killua_ability_id not in [
+        aid for _, aid, _ in engine.abilities.pending_abilities
+    ]
 
-    resolved = engine.select_elimination_target(row.id, 2)
-    assert resolved.accepted
-    assert target.eliminated
-    assert killua_ability_id in killua.resolved_abilities
+    # A successful Killua elimination stays used after revival: no retrigger
+    # even when another eligible target appears.
+    from veilbound.shared.models import CardInstance
+    row2 = engine.state.rows[1]
+    killua_two = CardInstance("unit-hxh_02-player-1b", KILLUA, p1.id)
+    target_two = card(engine, GO, p2.id)
+    target_two.revealed = True
+    chopper_two = CardInstance("unit-onepiece_10-player-1b", CHOPPER, p1.id)
+    row2.slots[:] = [killua_two, target_two, chopper_two, None, None, None]
+    event_start = len(engine.state.events)
+    engine._reveal_card(row2, 0, killua_two)
+    assert engine._begin_pending_elimination(event_start)
+    assert engine.select_elimination_target(row2.id, 1).accepted
+    assert target_two.eliminated
+    assert killua_ability_id in killua_two.resolved_abilities
 
-    # A second revival preserves the successful one-time resolution and does not retrigger it.
-    engine.elimination.eliminate_target(engine.state, killua, target)
-    assert _arm_chopper_selection(engine, chopper_two, row, slot_index=3)
-    revived_again = engine.select_elimination_target(row.id, 1)
+    engine.elimination.eliminate_target(engine.state, killua_two, target_two)
+    assert _arm_chopper_selection(engine, chopper_two, row2, slot_index=2)
+    revived_again = engine.select_elimination_target(row2.id, 0)
     assert revived_again.accepted
-    assert not killua.eliminated
-    assert killua_ability_id in killua.resolved_abilities
+    assert not killua_two.eliminated
+    assert killua_ability_id in killua_two.resolved_abilities
     assert engine.state.pending_elimination is None
     assert not any(
         event.kind == "ability_activated"
-        and event.data.get("owner_card_id") == killua.id
+        and event.data.get("owner_card_id") == killua_two.id
         for event in revived_again.events
     )
     for player in (p1, p2):
         view = engine.view_for(player.id)
-        killua_view = view["rows"][0]["slots"][1]["card"]
+        killua_view = view["rows"][1]["slots"][0]["card"]
         assert killua_view["eliminated"] is False
         assert killua_ability_id in killua_view["resolved_abilities"]
 
@@ -1322,3 +1362,238 @@ def test_base_zero_death_uses_died_announcement_once():
     assert renderer.elimination_announcement == "Naruto Uzumaki Died"
     assert renderer.elimination_announced_at == announcement_time
     assert renderer.elimination_flash_card == ("row-1", 1)
+
+
+def _kurapika_board(target_base: int, target_bonus: int = 0):
+    engine = scripted_engine(capacity=3)
+    p1, p2 = engine.state.players
+    kurapika = card(engine, KURAPIKA, p1.id)
+    target = card(engine, HISOKA, p2.id)  # 8 / Fighter
+    target.base_points = target_base
+    target.current_points = target_base + target_bonus
+    if target_bonus:
+        target.applied_bonuses = {"test_existing_bonus": target_bonus}
+    row = engine.state.rows[0]
+    row.slots[0] = kurapika
+    row.slots[1] = target
+    target.revealed = True
+    return engine, kurapika, target, row
+
+
+def test_kurapika_reduces_opposing_same_row_fighter_base_by_two():
+    engine, kurapika, target, row = _kurapika_board(8)
+    assert _arm_kurapika_selection(engine, kurapika, row)
+    pending = engine.state.pending_elimination
+    assert pending["effect_type"] == "reduce_target_base_points"
+    assert pending["targeting"]["target_scope"] == "same_row"
+    assert pending["targeting"]["target_side"] == "opposing"
+    assert pending["targeting"]["allowed_types"] == ["Fighter"]
+    assert [(t["row_id"], t["slot_index"]) for t in pending["valid_targets"]] == [
+        (row.id, 1)
+    ]
+
+    result = engine.select_elimination_target(row.id, 1)
+    assert result.accepted
+    assert engine.abilities._base_points(target) == 6
+    assert target.current_points == 6
+    assert not target.eliminated
+    assert len(target.base_point_reductions) == 1
+    assert sum(target.base_point_reductions.values()) == 2
+    assert engine.cards[HISOKA].base_points == 8  # roster definition immutable
+    assert any(event.kind == "base_points_reduced" for event in result.events)
+    assert any(event.kind == "ability_resolved" for event in result.events)
+    for player in engine.state.players:
+        view = engine.view_for(player.id)
+        target_view = view["rows"][0]["slots"][1]["card"]
+        assert target_view["base_points"] == 6
+        assert target_view["current_points"] == 6
+
+
+def test_kurapika_clamps_base_at_zero_and_eliminates():
+    engine, kurapika, target, row = _kurapika_board(1)
+    assert _arm_kurapika_selection(engine, kurapika, row)
+    result = engine.select_elimination_target(row.id, 1)
+    assert result.accepted
+    assert engine.abilities._base_points(target) == 0
+    assert target.current_points == 0
+    assert target.eliminated
+    assert any(event.kind == "death" for event in result.events)
+
+
+def test_kurapika_preserves_bonus_points_and_row_total():
+    engine, kurapika, target, row = _kurapika_board(8, 3)
+    assert _arm_kurapika_selection(engine, kurapika, row)
+    assert engine.select_elimination_target(row.id, 1).accepted
+    # Base reduced by 2, bonus of +3 untouched -> current = 6 + 3 = 9.
+    assert engine.abilities._base_points(target) == 6
+    assert target.current_points == 9
+    assert target.applied_bonuses == {"test_existing_bonus": 3}
+    scores = calculate_row_scores(
+        row, tuple(player.id for player in engine.state.players), engine.cards
+    )
+    assert scores[target.owner_id] == 9
+
+
+def test_kurapika_valid_targets_exclude_friendly_other_row_non_fighter_eliminated():
+    engine = scripted_engine(capacity=3)
+    p1, p2 = engine.state.players
+    kurapika = card(engine, KURAPIKA, p1.id)
+    fighter = card(engine, HISOKA, p2.id)   # opposing Fighter, same row -> valid
+    friendly = card(engine, KAKASHI, p1.id)  # friendly Fighter -> invalid
+    go = card(engine, GO, p2.id)             # opposing GOAT, same row -> invalid
+    other_row_fighter = card(engine, KAKASHI, p2.id)  # opposing Fighter, other row -> invalid
+    eliminated = card(engine, HISOKA, p2.id)
+    eliminated.revealed = True
+    eliminated.eliminated = True
+    eliminated.current_points = 0
+
+    row = engine.state.rows[0]
+    row.slots[:] = [kurapika, fighter, friendly]
+    engine.state.rows[1].slots[0] = go
+    engine.state.rows[1].slots[1] = other_row_fighter
+    engine.state.rows[2].slots[0] = eliminated
+    fighter.revealed = True
+    friendly.revealed = True
+    go.revealed = True
+    other_row_fighter.revealed = True
+
+    assert _arm_kurapika_selection(engine, kurapika, row)
+    assert {item["card_id"] for item in engine.state.pending_elimination["valid_targets"]} == {
+        fighter.id,
+    }
+
+
+def test_kurapika_no_valid_target_fails_cleanly_and_does_not_retry():
+    engine = scripted_engine(capacity=3)
+    p1, p2 = engine.state.players
+    kurapika = card(engine, KURAPIKA, p1.id)
+    row = engine.state.rows[0]
+    row.slots[0] = kurapika
+    p1, p2 = engine.state.players
+    # Only non-Fighter opposing cards in the same row: no valid target.
+    non_fighter = card(engine, GO, p2.id)  # GOAT
+    non_fighter.revealed = True
+    row.slots[1] = non_fighter
+
+    # No valid target: the ability fails cleanly without arming a menu.
+    assert not _arm_kurapika_selection(engine, kurapika, row)
+    assert engine.state.pending_elimination is None
+    # Once-per-match ability is consumed: it must not retry later.
+    kurapika_ability_id = engine.cards[KURAPIKA].abilities[0].id
+    assert kurapika_ability_id in kurapika.activated_abilities
+    assert kurapika_ability_id not in kurapika.resolved_abilities
+    assert kurapika_ability_id not in [
+        aid for _, aid, _ in engine.abilities.pending_abilities
+    ]
+    assert any(
+        event.kind == "ability_failed"
+        and event.data.get("ability_id") == kurapika_ability_id
+        for event in engine.state.events
+    )
+
+    # A Fighter appearing later must not retrigger Kurapika.
+    fighter = card(engine, HISOKA, p2.id)
+    fighter.revealed = True
+    before = len(engine.state.events)
+    engine._reveal_card(row, 2, fighter)
+    assert kurapika_ability_id not in [
+        event.data.get("ability_id")
+        for event in engine.state.events[before:]
+        if event.kind == "ability_activated"
+    ]
+    assert kurapika_ability_id not in [
+        aid for _, aid, _ in engine.abilities.pending_abilities
+    ]
+
+
+def test_kurapika_invalidated_target_before_confirm_is_not_applied():
+    engine, kurapika, target, row = _kurapika_board(8)
+    p1, p2 = engine.state.players
+    hidden = card(engine, KAKASHI, p2.id)
+    hidden.revealed = False
+    row.slots[2] = hidden
+    assert _arm_kurapika_selection(engine, kurapika, row)
+    assert engine.state.pending_elimination is not None
+
+    # Choose a slot that is not a valid target: rejected, effect not applied.
+    assert not engine.select_elimination_target(row.id, 2).accepted
+    assert engine.state.pending_elimination is not None
+    assert target.base_points == 8
+    assert target.current_points == 8
+
+    # The pause is still armed, so the player can pick the real target.
+    assert engine.select_elimination_target(row.id, 1).accepted
+    assert engine.abilities._base_points(target) == 6
+    assert target.current_points == 6
+    assert engine.state.pending_elimination is None
+
+
+def test_kurapika_multiplayer_sync_reduces_selected_fighter_base():
+    engine, kurapika, target, row = _kurapika_board(8)
+    assert _arm_kurapika_selection(engine, kurapika, row)
+    room = Room("KURAPIKA-CHAIN-JAIL")
+    room.engine = engine
+    writer1, writer2 = FakeWriter(), FakeWriter()
+    room.peers[kurapika.owner_id].writer = writer1
+    room.peers[target.owner_id].writer = writer2
+
+    async def choose_target():
+        await room.handle(
+            room.peers[kurapika.owner_id],
+            {"type": "select_elimination", "row_id": row.id, "slot_index": 1},
+        )
+
+    asyncio.run(choose_target())
+
+    assert engine.state.pending_elimination is None
+    assert engine.abilities._base_points(target) == 6
+    assert target.current_points == 6
+    assert writer1.messages and writer2.messages
+    for player in engine.state.players:
+        target_view = engine.view_for(player.id)["rows"][0]["slots"][1]["card"]
+        assert target_view["base_points"] == 6
+        assert target_view["current_points"] == 6
+
+
+def test_netero_still_auto_resolves_without_target_menu():
+    engine = scripted_engine(capacity=3)
+    p1, p2 = engine.state.players
+    netero = card(engine, "hxh_06", p1.id)  # Isaac Netero
+    target_one = card(engine, HISOKA, p2.id)  # Fighter bp=8
+    target_two = card(engine, KAKASHI, p2.id)  # Fighter bp=7
+    row = engine.state.rows[0]
+    row.slots[:] = [netero, target_one, target_two]
+    target_one.revealed = True
+    target_two.revealed = True
+
+    event_start = len(engine.state.events)
+    engine._reveal_card(row, 0, netero)
+    # Netero has no type filter: auto-reduces every opposing card in his row,
+    # so no target-selection menu is armed.
+    assert engine.state.pending_elimination is None
+    assert engine.abilities._base_points(target_one) == 6
+    assert engine.abilities._base_points(target_two) == 5
+    assert target_one.current_points == 6
+    assert target_two.current_points == 5
+    assert any(
+        event.kind == "ability_resolved"
+        and event.data.get("ability_id") == "hxh_06_100_type_guanyin"
+        for event in engine.state.events
+    )
+
+
+def test_nico_robin_still_arms_selection_menu():
+    engine = scripted_engine(capacity=3)
+    p1, p2 = engine.state.players
+    robin = card(engine, NICO_ROBIN, p1.id)
+    target = card(engine, GO, p2.id)
+    target.revealed = True
+    row = engine.state.rows[0]
+    row.slots[:] = [robin, target]
+
+    assert _arm_nico_robin_selection(engine, robin, row)
+    assert engine.state.pending_elimination is not None
+    assert engine.state.pending_elimination["effect_type"] == "reduce_target_base_points"
+    assert engine.select_elimination_target(row.id, 1).accepted
+    assert engine.abilities._base_points(target) == 8
+    assert target.current_points == 8

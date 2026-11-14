@@ -210,6 +210,7 @@ class GameEngine:
         if slot_index != next_slot:
             return ActionResult(False, "Place the card in the next empty slot from left to right.")
 
+        row_was_empty = all(placed is None for placed in row.slots)
         event_start = len(state.events)
         player.hand.remove(card)
         player.used.append(card)
@@ -217,6 +218,14 @@ class GameEngine:
         self._emit("placement", f"{player.name} places a face-down card in Row {row.number}.", {
             "player_id": player.id, "row_id": row.id, "slot_index": slot_index,
         })
+        self.abilities.on_card_placed_in_empty_row(
+            state,
+            card,
+            row,
+            slot_index,
+            row_was_empty=row_was_empty,
+            emit=self._emit_ability_activation,
+        )
         if slot_index > 0:
             previous = row.slots[slot_index - 1]
             if previous is not None and not getattr(previous, "eliminated", False):
@@ -392,10 +401,11 @@ class GameEngine:
             target_scope=ability.target_scope,
             target_side=ability.target_side,
             allowed_types=ability.allowed_types,
+            excluded_types=ability.excluded_types,
             max_base_points=ability.max_base_points,
             min_base_points=ability.min_base_points,
             require_bonus_points=any(
-                effect.type in {"remove_target_bonus", "steal_target_bonus"}
+                effect.type in {"remove_target_bonus", "steal_target_bonus", "copy_target_bonus"}
                 for effect in ability.effects
             ),
             require_eliminated=any(
@@ -406,7 +416,7 @@ class GameEngine:
         effect_type = next(
             effect.type for effect in ability.effects
             if effect.type in {
-                "eliminate_target", "remove_target_bonus", "steal_target_bonus",
+                "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
                 "revive_target", "reduce_target_base_points",
             }
         )
@@ -446,6 +456,7 @@ class GameEngine:
                 "target_scope": targeting.target_scope,
                 "target_side": targeting.target_side,
                 "allowed_types": list(targeting.allowed_types),
+                "excluded_types": list(targeting.excluded_types),
                 "max_base_points": targeting.max_base_points,
                 "min_base_points": targeting.min_base_points,
                 "require_bonus_points": targeting.require_bonus_points,
@@ -494,11 +505,15 @@ class GameEngine:
         if attacker_card is None:
             state.pending_elimination = None
             return ActionResult(False, "The ability's owner card left the board.")
+        if attacker_card.eliminated:
+            state.pending_elimination = None
+            return ActionResult(False, "The ability's owner card can no longer resolve its ability.")
 
         targeting = EliminationTargeting(
             target_scope=str(pending["targeting"].get("target_scope", "any_row")),
             target_side=str(pending["targeting"].get("target_side", "opposing")),
             allowed_types=tuple(pending["targeting"].get("allowed_types") or ()),
+            excluded_types=tuple(pending["targeting"].get("excluded_types") or ()),
             max_base_points=pending["targeting"].get("max_base_points"),
             min_base_points=pending["targeting"].get("min_base_points"),
             require_bonus_points=bool(pending["targeting"].get("require_bonus_points", False)),
@@ -514,6 +529,7 @@ class GameEngine:
         followup_event_start: int | None = None
         target_definition = self.cards.get(target_card.definition_id)
         target_name = str(getattr(target_definition, "name", "Unknown character"))
+        copied_bonus = 0
         if effect_type == "revive_target":
             if not target_card.eliminated or row.slots[target_slot_index] is not target_card:
                 return ActionResult(False, "That character is no longer eligible for revival.")
@@ -523,8 +539,26 @@ class GameEngine:
                 if index != target_slot_index
             ]
             target_card.eliminated = False
-            if not gon_reset:
-                target_card.current_points = self.abilities._calculated_points(target_card)
+            if gon_reset:
+                # reset_gon_for_revival already restored Gon's full original
+                # state (base points, bonuses, activations) and re-registers
+                # his pending ability for one revival retry.
+                pass
+            else:
+                # Restore any revived card to its original definition state so
+                # match-scoped modifications from before elimination (base
+                # points, applied bonuses, reductions) are not preserved.
+                # resolved_abilities is a historical record of what the card
+                # has already accomplished and is intentionally preserved.
+                definition = self.cards.get(target_card.definition_id)
+                if definition is not None:
+                    original_base = int(definition.base_points)
+                    target_card.base_points = original_base
+                    target_card.base_point_reductions = {}
+                    target_card.applied_bonuses = {}
+                    target_card.suppressed_bonuses = []
+                    target_card.activated_abilities = []
+                    target_card.current_points = original_base
             self.abilities.reset_failure_reports(target_card.id)
             self.abilities.recalculate_after_revival(state, target_card)
             self._emit(
@@ -534,18 +568,28 @@ class GameEngine:
                     "attacker_card_id": attacker_card.id,
                     "attacker_name": str(pending.get("attacker_name", "Unknown character")),
                     "target_card_id": target_card.id,
+                    "name": target_name,
                     "target_name": target_name,
                     "row_id": target_row_id,
                     "slot_index": target_slot_index,
                     "current_points": int(target_card.current_points),
                     "base_points": self.abilities._base_points(target_card),
                     "resolved_abilities": list(target_card.get("resolved_abilities") or []),
+                    "image": str(target_definition.image) if target_definition else "",
+                    "type": str(target_definition.type) if target_definition else "",
+                    "effect_name": str(target_definition.effect_name) if target_definition else "",
+                    "effect_text": str(target_definition.effect_text) if target_definition else "",
+                    "full_card_art": str(target_definition.full_card_art) if target_definition else "",
                 },
             )
             # Gon gets one explicit retry attempt as part of his revival event.
             # The manager limits this pass to the revived owner; ordinary card
             # reveals and point recalculations cannot trigger his pending ability.
-            if target_card.revealed:
+            # Only Gon's revival retries his pending on_reveal ability. For all
+            # other revivals the card's state has already been reset and its
+            # abilities must not re-activate; doing so would flip unrelated
+            # cards and advance the reveal sequence unexpectedly.
+            if gon_reset and target_card.revealed:
                 followup_event_start = len(state.events)
                 self.abilities.on_card_revealed(
                     state,
@@ -583,6 +627,30 @@ class GameEngine:
                     "attacker_previous_points": previous_attacker_points,
                     "attacker_current_points": int(attacker_card.current_points),
                     "target_previous_points": previous_target_points,
+                    "target_current_points": int(target_card.current_points),
+                },
+            )
+        elif effect_type == "copy_target_bonus":
+            base_points = self.abilities._base_points(target_card)
+            copied_bonus = int(target_card.current_points) - base_points
+            if copied_bonus <= 0:
+                return ActionResult(False, "That card no longer has bonus points to copy.")
+            owner_bonuses = dict(attacker_card.get("applied_bonuses") or {})
+            owner_bonuses[str(pending.get("ability_id", ""))] = copied_bonus
+            attacker_card.applied_bonuses = owner_bonuses
+            attacker_card.current_points = self.abilities._calculated_points(attacker_card, owner_bonuses)
+            self._emit(
+                "bonus_points_copied",
+                f"{pending.get('attacker_name', 'Unknown character')} copied {copied_bonus} bonus points from {target_name}.",
+                {
+                    "attacker_card_id": attacker_card.id,
+                    "attacker_name": str(pending.get("attacker_name", "Unknown character")),
+                    "target_card_id": target_card.id,
+                    "target_name": target_name,
+                    "row_id": target_row_id,
+                    "slot_index": target_slot_index,
+                    "amount": copied_bonus,
+                    "current_points": int(attacker_card.current_points),
                     "target_current_points": int(target_card.current_points),
                 },
             )
@@ -680,7 +748,11 @@ class GameEngine:
             sound=pending.get("sound"),
             target_card_id=target_card.id,
             target_name=target_name,
-            floating_text=str(pending.get("floating_text", "")),
+            floating_text=(
+                f"+{copied_bonus}"
+                if effect_type == "copy_target_bonus"
+                else str(pending.get("floating_text", ""))
+            ),
         )
         state.pending_elimination = None
         if followup_event_start is not None:
@@ -1046,13 +1118,31 @@ class GameEngine:
             if slot is not None and slot.id == owner_card_id
         ), None)
         if owner_card is not None:
-            owner_card.activated_abilities = [
-                used for used in (owner_card.get("activated_abilities") or [])
-                if used != ability_id
-            ]
-            self.abilities.retain_failed_attempt(
-                self.state, owner_card_id, ability_id,
+            definition = self.cards.get(owner_card.definition_id)
+            ability = next(
+                (
+                    item
+                    for item in (getattr(definition, "abilities", None) or [])
+                    if item.id == ability_id
+                ),
+                None,
             )
+            is_once_per_match = (
+                ability is not None
+                and ability.activation_limit == "once_per_card_per_match"
+            )
+            # A once-per-match reveal-only ability that failed must stay
+            # consumed: it cannot retry when a target appears later. Gon's
+            # explicit revival retry is preserved because his failure path
+            # never reaches activation records.
+            if not is_once_per_match:
+                owner_card.activated_abilities = [
+                    used for used in (owner_card.get("activated_abilities") or [])
+                    if used != ability_id
+                ]
+                self.abilities.retain_failed_attempt(
+                    self.state, owner_card_id, ability_id,
+                )
         self._emit(
             "ability_failed",
             f"{owner_name}'s {ability_name} failed",

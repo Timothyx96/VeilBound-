@@ -236,6 +236,22 @@ class Renderer:
                 self.reveal_card = dict(event.data)
                 self.reveal_card_visible_after = now + self.animation_ms["card_flip_ms"] / 1000
                 self.reveal_card_until = self.reveal_card_visible_after + self.animation_ms["card_information_ms"] / 1000
+            elif event.kind == "revival":
+                # A revived card flips back over so it becomes visible on the
+                # board. Restart the flip so the elimination look is replaced
+                # by the face-up card after the authoritative state confirms.
+                # The revival also clears the per-slot elimination flash so
+                # the red-X overlay that the flash would draw is not painted
+                # over the revived card.
+                key = (event.data["row_id"], event.data["slot_index"])
+                self.flip_started[key] = time.monotonic()
+                self.last_card_reveal = event.message
+                now = time.monotonic()
+                self.reveal_card = dict(event.data)
+                self.reveal_card_visible_after = now + self.animation_ms["card_flip_ms"] / 1000
+                self.reveal_card_until = self.reveal_card_visible_after + self.animation_ms["card_information_ms"] / 1000
+                self.elimination_flash_card = None
+                self.elimination_flash_started = None
             elif event.kind == "row_scored":
                 self.score_animation_row_id = event.data["row_id"]
                 self.score_animation_started = time.monotonic()
@@ -530,11 +546,22 @@ class Renderer:
 
         Killua's elimination targets are highlighted in purple so they are
         never confused with the red elimination cross used on eliminated cards.
+
+        In multiplayer, only the player who owns the ability should see the
+        selection outlines. The pending_elimination payload contains
+        attacker_owner_id to identify the ability owner, and we only draw
+        outlines for the viewer/player who owns this selection.
         """
         # Prefer the engine's pending payload (local and remote both mirror it);
         # fall back to targets staged by the input controller.
-        targets = list(self.elimination_targets)
         pending = state.get("pending_elimination") if hasattr(state, "get") else None
+        # In multiplayer, only draw elimination highlights for the player who
+        # owns the ability (matching viewer_id). This prevents the opponent
+        # from seeing temporary selection outlines on their screen.
+        if pending and state.viewer_id is not None:
+            if pending.get("attacker_owner_id") != str(state.viewer_id):
+                return
+        targets = list(self.elimination_targets)
         if pending:
             targets = [
                 (str(item.get("row_id", "")), int(item.get("slot_index", -1)))

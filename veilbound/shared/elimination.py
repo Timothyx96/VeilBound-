@@ -16,6 +16,7 @@ class EliminationTargeting:
     target_scope: str = "any_row"
     target_side: str = "opposing"
     allowed_types: tuple[str, ...] = field(default_factory=tuple)
+    excluded_types: tuple[str, ...] = field(default_factory=tuple)
     max_base_points: int | None = None
     min_base_points: int | None = None
     require_bonus_points: bool = False
@@ -88,6 +89,8 @@ class EliminationManager:
             card_type = getattr(definition, "type", None)
             if card_type not in targeting.allowed_types:
                 return False
+        if getattr(definition, "type", None) in targeting.excluded_types:
+            return False
         if targeting.require_bonus_points:
             current_points = getattr(card, "current_points", None)
             if (isinstance(current_points, bool) or not isinstance(current_points, (int, float))

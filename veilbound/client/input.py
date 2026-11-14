@@ -363,6 +363,8 @@ class InputController:
                 self.renderer.notice = "Click a highlighted card to steal its bonus points."
             elif pending.get("effect_type") == "remove_target_bonus":
                 self.renderer.notice = "Click a highlighted card to remove its bonus points."
+            elif pending.get("effect_type") == "copy_target_bonus":
+                self.renderer.notice = "Click a highlighted card to copy its bonus points."
             elif pending.get("effect_type") == "eliminate_target":
                 self.renderer.notice = "Click a highlighted card to eliminate it."
             else:

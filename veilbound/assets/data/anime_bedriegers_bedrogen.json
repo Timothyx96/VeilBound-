@@ -91,7 +91,7 @@
             "amount": 3
           }
         ],
-        "activation_limit": "once_per_card_per_match",
+        "activation_limit": "continuous",
         "presentation": {
           "floating_text": "+3",
           "animation": "points_gain"
@@ -179,6 +179,26 @@
       "type": "Fighter",
       "effect_name": "Sharingan Copy",
       "effect_text": "Copies the bonus points of one opposing character in the same row. Kakashi gains the same number of bonus points.",
+      "ability": {
+        "id": "kakashi_sharingan_copy",
+        "name": "Sharingan Copy",
+        "description": "Copies the bonus points of one opposing character in the same row. Kakashi gains the same number of bonus points.",
+        "trigger": "on_reveal",
+        "effects": [
+          {
+            "type": "copy_target_bonus"
+          }
+        ],
+        "targeting": {
+          "target_scope": "same_row",
+          "target_side": "opposing"
+        },
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "Copied bonus",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Naruto/Kakashi Hatake.png",
       "full_card_art": "assets/art/card front/Naruto/Kakashi.png"
     },
@@ -188,7 +208,26 @@
       "base_points": 8,
       "type": "Fighter",
       "effect_name": "Flying Raijin",
-      "effect_text": "“Gains +2 points for each opposing card in the same row, up to a maximum bonus of +6.”",
+      "effect_text": "Gains +2 points for each opposing card in the same row, up to a maximum bonus of +6.",
+      "ability": {
+        "id": "minato_flying_raijin",
+        "name": "Flying Raijin",
+        "description": "Gains +2 bonus points for each opposing character in his row, up to a maximum bonus of +6.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "add_current_points_per_opposing_character",
+            "amount": 2,
+            "max_amount": 6
+          }
+        ],
+        "activation_limit": "continuous",
+        "presentation": {
+          "floating_text": "+2 per opposing character (max +6)",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Naruto/Madara Uchiha.png",
       "full_card_art": "assets/art/card front/Naruto/Minato.png"
     },
@@ -208,7 +247,32 @@
       "base_points": 5,
       "type": "Regular",
       "effect_name": "Shadow Possession",
-      "effect_text": "Removes the bonus points from one card in the same row. Cannot target GOAT cards.",
+      "effect_text": "Removes all bonus points from one opposing character in the same row. Cannot target GOAT cards.",
+      "ability": {
+        "id": "shikamaru_shadow_possession_remove_bonus",
+        "name": "Shadow Possession",
+        "description": "Select one opposing character in the same row that currently has bonus points. Remove all bonus points from that character. GOAT cards cannot be targeted.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "remove_target_bonus"
+          }
+        ],
+        "targeting": {
+          "target_scope": "same_row",
+          "target_side": "opposing",
+          "allowed_types": [],
+          "excluded_types": [
+            "GOAT"
+          ]
+        },
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "Shadow Possession",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Naruto/Shikamaru_Nara.jpg",
       "full_card_art": "assets/art/card front/Naruto/Shikamaru_Nara.png"
     },
@@ -284,7 +348,53 @@
       "base_points": 8,
       "type": "Dynamic Duo",
       "effect_name": "One For All: United Front",
-      "effect_text": "If Deku is placed directly next to Bakugo in the same row, he gains +5 points. He also gains +1 point for each allied Fighter in that row.",
+      "effect_text": "Gains +5 points while an allied Bakugo is directly adjacent in the same row. Also gains +1 point for each allied Fighter in the row.",
+      "abilities": [
+        {
+          "id": "mha_01_united_front_bakugo_adjacency",
+          "name": "One For All: United Front",
+          "description": "Gains +5 points while an allied Bakugo is directly adjacent in the same row.",
+          "trigger": "on_reveal",
+          "conditions": [
+            {
+              "type": "adjacent_character",
+              "character": "mha_02"
+            }
+          ],
+          "effects": [
+            {
+              "type": "add_current_points",
+              "amount": 5
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+5 beside Bakugo",
+            "animation": "points_gain"
+          }
+        },
+        {
+          "id": "mha_01_united_front_fighter_synergy",
+          "name": "One For All: United Front",
+          "description": "Gains +1 point for each allied Fighter in the same row.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "add_current_points_per_friendly_type",
+              "amount": 1,
+              "target_type": "Fighter",
+              "include_self": true,
+              "require_revealed": false
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+1 per allied Fighter",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/My Hero Academia/Izuku_Midoriya_Deku.jpg",
       "full_card_art": "assets/art/card front/MHA/Midoriya.png"
     },
@@ -293,8 +403,33 @@
       "name": "Katsuki Bakugo",
       "base_points": 7,
       "type": "Dynamic Duo",
-      "effect_name": "I've Got Your Back!",
-      "effect_text": "If Bakugo is placed directly next to Deku in the same row, he gains +5 points.",
+      "effect_name": "Explosive Duo",
+      "effect_text": "Gains +5 bonus points while an allied Deku is directly adjacent in the same row.",
+      "abilities": [
+        {
+          "id": "mha_02_explosive_duo_adjacency",
+          "name": "Explosive Duo",
+          "description": "Gains +5 bonus points while an allied Deku is directly to Bakugo's left or right in the same row.",
+          "trigger": "on_reveal",
+          "conditions": [
+            {
+              "type": "adjacent_character",
+              "character": "mha_01"
+            }
+          ],
+          "effects": [
+            {
+              "type": "add_current_points",
+              "amount": 5
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+5 beside Deku",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/My Hero Academia/Katsuki_Bakugo.jpg",
       "full_card_art": "assets/art/card front/MHA/Bakugo.png"
     },
@@ -325,6 +460,24 @@
       "type": "Fighter",
       "effect_name": "Number One, No Matter What",
       "effect_text": "If Endeavor is the first card placed in an otherwise empty row, he gains +4 points.",
+      "ability": {
+        "id": "mha_05_hellflame_first_in_empty_row",
+        "name": "Hellflame",
+        "description": "If Endeavor is the first card placed in an otherwise empty row, he gains +4 bonus points.",
+        "trigger": "on_first_placement_in_row",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "add_current_points",
+            "amount": 4
+          }
+        ],
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "+4",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/My Hero Academia/Endeavor.jpg",
       "full_card_art": "assets/art/card front/MHA/Endeavor.png"
     },
@@ -344,7 +497,7 @@
       "base_points": 4,
       "type": "Regular",
       "effect_name": "Deadeye",
-      "effect_text": "De volgende kaart in de rij krijgt -3 punten als deze vijandelijk is.",
+      "effect_text": "The next card in the row gets -3 points if it is an opposing card.",
       "image": "assets/art/characters/My Hero Academia/Minoru_Mineta.jpg",
       "full_card_art": "assets/art/card front/MHA/Lady_Nagant.png"
     },
@@ -354,9 +507,32 @@
       "base_points": 5,
       "type": "Regular",
       "effect_name": "Zero Gravity",
-      "effect_text": "Verwijder maximaal 3 bonuspunten van één vijandelijke kaart. De basispunten blijven gewoon staan.",
+      "effect_text": "Remove up to 3 bonus points from one opposing card. Base points remain unchanged.",
       "image": "assets/art/characters/My Hero Academia/Ochaco_Uraraka.jpg",
-      "full_card_art": "assets/art/card front/MHA/Keigo.png"
+      "full_card_art": "assets/art/card front/MHA/Keigo.png",
+      "abilities": [
+        {
+          "id": "keigo_zero_gravity",
+          "name": "Zero Gravity",
+          "description": "Remove up to 3 bonus points from one opposing character in the same row. Base points remain unchanged.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "remove_target_bonus",
+              "amount": 3
+            }
+          ],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "-3 Bonus",
+            "animation": "elimination"
+          },
+          "target_scope": "same_row",
+          "target_side": "opposing",
+          "allowed_types": []
+        }
+      ]
     },
     {
       "id": "mha_09",
@@ -503,7 +679,7 @@
             "amount": 3
           }
         ],
-        "activation_limit": "once_per_card_per_match",
+        "activation_limit": "continuous",
         "presentation": {
           "floating_text": "+3",
           "animation": "points_gain"
@@ -519,6 +695,27 @@
       "type": "Fighter",
       "effect_name": "Bungee Gum",
       "effect_text": "Copies the current bonus points of one opposing character in the same row.",
+      "ability": {
+        "id": "hisoka_bungee_gum_copy_bonus",
+        "name": "Bungee Gum",
+        "description": "Copies the current bonus points of one opposing character in the same row. Hisoka gains the copied amount as bonus points; the target keeps its bonus points.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "copy_target_bonus"
+          }
+        ],
+        "targeting": {
+          "target_scope": "same_row",
+          "target_side": "opposing"
+        },
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "Copied bonus",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Hunter x Hunter/Hisoka.jpg",
       "full_card_art": "assets/art/card front/HxH/Hisoka.png"
     },
@@ -540,7 +737,32 @@
       "effect_name": "100-Type Guanyin Bodhisattva",
       "effect_text": "Reduces the points of every opposing character in his row by 2.",
       "image": "assets/art/characters/Hunter x Hunter/Isaac_Netero.jpg",
-      "full_card_art": "assets/art/card front/HxH/Isaac_Netero.png"
+      "full_card_art": "assets/art/card front/HxH/Isaac_Netero.png",
+      "abilities": [
+        {
+          "id": "hxh_06_100_type_guanyin",
+          "name": "100-Type Guanyin Bodhisattva",
+          "description": "Reduces the base points of every opposing character already in his row when he is revealed by 2.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "reduce_target_base_points",
+              "amount": 2
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "opposing",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "Guanyin",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "hxh_07",
@@ -558,17 +780,63 @@
       "base_points": 6,
       "type": "Fighter",
       "effect_name": "Chain Jail",
-      "effect_text": "Reduces the points of one opposing Fighter card in the same row by 2.",
+      "effect_text": "Reduces the base points of one opposing Fighter card in the same row by 2.",
       "image": "assets/art/characters/Hunter x Hunter/Kurapika.jpg",
-      "full_card_art": "assets/art/card front/HxH/Kurapika.png"
+      "full_card_art": "assets/art/card front/HxH/Kurapika.png",
+      "abilities": [
+        {
+          "id": "kurapika_chain_jail",
+          "name": "Chain Jail",
+          "description": "Reduces the base points of one opposing Fighter card in the same row by 2.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "reduce_target_base_points",
+              "amount": 2
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "opposing",
+            "allowed_types": [
+              "Fighter"
+            ]
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "Chain Jail",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "hxh_09",
       "name": "Illumi",
       "base_points": 5,
       "type": "Regular",
-      "effect_name": "Needle",
-      "effect_text": "Gains +2 points if there are three other friendly characters in his row.",
+      "effect_name": "Needle Control",
+      "effect_text": "If Illumi has at least 3 other allied characters in his row, he gains +2 bonus points for each of them.",
+      "ability": {
+        "id": "hxh_09_needle_control",
+        "name": "Needle Control",
+        "description": "If Illumi has at least 3 other allied characters in his row, he gains +2 bonus points for each of them.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "add_current_points_per_friendly_character",
+            "amount": 2,
+            "min_count": 3
+          }
+        ],
+        "activation_limit": "continuous",
+        "presentation": {
+          "floating_text": "+2 per ally (min 3)",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Hunter x Hunter/Illumi.png",
       "full_card_art": "assets/art/card front/HxH/Illumi.png"
     },
@@ -576,6 +844,30 @@
       "id": "hxh_10",
       "name": "Leorio Paradinight",
       "base_points": 5,
+      "abilities": [
+        {
+          "id": "leorio_emergency_treatment",
+          "name": "Emergency Treatment",
+          "description": "Revives one friendly card eliminated in the same row",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "revive_target"
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "friendly",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "REVIVE",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "type": "Regular",
       "effect_name": "Emergency Treatment",
       "effect_text": "Revives one eliminated friendly character in the same row, restoring its original points and ability.",
@@ -590,7 +882,31 @@
       "effect_name": "Warrior of Liberation",
       "effect_text": "Luffy ignores all opposing abilities that would eliminate, weaken, move, or disable him. Eliminates one opposing card in his row, regardless of card type.",
       "image": "assets/art/characters/One Piece/Monkey_D_Luffy.jpg",
-      "full_card_art": "assets/art/card front/One_Piece/Monkey_D_Luffy.png"
+      "full_card_art": "assets/art/card front/One_Piece/Monkey_D_Luffy.png",
+      "abilities": [
+        {
+          "id": "luffy_warrior_of_liberation_eliminate",
+          "name": "Warrior of Liberation",
+          "description": "Eliminates one opposing card in his row, regardless of card type.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "eliminate_target"
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "opposing",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "WARRIOR OF LIBERATION",
+            "animation": "elimination"
+          }
+        }
+      ]
     },
     {
       "id": "onepiece_02",
@@ -654,7 +970,7 @@
             "amount": 3
           }
         ],
-        "activation_limit": "once_per_card_per_match",
+        "activation_limit": "continuous",
         "presentation": {
           "floating_text": "+3",
           "animation": "points_gain"
@@ -871,7 +1187,7 @@
             "amount": 3
           }
         ],
-        "activation_limit": "once_per_card_per_match",
+        "activation_limit": "continuous",
         "presentation": {
           "floating_text": "+3",
           "animation": "points_gain"
@@ -887,6 +1203,25 @@
       "type": "GOAT",
       "effect_name": "Stardust Breaker",
       "effect_text": "Gains +3 points for each opposing Fighter card in his row.",
+      "ability": {
+        "id": "dragonball_03_ultimate_fusion",
+        "name": "Ultimate Fusion",
+        "description": "Gains +3 bonus points for each opposing Fighter in his row.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "add_current_points_per_opposing_character",
+            "amount": 3,
+            "target_type": "Fighter"
+          }
+        ],
+        "activation_limit": "continuous",
+        "presentation": {
+          "floating_text": "+3 per opposing Fighter",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Dragon Ball/Gogeta (Super Saiyan Blue).jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Gogeta.png"
     },
@@ -931,7 +1266,29 @@
       "effect_name": "Legendary Saiyan",
       "effect_text": "Gains +2 points for each opposing Fighter card played in his row after Broly, with no maximum bonus.",
       "image": "assets/art/characters/Dragon Ball/Broly.jpg",
-      "full_card_art": "assets/art/card front/Dragon_Ball/Broly.png"
+      "full_card_art": "assets/art/card front/Dragon_Ball/Broly.png",
+      "abilities": [
+        {
+          "id": "dragonball_05_legendary_saiyan",
+          "name": "Legendary Saiyan",
+          "description": "Gains +2 points for each opposing Fighter card played in his row after Broly, with no maximum bonus.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "add_current_points_per_opposing_type_after_owner",
+              "amount": 2,
+              "target_type": "Fighter",
+              "require_revealed": false
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+2 per opposing Fighter",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "dragonball_06",
@@ -948,8 +1305,30 @@
       "name": "Gohan (Beast)",
       "base_points": 8,
       "type": "Fighter",
-      "effect_name": "Hidden Potential Unlocked",
-      "effect_text": "Gains +3 points if an opposing card in his row has more points than Gohan before ability bonuses.",
+      "effect_name": "Beast Instinct",
+      "effect_text": "Gains +3 bonus points if at least one opposing character in his row has more base points than Gohan Beast.",
+      "ability": {
+        "id": "dragonball_07_beast_instinct",
+        "name": "Beast Instinct",
+        "description": "Gains +3 bonus points if at least one opposing character in his row has more base points than Gohan Beast.",
+        "trigger": "on_reveal",
+        "conditions": [
+          {
+            "type": "opposing_card_higher_base_points"
+          }
+        ],
+        "effects": [
+          {
+            "type": "add_current_points",
+            "amount": 3
+          }
+        ],
+        "activation_limit": "continuous",
+        "presentation": {
+          "floating_text": "+3 Beast Instinct",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Dragon Ball/Gohan_Beast.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Gohan.png"
     },
@@ -1006,7 +1385,31 @@
       "effect_name": "Temporal Rewind",
       "effect_text": "Revives one friendly card eliminated in the same row, restoring its original points and ability.",
       "image": "assets/art/characters/Dragon Ball/Yamcha.jpg",
-      "full_card_art": "assets/art/card front/Dragon_Ball/Whis.png"
+      "full_card_art": "assets/art/card front/Dragon_Ball/Whis.png",
+      "abilities": [
+        {
+          "id": "whis_temporal_rewind",
+          "name": "Temporal Rewind",
+          "description": "Revives one friendly card eliminated in the same row",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "revive_target"
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "friendly",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "REVIVE",
+            "animation": "points_gain"
+          }
+        }
+      ]
     }
   ]
 }
