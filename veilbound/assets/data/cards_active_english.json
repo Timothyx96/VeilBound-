@@ -29,7 +29,8 @@
           "activation_limit": "once_per_card_per_match",
           "presentation": {
             "floating_text": "RASEN-SHURIKEN",
-            "animation": "elimination"
+            "animation": "elimination",
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Naruto_Elimination.mp3"
           }
         },
         {
@@ -1225,7 +1226,8 @@
           "activation_limit": "once_per_card_per_match",
           "presentation": {
             "floating_text": "Clutch",
-            "animation": "points_gain"
+            "animation": "points_gain",
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Robin_Clutch.mp3"
           }
         }
       ]
@@ -1259,7 +1261,8 @@
           "activation_limit": "once_per_card_per_match",
           "presentation": {
             "floating_text": "ROOM",
-            "animation": "points_gain"
+            "animation": "points_gain",
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Law_on_Move.mp3"
           }
         }
       ]

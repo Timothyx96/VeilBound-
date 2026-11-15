@@ -167,7 +167,10 @@ class Room:
         if pending:
             pending["selection_ready"] = True
         if self.engine.state.phase == GamePhase.REVEAL:
-            if self.engine.state.get("pending_crazy_slots"):
+            if (self.engine.state.get("pending_elimination")
+                    or self.engine.state.get("pending_crazy_slots")):
+                # Keep the room unlocked for the interactive ability, but do
+                # not consume another final-reveal position until it resolves.
                 await self.broadcast([])
             else:
                 await self._start_next_final_reveal()
@@ -247,6 +250,7 @@ class Room:
 
     async def _start_next_final_reveal(self) -> None:
         if (not self.ready or self.pending_reveal_id is not None
+                or self.engine.state.get("pending_elimination")
                 or self.engine.state.get("pending_crazy_slots")):
             return
         result = self.engine.reveal_next_card()

@@ -2857,6 +2857,8 @@ class Renderer:
                 )
             if bool(card.get("immune_to_elimination", False)):
                 self._draw_immunity_shield(screen, rect)
+            if row.get("abilities_disabled", False):
+                self._draw_sealed_card_effect(screen, rect)
             return
         # Persistent per-instance point indicator: the cached face underneath
         # uses roster art, while this overlay shows the live total and any
@@ -2891,6 +2893,19 @@ class Renderer:
             )
         if bool(card.get("immune_to_elimination", False)):
             self._draw_immunity_shield(screen, rect)
+        if row.get("abilities_disabled", False):
+            self._draw_sealed_card_effect(screen, rect)
+
+    @staticmethod
+    def _draw_sealed_card_effect(screen, rect: pygame.Rect) -> None:
+        """Give every card in a silenced row a readable red seal treatment."""
+        tint = pygame.Surface(rect.size, pygame.SRCALPHA)
+        tint.fill((168, 24, 42, 28))
+        screen.blit(tint, rect.topleft)
+        pygame.draw.rect(screen, (221, 48, 64), rect, width=3, border_radius=6)
+        inner = rect.inflate(-8, -8)
+        if inner.width > 0 and inner.height > 0:
+            pygame.draw.rect(screen, (244, 92, 99, 180), inner, width=1, border_radius=4)
 
     @staticmethod
     def _draw_immunity_shield(screen, rect: pygame.Rect) -> None:

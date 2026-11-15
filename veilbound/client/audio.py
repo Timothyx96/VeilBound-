@@ -66,6 +66,7 @@ class AudioManager:
         self.crazy_slots_chime_sound: pygame.mixer.Sound | None = None
         self._crazy_slots_last_tick: tuple[str, float] | None = None
         self.ability_sounds: dict[str, pygame.mixer.Sound | None] = {}
+        self.character_reveal_sounds: dict[str, pygame.mixer.Sound | None] = {}
         self.luffy_haki_sounds: tuple[tuple[pygame.mixer.Sound | None, float], ...] = ()
         self.luffy_laugh_sound: pygame.mixer.Sound | None = None
         self.all_might_reveal_sound: pygame.mixer.Sound | None = None
@@ -110,6 +111,14 @@ class AudioManager:
         self.all_might_reveal_sound = self._load_sound(
             "assets/sounds/Abillity_Sfx/Ability_Resolution/Allmight_sfx.mp3"
         )
+        self.character_reveal_sounds = {
+            "nico robin": self._load_sound(
+                "assets/sounds/Abillity_Sfx/Ability_Resolution/Robin_Reveal.mp3"
+            ),
+            "trafalgar d. water law": self._load_sound(
+                "assets/sounds/Abillity_Sfx/Ability_Resolution/Law_on_reveal.mp3"
+            ),
+        }
 
         self._start_initial_music()
 
@@ -301,6 +310,10 @@ class AudioManager:
         for event in events:
             if event.kind == "card_revealed":
                 event_id = str(event.data.get("card_id", ""))
+                character_name = str(event.data.get("name", "")).strip().casefold()
+                character_sound = self.character_reveal_sounds.get(character_name)
+                if event_id and character_sound is not None:
+                    self._play_once(("character_reveal", event_id), character_sound)
                 self._play_reveal_once(event_id)
             elif event.kind == "placement":
                 event_id = f"{event.data.get('row_id', '')}:{event.data.get('slot_index', '')}"

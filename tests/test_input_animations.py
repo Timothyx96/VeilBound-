@@ -8,7 +8,7 @@ from veilbound.client.renderer import Renderer
 from veilbound.client.theme import P1, P2_CARD_OUTLINE
 from veilbound.shared.config import GameConfig
 from veilbound.shared.engine import GameEngine
-from veilbound.shared.models import GameEvent, GamePhase
+from veilbound.shared.models import CardInstance, GameEvent, GamePhase
 
 
 class RecordingRenderer:
@@ -231,6 +231,71 @@ def test_final_reveals_wait_for_each_flip_and_finish_before_scoring():
     assert not any(event.kind == "row_scored" for event in renderer.events)
     controller.update(now + 0.21)
     assert [event.kind for event in renderer.events].count("row_scored") == 1
+
+
+def test_kite_in_last_row_slot_pauses_final_reveal_then_resumes_to_scoring():
+    engine = GameEngine(
+        GameConfig(
+            deck_size=40,
+            initial_hand_size=5,
+            draw_per_turn=1,
+            capacity_min=2,
+            capacity_max=2,
+            rounds_per_match=2,
+        ),
+        seed=15,
+    )
+    ordinary = next(
+        definition for definition in engine.cards.values()
+        if definition.id != "hxh_07"
+    )
+    for row_index, row in enumerate(engine.state.rows):
+        for slot_index in range(row.capacity):
+            if row_index == 0 and slot_index == row.capacity - 1:
+                row.slots[slot_index] = CardInstance(
+                    "kite-last-slot", "hxh_07", "player-1",
+                    base_points=engine.cards["hxh_07"].base_points,
+                    current_points=engine.cards["hxh_07"].base_points,
+                )
+            else:
+                row.slots[slot_index] = CardInstance(
+                    f"revealed-{row_index}-{slot_index}", ordinary.id, "player-1",
+                    revealed=True, base_points=ordinary.base_points,
+                    current_points=ordinary.base_points,
+                )
+    engine.state.phase = GamePhase.REVEAL
+    engine.state.final_reveal_active = True
+    engine.state.row_index = 0
+
+    renderer = RecordingRenderer()
+    controller = InputController(engine, renderer)
+    controller.update(0.0)
+    assert controller.animation_stage == "card_flip"
+    assert engine.state.get("pending_crazy_slots", {}).get("owner_card_id") == "kite-last-slot"
+    assert [event.data["card_id"] for event in renderer.events if event.kind == "card_revealed"] == [
+        "kite-last-slot",
+    ]
+
+    controller.update(0.11)
+    controller.update(0.22)
+    controller.update(0.33)
+    assert renderer.crazy_slots_overlay_ready is True
+    assert renderer.crazy_slots_spin_ready is True
+    assert engine.state.phase == GamePhase.REVEAL
+
+    # Resolve the same interaction the full-screen Crazy Slots panel owns.
+    pending = engine.state.pending_crazy_slots
+    controller._request_crazy_slots_spin(pending)
+    assert engine.state.pending_crazy_slots["status"] == "spinning"
+    controller._continue_crazy_slots(engine.state.pending_crazy_slots)
+
+    assert engine.state.get("pending_crazy_slots") is None
+    assert engine.state.final_reveal_active is False
+    assert engine.state.phase == GamePhase.ROW_SCORING
+    assert any(event.kind == "final_reveal_complete" for event in renderer.events)
+
+    controller.update(0.4)
+    assert any(event.kind == "row_scored" for event in renderer.events)
 
 
 def test_placement_reveal_uses_card_flip_and_information_stages():

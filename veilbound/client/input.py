@@ -350,17 +350,24 @@ class InputController:
         if pending_crazy:
             status = str(pending_crazy.get("status", ""))
             if status == "awaiting_spin":
-                if self.remote and self.engine.remote_locked:
-                    return
-                if (self.remote and self._crazy_slots_spin_requested_for
-                        == str(pending_crazy.get("owner_card_id", ""))):
-                    return
                 if self.animation_stage == "reveal_gap":
                     if now < self._deadline():
+                        return
+                    if self.remote:
+                        # A revealed card is acknowledged only after its flip,
+                        # information, and reveal-gap presentation completes.
+                        # The server keeps the room locked until both peers
+                        # acknowledge, so do this before waiting for unlock.
+                        self._reveal_next_card(now)
                         return
                     self.animation_stage = None
                     self.animation_deadline = None
                 elif self.animation_stage is not None:
+                    return
+                if self.remote and self.engine.remote_locked:
+                    return
+                if (self.remote and self._crazy_slots_spin_requested_for
+                        == str(pending_crazy.get("owner_card_id", ""))):
                     return
                 self.renderer.crazy_slots_overlay_ready = True
                 self.renderer.crazy_slots_spin_ready = True
@@ -401,6 +408,13 @@ class InputController:
         # Let the active reveal gap / duo animation finish before enabling any
         # target menu; remote clients continue the reveal-ack handshake too.
         if self.engine.state.get("pending_elimination"):
+            pending = self.engine.state.pending_elimination
+            if self.remote and pending.get("selection_ready"):
+                # The reveal acknowledgement has released the server lock;
+                # leave the target-selection state idle until the owner picks.
+                self.animation_stage = None
+                self.animation_deadline = None
+                return
             allowed_stages = {"reveal_gap", "duo_energy"}
             if self.remote:
                 allowed_stages.add("await_reveal")

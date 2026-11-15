@@ -28,6 +28,10 @@ def resolve_eliminations(engine, max_steps: int = 64) -> None:
         pending = engine.state.get("pending_elimination")
         if not pending:
             return
+        if not pending.get("selection_ready", True):
+            # Interactive reveal abilities keep their target menu disabled
+            # until the reveal presentation and acknowledgement have ended.
+            return
         targets = pending.get("valid_targets") or []
         assert targets, "an armed elimination must advertise valid targets"
         target = targets[0]

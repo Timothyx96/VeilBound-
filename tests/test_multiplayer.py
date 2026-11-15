@@ -9,9 +9,10 @@ import pytest
 
 from veilbound.client.menu import MenuScreen, normalize_room_code
 from veilbound.client.network import RemoteGameEngine
+from veilbound.client.input import InputController
 from veilbound.shared.config import GameConfig
 from veilbound.shared.engine import GameEngine
-from veilbound.shared.models import GamePhase
+from veilbound.shared.models import ActionResult, GamePhase
 from veilbound.shared.protocol import MAX_MESSAGE_BYTES, decode_message, encode_message
 from veilbound.server.rooms import Room
 
@@ -181,6 +182,213 @@ def test_remote_engine_rebuilds_masked_state_and_gates_input():
     #__PART4__
 
 
+def test_remote_kite_reveal_ack_completes_before_crazy_slots_unlocks():
+    authority = fixed_engine()
+    authority.state.phase = GamePhase.REVEAL
+    authority.state.final_reveal_active = True
+    authority.state.pending_crazy_slots = {
+        "owner_id": "player-1",
+        "owner_card_id": "kite-card",
+        "status": "awaiting_spin",
+        "outcomes": [],
+    }
+    connection = StubConnection(player_id="player-1", room_code="ABC123")
+    remote = RemoteGameEngine(connection)
+
+    class AbilityRenderer:
+        animation_ms = {
+            "card_flip_ms": 100,
+            "delay_between_reveals_ms": 100,
+            "card_information_ms": 100,
+        }
+
+        def __init__(self):
+            self.events = []
+            self.crazy_slots_overlay_ready = False
+            self.crazy_slots_spin_ready = False
+
+        def note_events(self, events):
+            self.events.extend(events)
+
+        @property
+        def duo_animation_pending(self):
+            return False
+
+        @property
+        def duo_animation_deadline(self):
+            return 0.0
+
+    renderer = AbilityRenderer()
+    controller = InputController(remote, renderer)
+    push_update(connection, authority, "player-1", locked=True, events=[{
+        "kind": "card_revealed",
+        "message": "Kite is revealed.",
+        "data": {"card_id": "kite-card", "row_id": authority.state.rows[0].id,
+                 "slot_index": 1, "reveal_id": "1:KITE"},
+    }])
+
+    controller.update(0.0)
+    controller.update(0.11)
+    controller.update(0.22)
+    controller.update(0.33)
+    assert controller.animation_stage == "await_reveal"
+    assert renderer.crazy_slots_overlay_ready is False
+    assert [message for message in connection.sent if message.get("type") == "reveal_ack"] == [
+        {"type": "reveal_ack", "reveal_id": "1:KITE"},
+    ]
+
+    # The overlay must wait for both peers' reveal acknowledgments, then become
+    # interactive without losing the pending Crazy Slots state.
+    controller.update(0.34)
+    assert renderer.crazy_slots_spin_ready is False
+    push_update(connection, authority, "player-1", locked=False)
+    controller.update(0.4)
+    assert controller.animation_stage is None
+    assert remote.state.get("pending_crazy_slots", {}).get("owner_card_id") == "kite-card"
+    assert renderer.crazy_slots_overlay_ready is True
+    assert renderer.crazy_slots_spin_ready is True
+
+
+def test_server_resumes_final_reveal_only_after_kite_finishes_crazy_slots(monkeypatch):
+    room = Room("KITE01")
+    writers = {"player-1": FakeWriter(), "player-2": FakeWriter()}
+    asyncio.run(room.attach("player-1", writers["player-1"]))  # type: ignore[arg-type]
+    asyncio.run(room.attach("player-2", writers["player-2"]))  # type: ignore[arg-type]
+    room.engine.state.phase = GamePhase.REVEAL
+    room.engine.state.final_reveal_active = True
+    room.engine.state.pending_crazy_slots = {
+        "owner_id": "player-1",
+        "owner_card_id": "kite-card",
+        "status": "awaiting_spin",
+    }
+    room.pending_reveal_id = "1:KITE"
+    reveal_calls = []
+
+    def reveal_next_card():
+        reveal_calls.append("reveal")
+        return ActionResult(False, "No next card until Crazy Slots resolves.")
+
+    def complete_crazy_slots(player_id):
+        assert player_id == "player-1"
+        room.engine.state.pending_crazy_slots = None
+        return ActionResult(True)
+
+    monkeypatch.setattr(room.engine, "reveal_next_card", reveal_next_card)
+    monkeypatch.setattr(room.engine, "complete_crazy_slots", complete_crazy_slots)
+
+    async def acknowledge_then_complete():
+        for player_id in ("player-1", "player-2"):
+            await room.handle(room.peers[player_id], {
+                "type": "reveal_ack", "reveal_id": "1:KITE",
+            })
+        assert room.pending_reveal_id is None
+        assert room.engine.state.get("pending_crazy_slots") is not None
+        assert reveal_calls == []
+        room.engine.state.pending_crazy_slots["status"] = "spinning"
+        await room.handle(room.peers["player-1"], {"type": "crazy_slots_complete"})
+
+    asyncio.run(acknowledge_then_complete())
+    assert reveal_calls == ["reveal"]
+
+
+def test_server_holds_final_reveal_until_interactive_target_resolves(monkeypatch):
+    room = Room("PAUSE1")
+    writers = {"player-1": FakeWriter(), "player-2": FakeWriter()}
+    asyncio.run(room.attach("player-1", writers["player-1"]))  # type: ignore[arg-type]
+    asyncio.run(room.attach("player-2", writers["player-2"]))  # type: ignore[arg-type]
+    room.engine.state.phase = GamePhase.REVEAL
+    room.engine.state.final_reveal_active = True
+    room.engine.state.pending_elimination = {
+        "attacker_owner_id": "player-1",
+        "effect_type": "move_character",
+        "selection_ready": False,
+    }
+    room.pending_reveal_id = "1:TARGET"
+    calls = []
+
+    def reveal_next_card():
+        calls.append("reveal")
+        return ActionResult(False, "Target selection is still pending.")
+
+    def select_target(row_id, slot_index):
+        assert row_id == "row-1"
+        assert slot_index == 0
+        room.engine.state.pending_elimination = None
+        return ActionResult(True)
+
+    monkeypatch.setattr(room.engine, "reveal_next_card", reveal_next_card)
+    monkeypatch.setattr(room.engine, "select_elimination_target", select_target)
+
+    async def acknowledge_and_resolve():
+        await room.handle(room.peers["player-1"], {
+            "type": "reveal_ack", "reveal_id": "1:TARGET",
+        })
+        await room.handle(room.peers["player-2"], {
+            "type": "reveal_ack", "reveal_id": "1:TARGET",
+        })
+        assert room.engine.state.pending_elimination["selection_ready"] is True
+        assert calls == []
+        await room.handle(room.peers["player-1"], {
+            "type": "select_elimination", "row_id": "row-1", "slot_index": 0,
+        })
+
+    asyncio.run(acknowledge_and_resolve())
+    assert calls == ["reveal"]
+
+
+def test_remote_target_selection_becomes_available_after_reveal_ack():
+    authority = fixed_engine()
+    authority.state.phase = GamePhase.REVEAL
+    authority.state.final_reveal_active = True
+    authority.state.pending_elimination = {
+        "attacker_owner_id": "player-1",
+        "effect_type": "move_character",
+        "selection_ready": False,
+        "valid_targets": [],
+    }
+    connection = StubConnection(player_id="player-1", room_code="ABC123")
+    remote = RemoteGameEngine(connection)
+
+    class AbilityRenderer:
+        animation_ms = {
+            "card_flip_ms": 100,
+            "delay_between_reveals_ms": 100,
+            "card_information_ms": 100,
+        }
+
+        def note_events(self, _events):
+            pass
+
+        @property
+        def duo_animation_pending(self):
+            return False
+
+        @property
+        def duo_animation_deadline(self):
+            return 0.0
+
+    controller = InputController(remote, AbilityRenderer())
+    push_update(connection, authority, "player-1", locked=True, events=[{
+        "kind": "card_revealed",
+        "message": "A target selection ability activates.",
+        "data": {"card_id": "law-card", "row_id": authority.state.rows[0].id,
+                 "slot_index": 0, "reveal_id": "1:LAW"},
+    }])
+    controller.update(0.0)
+    controller.update(0.11)
+    controller.update(0.22)
+    controller.update(0.33)
+    assert controller.animation_stage == "await_reveal"
+    assert any(message.get("type") == "reveal_ack" for message in connection.sent)
+
+    authority.state.pending_elimination["selection_ready"] = True
+    push_update(connection, authority, "player-1", locked=False)
+    controller.update(0.4)
+    assert remote.remote_locked is False
+    assert controller.animation_stage is None
+    assert remote.state.pending_elimination["selection_ready"] is True
+
+
 async def drive_match(room: Room, writers: dict[str, FakeWriter], limit: int = 4000) -> int:
     """Play a full match through the authoritative room as both peers.
 
@@ -211,8 +419,22 @@ async def drive_match(room: Room, writers: dict[str, FakeWriter], limit: int = 4
             await room.handle(room.peers[str(pending["attacker_owner_id"])], {
                 "type": "select_elimination",
                 "row_id": target["row_id"],
-                "slot_index": target["slot_index"],
+                    # Staged Law movement first asks for a destination row;
+                    # -1 is its protocol sentinel until a slot is chosen.
+                    "slot_index": int(target.get("slot_index", -1)),
             })
+            continue
+        pending_crazy = state.get("pending_crazy_slots")
+        if pending_crazy:
+            owner_id = str(pending_crazy["owner_id"])
+            if pending_crazy.get("status") == "awaiting_spin":
+                await room.handle(room.peers[owner_id], {"type": "crazy_slots_spin"})
+            elif pending_crazy.get("status") == "spinning":
+                # The fake peers complete the presentation immediately; the
+                # engine still applies the authoritative outcome exactly once.
+                await room.handle(room.peers[owner_id], {"type": "crazy_slots_complete"})
+            else:
+                raise AssertionError(f"Unexpected Crazy Slots status: {pending_crazy.get('status')}")
             continue
         if phase == GamePhase.PLACEMENT:
             active = state.active_player

@@ -707,25 +707,32 @@ class AbilityManager:
 
     def row_abilities_disabled_for_card(self, row: Any, card: Any, state: Any) -> bool:
         """Apply row-wide ability locks while honoring Luffy's opposing-only immunity."""
+        disabling_sources = [
+            source for source in row.slots
+            if source is not None and not getattr(source, "eliminated", False)
+            and any(
+                ability.id in set(source.get("activated_abilities") or [])
+                or ability.id in set(source.get("resolved_abilities") or [])
+                for ability in (getattr(self.definitions.get(source.definition_id), "abilities", None) or [])
+                if any(effect.type == "disable_row_abilities" for effect in ability.effects)
+            )
+        ]
+        if not disabling_sources:
+            return bool(row.get("abilities_disabled", False)) and not self._row_has_known_seal_source(row)
         if not row.get("abilities_disabled", False):
             return False
         if not self._has_broad_opposing_immunity(card):
             return True
-        found_disable_source = False
-        for source in row.slots:
-            if source is None:
-                continue
-            active_ids = set(source.get("activated_abilities") or [])
-            active_ids.update(source.get("resolved_abilities") or [])
-            source_definition = self.definitions.get(source.definition_id)
-            for ability in (getattr(source_definition, "abilities", None) or []):
-                if (ability.id in active_ids
-                        and any(effect.type == "disable_row_abilities" for effect in ability.effects)):
-                    found_disable_source = True
-                    if source.owner_id == card.owner_id:
-                        return True
-        # Preserve an unknown/legacy row lock if its source cannot be found.
-        return not found_disable_source
+        return any(source.owner_id == card.owner_id for source in disabling_sources)
+
+    def _row_has_known_seal_source(self, row: Any) -> bool:
+        return any(
+            source is not None and any(
+                any(effect.type == "disable_row_abilities" for effect in ability.effects)
+                for ability in (getattr(self.definitions.get(source.definition_id), "abilities", None) or [])
+            )
+            for source in row.slots
+        )
 
     def _has_broad_opposing_immunity(self, card: Any) -> bool:
         definition = self.definitions.get(card.definition_id)
@@ -1983,6 +1990,17 @@ class AbilityManager:
     ) -> list[Any]:
         """Drop invalid contributions and recompute active continuous effects."""
         changed: list[Any] = []
+        for row in state.rows:
+            row.abilities_disabled = any(
+                source is not None and not getattr(source, "eliminated", False)
+                and any(
+                    ability.id in set(source.get("activated_abilities") or [])
+                    or ability.id in set(source.get("resolved_abilities") or [])
+                    for ability in (getattr(self.definitions.get(source.definition_id), "abilities", None) or [])
+                    if any(effect.type == "disable_row_abilities" for effect in ability.effects)
+                )
+                for source in row.slots
+            )
         for row in state.rows:
             for slot in row.slots:
                 if slot is None:

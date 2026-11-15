@@ -4,6 +4,7 @@ import pygame
 
 from veilbound.client.audio import AudioManager
 from veilbound.client.settings import PROJECT_ROOT, load_settings
+from veilbound.shared.definitions import load_card_definitions
 from veilbound.shared.models import GameEvent
 
 
@@ -195,6 +196,57 @@ def test_gon_ability_sfx_is_silent_on_failure_and_plays_on_resolution(monkeypatc
     gon_sounds = [sound for sound in loaded if sound.path.endswith("Gon.mp3")]
     assert len(gon_sounds) == 1
     assert gon_sounds[0].play_count == 1
+
+
+def test_robin_and_law_reveal_sfx_and_character_ability_sfx_play_once(monkeypatch):
+    sound_paths = {
+        "naruto": "assets/sounds/Abillity_Sfx/Ability_Resolution/Naruto_Elimination.mp3",
+        "robin_reveal": "assets/sounds/Abillity_Sfx/Ability_Resolution/Robin_Reveal.mp3",
+        "robin_ability": "assets/sounds/Abillity_Sfx/Ability_Resolution/Robin_Clutch.mp3",
+        "law_reveal": "assets/sounds/Abillity_Sfx/Ability_Resolution/Law_on_reveal.mp3",
+        "law_ability": "assets/sounds/Abillity_Sfx/Ability_Resolution/Law_on_Move.mp3",
+    }
+    assert all((PROJECT_ROOT / path).is_file() for path in sound_paths.values())
+
+    definitions = load_card_definitions()
+    assert definitions["naruto_01"].ability.presentation.sound == sound_paths["naruto"]
+    assert definitions["onepiece_05"].ability.presentation.sound == sound_paths["robin_ability"]
+    assert definitions["onepiece_06"].ability.presentation.sound == sound_paths["law_ability"]
+
+    monkeypatch.setattr(pygame.mixer, "get_init", lambda: (44100, -16, 2))
+    monkeypatch.setattr(AudioManager, "_synthesize_haki_layer", staticmethod(lambda *_args: None))
+    monkeypatch.setattr(AudioManager, "_synthesize_tone", staticmethod(lambda *_args, **_kwargs: None))
+    monkeypatch.setattr(AudioManager, "_amplify_sound", staticmethod(lambda sound, gain: sound))
+    monkeypatch.setattr(AudioManager, "_load_sound", lambda _self, path: FakeSound(path))
+    audio = AudioManager({"card_reveal": {"enabled": False}})
+    ability_sounds = {}
+    original_load_sound = audio._load_sound
+
+    def load_ability_sound(path):
+        if path not in ability_sounds:
+            ability_sounds[path] = original_load_sound(path)
+        return ability_sounds[path]
+
+    monkeypatch.setattr(audio, "_load_sound", load_ability_sound)
+
+    robin_reveal = GameEvent("card_revealed", "Robin is revealed", {
+        "card_id": "robin-card", "name": "Nico Robin",
+    })
+    law_reveal = GameEvent("card_revealed", "Law is revealed", {
+        "card_id": "law-card", "name": "Trafalgar D. Water Law",
+    })
+    resolved_events = tuple(GameEvent("ability_resolved", "Ability resolved", {
+        "resolution_id": f"resolution-{key}", "sound": sound_paths[key],
+    }) for key in ("naruto", "robin_ability", "law_ability"))
+
+    audio.on_events((robin_reveal, law_reveal, robin_reveal, law_reveal,
+                     *resolved_events, *resolved_events))
+
+    assert audio.character_reveal_sounds["nico robin"].path == sound_paths["robin_reveal"]
+    assert audio.character_reveal_sounds["nico robin"].play_count == 1
+    assert audio.character_reveal_sounds["trafalgar d. water law"].path == sound_paths["law_reveal"]
+    assert audio.character_reveal_sounds["trafalgar d. water law"].play_count == 1
+    assert all(sound.play_count == 1 for sound in ability_sounds.values())
 
 
 def test_missing_sound_or_unavailable_mixer_is_safe(monkeypatch, tmp_path):
