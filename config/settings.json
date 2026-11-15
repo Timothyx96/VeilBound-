@@ -43,7 +43,7 @@
   "audio": {
     "background_music": {
       "enabled": true,
-      "sound": "assets/sounds/Background_music/Intro_Lobby_music.mp3",
+      "sound": "assets/sounds/Background_music/Intro_Lobby_New.mp3",
       "volume": 0.1,
       "loop": true
     },

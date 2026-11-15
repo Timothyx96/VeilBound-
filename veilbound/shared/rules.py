@@ -385,7 +385,12 @@ class GameEngine:
             reduction_id = f"{ability.id}:{dabi.id}:{placed_card.id}"
             if (amount > 0 and not self.elimination.is_protected_from_opposing_ability(
                     placed_card, dabi)):
-                self.abilities.reduce_base_points(placed_card, reduction_id, amount)
+                if self.abilities.reduce_base_points(placed_card, reduction_id, amount):
+                    self._eliminate_if_base_is_zero(
+                        placed_card, ability.id,
+                    )
+                    if placed_card.eliminated:
+                        return
 
     def reveal_next_card(self) -> ActionResult:
         state = self.state
@@ -457,6 +462,7 @@ class GameEngine:
                 slot_index=int(pending.get("slot_index", 0)),
                 reason="owner_unavailable",
             )
+            self._resume_reveal_after_target_selection()
             return ActionResult(True, events=tuple(state.events[event_start:]))
 
         result_number = self.roll_kite_slot(state, pending.get("outcomes", []))
@@ -522,6 +528,7 @@ class GameEngine:
                 slot_index=int(pending.get("slot_index", 0)),
                 reason="owner_unavailable",
             )
+            self._resume_reveal_after_target_selection()
             return ActionResult(True, events=tuple(state.events[event_start:]))
 
         event_start = len(state.events)
@@ -545,6 +552,7 @@ class GameEngine:
                 slot_index=slot_index,
                 reason="invalid_result",
             )
+            self._resume_reveal_after_target_selection()
             return ActionResult(True, events=tuple(state.events[event_start:]))
         spin_id = str(pending.get("spin_id", ""))
         result_name = str(outcome.get("name", f"Outcome {result_number}"))
@@ -561,6 +569,7 @@ class GameEngine:
                 slot_index=slot_index,
                 reason="row_unavailable",
             )
+            self._resume_reveal_after_target_selection()
             return ActionResult(True, events=tuple(state.events[event_start:]))
 
         result_effects = outcome.get("effects", [])
@@ -1151,7 +1160,6 @@ class GameEngine:
             )
             self._eliminate_if_base_is_zero(
                 target_card, str(pending.get("ability_id", "")),
-                source_card=attacker_card,
             )
         else:
             # Resolve elimination through the centralized elimination function.
@@ -1198,6 +1206,9 @@ class GameEngine:
                 if effect_type == "copy_target_bonus"
                 else str(pending.get("floating_text", ""))
             ),
+        )
+        self._eliminate_zero_base_point_cards(
+            str(pending.get("ability_id", "")),
         )
         state.pending_elimination = None
         if followup_event_start is not None:
@@ -1379,6 +1390,9 @@ class GameEngine:
             target_name=target_name,
             floating_text=str(pending.get("floating_text", "")),
         )
+        self._eliminate_zero_base_point_cards(
+            str(pending.get("ability_id", "")),
+        )
         state.pending_elimination = None
         # The destination uses the exact same row-entry pipeline as a normal
         # play. Its preceding-card reveal is processed first; source-row checks
@@ -1468,9 +1482,8 @@ class GameEngine:
 
     def _eliminate_if_base_is_zero(
         self, card: CardInstance, ability_id: str,
-        *, source_card: CardInstance | None = None,
     ) -> bool:
-        """Eliminate a live card as soon as an ability leaves its base at zero."""
+        """Apply universal state-based elimination when base points hit zero."""
         if card.eliminated or self.abilities._base_points(card) > 0:
             return False
         located = next((
@@ -1484,9 +1497,7 @@ class GameEngine:
         row, slot_index = located
         definition = self.cards.get(card.definition_id)
         character_name = str(getattr(definition, "name", "Unknown character"))
-        if not self.elimination.eliminate_target(
-            self.state, card, source_card or card, by_ability=source_card is not None,
-        ):
+        if not self.elimination.eliminate_zero_base_point_card(self.state, card):
             return False
         self._award_trunks_saiyan_resolve(row, card)
         self.abilities.recalculate_after_elimination(self.state, card)
@@ -1505,6 +1516,16 @@ class GameEngine:
             },
         )
         return True
+
+    def _eliminate_zero_base_point_cards(self, ability_id: str) -> None:
+        """Sweep every live board card after a base-point mutation sequence."""
+        for row in self.state.rows:
+            for card in row.slots:
+                if (card is not None and not card.eliminated
+                        and self.abilities._base_points(card) <= 0):
+                    self._eliminate_if_base_is_zero(
+                        card, ability_id,
+                    )
 
     def _award_trunks_saiyan_resolve(self, row, eliminated_card: CardInstance) -> None:
         """Grant +5 per same-row friendly elimination to each active Trunks."""
@@ -1988,17 +2009,7 @@ class GameEngine:
                 sound=activation.ability.presentation.sound,
                 target_card_id=activation.target_card_id,
             )
-            owner_card = next((
-                slot for row in self.state.rows for slot in row.slots
-                if slot is not None and slot.id == activation.owner_card_id
-            ), None)
-            if (owner_card is not None and not any(
-                effect.type == "copy_next_opposing_base_points"
-                for effect in activation.ability.effects
-            )):
-                self._eliminate_if_base_is_zero(
-                    owner_card, activation.ability.id, source_card=owner_card,
-                )
+            self._eliminate_zero_base_point_cards(activation.ability.id)
 
     def _emit_ability_resolved(
         self,

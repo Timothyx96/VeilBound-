@@ -127,6 +127,25 @@ class EliminationManager:
         if (by_ability and self.is_protected_from_opposing_ability(
                 target_card, attacker_card)):
             return False
+        self._mark_eliminated(state, target_card)
+        return True
+
+    def eliminate_zero_base_point_card(self, state, target_card) -> bool:
+        """Apply the state-based death rule when a live card's base reaches zero."""
+        if getattr(target_card, "eliminated", False):
+            return False
+        base_points = target_card.get("base_points")
+        if isinstance(base_points, bool) or not isinstance(base_points, (int, float)):
+            return False
+        if base_points > 0:
+            return False
+        # Zero-base death is a game-state rule, not an opposing elimination
+        # ability, so immunity to ability eliminations cannot leave the card
+        # alive at zero.
+        self._mark_eliminated(state, target_card)
+        return True
+
+    def _mark_eliminated(self, state, target_card) -> None:
         target_card.eliminated = True
         target_card.current_points = 0
         row = self._find_card_row(state, target_card.id)
@@ -138,4 +157,3 @@ class EliminationManager:
                         eliminated.append(index)
                     break
             row.eliminated_slots = eliminated
-        return True
