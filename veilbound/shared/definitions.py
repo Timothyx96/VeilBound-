@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]:
-    with (path or DATA_DIR / "anime_bedriegers_bedrogen.json").open(encoding="utf-8") as source:
+    with (path or DATA_DIR / "cards_active_english.json").open(encoding="utf-8") as source:
         raw_data = json.load(source)
     raw_cards = raw_data.get("cards") if isinstance(raw_data, dict) else None
     if not isinstance(raw_cards, list):

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kite’s Crazy Slots</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Barlow+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#07040f;--panel:rgba(9,6,24,.74);--line:#5a2fc8;--line2:#8a5cff;--txt:#efe6ff;--mut:#a99bd0;--gold:#ffcf5a;--gold2:#c98a12;color-scheme:dark;
+ box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:'Barlow Condensed','Arial Narrow',system-ui,sans-serif;overflow-x:hidden}
+/* mock game board (swap for the real board; in-game the panel's backdrop-filter does the blur) */
+.board{position:fixed;inset:0;display:grid;grid-template-rows:repeat(4,1fr);gap:14px;padding:30px;filter:blur(7px);opacity:.55;transform:scale(1.04)}
+.row{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+.c{border-radius:12px;background:linear-gradient(160deg,var(--h1),var(--h2));border:2px solid rgba(160,120,255,.35)}
+.wrap{position:relative;min-height:100dvh;display:grid;place-items:center;padding:20px}
+.panel{position:relative;width:min(1100px,100%);border:2px solid var(--line);border-radius:22px;background:var(--panel);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);padding:34px 28px 30px;text-align:center;box-shadow:0 0 60px rgba(110,60,240,.25),inset 0 0 40px rgba(90,47,200,.12)}
+h1{font-family:Cinzel,Georgia,serif;font-weight:800;letter-spacing:.04em;font-size:clamp(28px,5vw,52px);margin:0;text-transform:uppercase;color:#f1e4ff}
+.harl{height:12px;width:min(360px,70%);margin:12px auto 0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12'%3E%3Cpath d='M12 1l10 5-10 5L2 6z' fill='%23b0145a' stroke='%236a2cff' stroke-width='1'/%3E%3C/svg%3E") repeat-x center/24px 12px}
+.sub{color:var(--mut);margin:10px 0 0;font-size:clamp(15px,2vw,19px)}
+.snd{position:absolute;top:16px;right:18px;font:500 16px 'Barlow Condensed',sans-serif;color:var(--mut);background:none;border:1px solid var(--line);border-radius:999px;padding:4px 14px;cursor:pointer}
+.snd:focus-visible,.go:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+/* machine */
+.mach{--d:2.4s;position:relative;margin:34px auto 0;width:max-content}
+.mach.spin{--d:.45s}
+.bulbs{position:absolute;inset:-16px;pointer-events:none}
+.bulb{position:absolute;width:9px;height:9px;border-radius:50%;transform:translate(-50%,-50%);background:#4a3a1a;animation:chase var(--d) linear infinite;animation-delay:calc(var(--d) * var(--i) / -34)}
+@keyframes chase{0%,100%{background:#ffcf5a;box-shadow:0 0 10px 3px rgba(255,207,90,.85)}30%,85%{background:#4a3a1a;box-shadow:none}}
+.mach.win .bulb{animation-duration:.6s;animation-delay:0s}
+.frame{position:relative;padding:14px;border-radius:20px;background:linear-gradient(180deg,#3b2380,#1b1040 55%,#2c1a66);border:2px solid var(--line2);box-shadow:0 0 0 4px #0a0618,0 0 40px rgba(130,80,255,.45),inset 0 2px 0 rgba(255,255,255,.18)}
+.frame::before,.frame::after{content:"";position:absolute;top:50%;width:0;height:0;border:7px solid transparent;transform:translateY(-50%)}
+.frame::before{left:0;border-left-color:var(--gold)}
+.frame::after{right:0;border-right-color:var(--gold)}
+.frame.pop{animation:pop .55s ease-out}
+@keyframes pop{0%{transform:scale(1)}35%{transform:scale(1.045)}100%{transform:scale(1)}}
+.reel{--h:clamp(180px,30vh,270px);position:relative;width:calc(var(--h) * .9);height:var(--h);overflow:hidden;border-radius:12px;background:#05030d;box-shadow:inset 0 0 30px #000,inset 0 0 0 2px #000;transition:box-shadow .3s}
+.mach.win .reel{box-shadow:inset 0 0 30px #000,inset 0 0 0 2px var(--gold),0 0 30px rgba(255,207,90,.55)}
+.reel::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(180deg,rgba(0,0,0,.75) 0%,rgba(0,0,0,0) 22%,rgba(0,0,0,0) 78%,rgba(0,0,0,.75) 100%)}
+.glare{position:absolute;inset:0;z-index:3;pointer-events:none;background:linear-gradient(115deg,rgba(255,255,255,.14) 0%,rgba(255,255,255,0) 38%)}
+.strip{position:absolute;left:0;top:0;width:100%;opacity:0;transition:opacity .2s;will-change:transform}
+.reel.on .strip{opacity:1}
+.cell,.q{height:var(--h);display:grid;place-items:center;font-family:Cinzel,Georgia,serif;font-weight:800;line-height:1;background:linear-gradient(180deg,#fff6d1 0%,#ffcf5a 45%,#c98a12 100%);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+.cell{font-size:calc(var(--h) * .78)}
+.q{position:absolute;inset:0;font-size:calc(var(--h) * .6);animation:breathe 2.2s ease-in-out infinite;transition:opacity .2s}
+.reel.on .q{opacity:0;animation:none}
+@keyframes breathe{50%{opacity:.55}}
+.res{min-height:40px;margin-top:26px;font-family:Cinzel,Georgia,serif;font-weight:600;font-size:clamp(18px,2.6vw,26px);letter-spacing:.06em;color:var(--gold);opacity:0;transform:translateY(8px);transition:opacity .4s,transform .4s}
+.res.show{opacity:1;transform:none}
+/* paytable */
+.pay{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:6px;transition:opacity .3s}
+.card{position:relative;text-align:left;padding:16px 46px 16px 76px;min-height:104px;border:2px solid var(--line);border-radius:14px;background:linear-gradient(160deg,#21164a,#150e30);transition:border-color .15s,box-shadow .15s,opacity .4s,transform .15s}
+.card .n{position:absolute;left:16px;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-family:Cinzel,Georgia,serif;font-weight:800;font-size:22px;background:#2d1d63;border:2px solid var(--line2);color:#fff}
+.card h3{margin:0;font-size:22px;font-weight:600;letter-spacing:.02em}
+.card p{margin:4px 0 0;color:var(--mut);font-size:17px;line-height:1.2}
+.ico{position:absolute;right:14px;top:14px;width:24px;height:24px;fill:none;stroke:var(--mut);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.card.scan{border-color:var(--line2);box-shadow:0 0 18px rgba(138,92,255,.6);transform:translateY(-2px)}
+.card.win{border-color:var(--gold);box-shadow:0 0 28px rgba(255,207,90,.65);background:linear-gradient(160deg,#3a2a12,#241a0e)}
+.card.win .n{background:linear-gradient(#ffe08a,#c98a12);color:#2a1a00;border-color:#ffe9a8}
+.card.win .ico{stroke:var(--gold)}
+.pay.done .card:not(.win){opacity:.35}
+.tag{margin:26px 0 0;color:var(--mut);font-size:18px}
+.go{margin-top:10px;position:relative;overflow:hidden;font:600 clamp(24px,3vw,32px)/1 'Barlow Condensed',sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#fff;border:2px solid #c9b0ff;border-radius:14px;padding:16px 70px;background:linear-gradient(180deg,#8a4dff,#5a22c4);cursor:pointer;box-shadow:0 6px 0 #34127a,0 14px 30px rgba(110,60,240,.5);transition:transform .08s,box-shadow .08s}
+.go:active:not(:disabled){transform:translateY(4px);box-shadow:0 2px 0 #34127a,0 8px 20px rgba(110,60,240,.5)}
+.go:disabled{filter:grayscale(.6) brightness(.8);cursor:default}
+.go::after{content:"";position:absolute;top:0;bottom:0;width:40%;left:-60%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.35),transparent);animation:sheen 2.8s ease-in-out infinite}
+.go:disabled::after{animation:none}
+@keyframes sheen{0%,55%{left:-60%}100%{left:130%}}
+.sp{position:absolute;left:50%;top:50%;width:7px;height:7px;border-radius:50%;background:var(--gold);box-shadow:0 0 8px 2px rgba(255,207,90,.9);z-index:6;pointer-events:none;animation:sp .9s cubic-bezier(.1,.7,.3,1) forwards}
+@keyframes sp{from{transform:translate(-50%,-50%) scale(1);opacity:1}to{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(.2);opacity:0}}
+@media(max-width:760px){.pay{grid-template-columns:1fr}.panel{padding:30px 16px 26px}}
+@media(prefers-reduced-motion:reduce){.bulb,.go::after,.q,.frame.pop{animation:none}.bulb{background:#ffcf5a}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="vblur" x="0" y="-20%" width="100%" height="140%"><feGaussianBlur id="gb" stdDeviation="0 0"/></filter></svg>
+<div class="board" id="board" aria-hidden="true"></div>
+<div class="wrap">
+ <main class="panel">
+  <button class="snd" id="snd" type="button" aria-pressed="true">Sound on</button>
+  <h1>Kite’s Crazy Slots</h1>
+  <div class="harl"></div>
+  <p class="sub">Fate is in motion. One outcome will decide the battle.</p>
+  <div class="mach" id="mach">
+   <div class="bulbs" id="bulbs"></div>
+   <div class="frame" id="frame">
+    <div class="reel" id="reel">
+     <div class="q">?</div>
+     <div class="strip" id="strip"></div>
+     <div class="glare"></div>
+    </div>
+   </div>
+  </div>
+  <div class="res" id="res" aria-live="polite"></div>
+  <div class="pay" id="pay"></div>
+  <p class="tag">One spin. One fate.</p>
+  <button class="go" id="go" type="button">Spin</button>
+ </main>
+</div>
+<script>
+(()=>{
+const OUT=[
+ {n:1,name:'Powerful Strike',desc:'Kite gains +4 bonus points',res:'+4 bonus points',ico:'<path d="M12 19V5M6 11l6-6 6 6"/>'},
+ {n:2,name:'Survival Instinct',desc:'Kite becomes immune to elimination',res:'Immune to elimination',ico:'<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>'},
+ {n:3,name:'Deadly Precision',desc:'Eliminate one opposing Regular in Kite’s row',res:'Eliminate an opposing Regular',ico:'<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'}
+];
+const $=s=>document.querySelector(s);
+const reel=$('#reel'),strip=$('#strip'),gb=$('#gb'),btn=$('#go'),res=$('#res'),pay=$('#pay'),mach=$('#mach'),frame=$('#frame'),snd=$('#snd');
+
+// background mock board
+const b=$('#board');
+for(let r=0;r<4;r++){const row=document.createElement('div');row.className='row';
+ for(let c=0;c<5;c++){const d=document.createElement('div');d.className='c';const h=(250+Math.random()*90)|0;
+  d.style.setProperty('--h1','hsl('+h+' 55% 28%)');d.style.setProperty('--h2','hsl('+h+' 50% 12%)');row.appendChild(d)}
+ b.appendChild(row)}
+
+// paytable + reel strip
+pay.innerHTML=OUT.map(o=>'<div class="card"><span class="n">'+o.n+'</span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true">'+o.ico+'</svg><h3>'+o.name+'</h3><p>'+o.desc+'</p></div>').join('');
+const cards=[...pay.children];
+strip.innerHTML=[1,2,3,1,2,3].map(n=>'<div class="cell">'+n+'</div>').join('');
+
+// marquee bulbs around the frame
+const bl=$('#bulbs'),P=[];
+for(let i=0;i<9;i++)P.push([i/9,0]);
+for(let j=0;j<8;j++)P.push([1,j/8]);
+for(let i=0;i<9;i++)P.push([1-i/9,1]);
+for(let j=0;j<8;j++)P.push([0,1-j/8]);
+P.forEach((p,i)=>{const e=document.createElement('i');e.className='bulb';e.style.cssText='left:'+p[0]*100+'%;top:'+p[1]*100+'%;--i:'+i;bl.appendChild(e)});
+
+// sound
+let ac=null,muted=false,lt=0;
+function A(){if(!ac){try{ac=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}return ac}
+function blip(f,d,type,g){const a=A();if(!a||muted)return;const o=a.createOscillator(),v=a.createGain();o.type=type;o.frequency.value=f;
+ v.gain.setValueAtTime(g,a.currentTime);v.gain.exponentialRampToValueAtTime(.0001,a.currentTime+d);o.connect(v);v.connect(a.destination);o.start();o.stop(a.currentTime+d)}
+function tick(sp){const n=performance.now();if(n-lt<28)return;lt=n;
+ if(sp<4)blip(300,.08,'triangle',.09);else blip(sp>12?600:430,.035,'square',.03)}
+function chime(){[523.25,659.25,783.99,1046.5].forEach((f,i)=>setTimeout(()=>blip(f,.35,'triangle',.12),i*110))}
+snd.onclick=()=>{muted=!muted;snd.textContent=muted?'Sound off':'Sound on';snd.setAttribute('aria-pressed',String(!muted))};
+
+// reel
+let pos=0,busy=false,finished=false,lastTick=-1,lastScan=-1;
+function render(){strip.style.transform='translateY('+(-(pos%3)*reel.clientHeight)+'px)'}
+function setBlur(px){if(px<.6){strip.style.filter='none'}else{gb.setAttribute('stdDeviation','0 '+px.toFixed(1));strip.style.filter='url(#vblur)'}}
+function reset(spinning){
+ mach.classList.remove('win','spin');frame.classList.remove('pop');
+ cards.forEach(e=>e.classList.remove('win','scan'));pay.classList.remove('done');res.classList.remove('show');lastScan=-1;
+ if(!spinning){reel.classList.remove('on');btn.textContent='Spin';finished=false}
+}
+function sparks(){for(let i=0;i<22;i++){const s=document.createElement('i');s.className='sp';const a=Math.random()*6.283,d=90+Math.random()*150;
+ s.style.setProperty('--dx',Math.cos(a)*d+'px');s.style.setProperty('--dy',Math.sin(a)*d+'px');s.style.animationDelay=Math.random()*80+'ms';
+ frame.appendChild(s);setTimeout(()=>s.remove(),1200)}}
+function done(t){
+ setBlur(0);mach.classList.remove('spin');mach.classList.add('win');frame.classList.add('pop');
+ cards.forEach((e,i)=>{e.classList.remove('scan');e.classList.toggle('win',i===t)});pay.classList.add('done');
+ res.textContent=OUT[t].res;res.classList.add('show');sparks();chime();
+ btn.disabled=false;btn.textContent='Continue';busy=false;finished=true;
+}
+function spin(){
+ if(busy)return;busy=true;reset(true);
+ const a=A();if(a&&a.state==='suspended')a.resume();
+ btn.disabled=true;btn.textContent='Spinning…';
+ mach.classList.add('spin');reel.classList.add('on');
+ const target=Math.floor(Math.random()*3); // in the real game: roll on the server / shared seed so both players see the same result
+ const start=pos%3,vA=26,tB=3.0,tr=.3,dB=vA*tB/3;
+ pos=start;
+ let end=Math.ceil(start+vA*1.5+dB);while(end%3!==target)end++;
+ const p1=end-dB,tH=(p1-start)/vA+tr/2,t0=performance.now();
+ let last=t0,lp=start;
+ (function f(now){
+  const t=(now-t0)/1000;let p;
+  if(t<tH)p=start+(t<tr?vA*t*t/(2*tr):vA*(t-tr/2));
+  else if(t<tH+tB){const u=(t-tH)/tB;p=p1+dB*(1-Math.pow(1-u,3))}
+  else p=end;
+  const dt=Math.max((now-last)/1000,.001),sp=(p-lp)/dt;last=now;lp=p;
+  pos=p;render();setBlur(sp*reel.clientHeight*.004);
+  const k=Math.floor(p+.5);if(k!==lastTick){lastTick=k;tick(sp)}
+  if(sp<9){const c=((k%3)+3)%3;if(c!==lastScan){cards.forEach((e,i)=>e.classList.toggle('scan',i===c));lastScan=c}}
+  if(t<tH+tB)requestAnimationFrame(f);else done(target);
+ })(t0);
+}
+btn.onclick=()=>{if(finished)reset(false);else spin()};
+addEventListener('resize',render);
+render();
+})();
+</script>
+</body>
+</html>

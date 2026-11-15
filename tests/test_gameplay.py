@@ -116,7 +116,7 @@ def test_seeded_player_pool_is_reproducible_and_every_roster_card_can_be_dealt()
 
 
 def test_roster_loader_warns_for_missing_duplicate_and_extra_ids(tmp_path, caplog):
-    source_path = DATA_DIR / "anime_bedriegers_bedrogen.json"
+    source_path = DATA_DIR / "cards_active_english.json"
     source = json.loads(source_path.read_text(encoding="utf-8"))
 
     missing = deepcopy(source)
@@ -143,6 +143,10 @@ def test_roster_loader_warns_for_missing_duplicate_and_extra_ids(tmp_path, caplo
     if isinstance(extra_entry.get("ability"), dict):
         extra_entry["ability"] = deepcopy(extra_entry["ability"])
         extra_entry["ability"]["id"] = "extra_test_character_ability"
+    if isinstance(extra_entry.get("abilities"), list):
+        extra_entry["abilities"] = deepcopy(extra_entry["abilities"])
+        for index, ability in enumerate(extra_entry["abilities"]):
+            ability["id"] = f"extra_test_character_ability_{index + 1}"
     extra["cards"].append(extra_entry)
     extra_path = tmp_path / "extra.json"
     extra_path.write_text(json.dumps(extra), encoding="utf-8")

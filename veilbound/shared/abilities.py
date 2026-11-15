@@ -30,12 +30,15 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from .protection import passive_protection_blocks
+
 logger = logging.getLogger(__name__)
 
 # Supported vocabulary - unsupported values fail loudly at load time so a typo
 # can never silently disable an ability.
 SUPPORTED_TRIGGERS = frozenset({
     "on_reveal", "on_next_opposing_placement", "on_first_placement_in_row",
+    "on_next_placement_in_row",
 })
 SUPPORTED_CONDITION_TYPES = frozenset({
     "character_revealed", "same_row", "same_row_any", "last_placed_in_row",
@@ -46,17 +49,30 @@ SUPPORTED_EFFECT_TYPES = frozenset({
     "add_current_points",
     "add_current_points_per_friendly_type",
     "add_current_points_per_friendly_character",
+    "add_current_points_per_opposing_excess_over_friendly",
+    "reverse_row_winner",
+    "automatic_win_if_opposing_row_has_no_goat",
     "add_current_points_to_friendly_type",
     "add_current_points_per_opposing_type_after_owner",
     "add_current_points_per_opposing_character",
     "set_current_points",
     "set_base_points",
+    "copy_next_opposing_base_points",
+    "suppress_next_opposing_ability",
+    "random_slot_choice",
+    "grant_status",
+    "cannot_be_eliminated_by_opposing_ability",
+    "ignore_opposing_abilities",
+    "disable_row_abilities",
+    "gain_points_on_friendly_elimination",
     "eliminate_target",
     "remove_target_bonus",
     "steal_target_bonus",
     "copy_target_bonus",
     "revive_target",
     "reduce_target_base_points",
+    "reduce_next_card_points",
+    "move_character",
 })
 SUPPORTED_ACTIVATION_LIMITS = frozenset({"once_per_card_per_match", "continuous"})
 SUPPORTED_ANIMATIONS = frozenset({"points_gain", "elimination"})
@@ -92,6 +108,21 @@ class Effect:
     max_amount: int | None = None
     include_self: bool = False
     min_count: int = 0
+    preserve_bonus_points: bool = False
+    visual_style: str = "black"
+    status: str | None = None
+    outcomes: tuple[SlotOutcome, ...] = ()
+
+
+@dataclass(frozen=True)
+class SlotOutcome:
+    number: int
+    name: str
+    description: str
+    effect: Effect
+    target_scope: str = "any_row"
+    target_side: str = "opposing"
+    allowed_types: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -147,7 +178,7 @@ class AbilityActivation:
         return any(
             effect.type in {
                 "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-                "revive_target", "reduce_target_base_points",
+                "revive_target", "reduce_target_base_points", "move_character",
             }
             for effect in self.ability.effects
         ) and not any(
@@ -158,8 +189,18 @@ class AbilityActivation:
             for effect in self.ability.effects
         )
 
+    @property
+    def requires_crazy_slots_spin(self) -> bool:
+        return any(
+            effect.type == "random_slot_choice"
+            for effect in self.ability.effects
+        )
+
     def event_data(self) -> dict[str, Any]:
         """JSON-safe payload for the ``ability_activated`` presentation event."""
+        floating_text = self.ability.presentation.floating_text
+        if any(effect.type == "copy_next_opposing_base_points" for effect in self.ability.effects):
+            floating_text = f"BASE {self.base_points}"
         return {
             "ability_id": self.ability.id,
             "ability_name": self.ability.name,
@@ -172,12 +213,13 @@ class AbilityActivation:
             "delta": self.delta,
             "base_points": self.base_points,
             "current_points": self.current_points,
-            "floating_text": self.ability.presentation.floating_text,
+            "floating_text": floating_text,
             "animation": self.ability.presentation.animation,
             "sound": self.ability.presentation.sound,
             "transformed_card_art": self.ability.presentation.transformed_card_art,
             "is_elimination": self.is_elimination,
             "requires_target_selection": self.requires_target_selection,
+            "requires_crazy_slots_spin": self.requires_crazy_slots_spin,
             "affected_card_ids": list(self.affected_card_ids),
         }
 
@@ -187,6 +229,15 @@ class _PendingAbility:
     """A registered ability whose conditions were not satisfied at reveal time."""
 
     sequence: int
+    ability: AbilityDefinition
+    owner_card_id: str
+
+
+@dataclass(frozen=True)
+class _PendingPlacementAbility:
+    """Ability waiting for the next card placement in its owner's row."""
+
+    row_id: str
     ability: AbilityDefinition
     owner_card_id: str
 
@@ -299,7 +350,11 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
         max_amount = None
         include_self = False
         min_count = 0
-        if effect_type in {"reduce_target_base_points", "steal_target_bonus"}:
+        preserve_bonus_points = False
+        visual_style = "black"
+        status = None
+        outcomes: tuple[SlotOutcome, ...] = ()
+        if effect_type in {"reduce_target_base_points", "steal_target_bonus", "reduce_next_card_points"}:
             amount = item.get("amount")
             if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
                 raise AbilityValidationError(f"{where}: 'amount' must be a positive integer.")
@@ -349,6 +404,91 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
             min_count = item.get("min_count", 1)
             if isinstance(min_count, bool) or not isinstance(min_count, int) or min_count <= 0:
                 raise AbilityValidationError(f"{where}: 'min_count' must be a positive integer.")
+        elif effect_type == "add_current_points_per_opposing_excess_over_friendly":
+            amount = item.get("amount")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+                raise AbilityValidationError(f"{where}: 'amount' must be a positive integer.")
+        elif effect_type == "suppress_next_opposing_ability":
+            amount = 0
+            preserve_bonus_points = item.get("preserve_bonus_points", False)
+            if not isinstance(preserve_bonus_points, bool):
+                raise AbilityValidationError(f"{where}: 'preserve_bonus_points' must be a boolean.")
+            visual_style = item.get("visual_style", "black")
+            if visual_style not in {"black", "time_freeze"}:
+                raise AbilityValidationError(
+                    f"{where}: unsupported suppression visual_style {visual_style!r}."
+                )
+        elif effect_type == "grant_status":
+            amount = 0
+            status = item.get("status")
+            if status != "immune_to_elimination":
+                raise AbilityValidationError(
+                    f"{where}: unsupported status {status!r}."
+                )
+        elif effect_type == "random_slot_choice":
+            amount = 0
+            outcomes_raw = item.get("outcomes")
+            if not isinstance(outcomes_raw, list) or len(outcomes_raw) != 3:
+                raise AbilityValidationError(f"{where}: random slot choice requires three outcomes.")
+            parsed_outcomes: list[SlotOutcome] = []
+            for outcome_raw in outcomes_raw:
+                if not isinstance(outcome_raw, dict):
+                    raise AbilityValidationError(f"{where}: every slot outcome must be an object.")
+                number = outcome_raw.get("number")
+                name = outcome_raw.get("name")
+                description = outcome_raw.get("description")
+                nested = outcome_raw.get("effects")
+                if (isinstance(number, bool) or not isinstance(number, int)
+                        or number not in {1, 2, 3}
+                        or not isinstance(name, str) or not name.strip()
+                        or not isinstance(description, str) or not description.strip()
+                        or not isinstance(nested, list) or len(nested) != 1
+                        or not isinstance(nested[0], dict)):
+                    raise AbilityValidationError(f"{where}: malformed numbered slot outcome.")
+                if any(parsed.number == number for parsed in parsed_outcomes):
+                    raise AbilityValidationError(f"{where}: duplicate slot outcome number {number}.")
+                nested_raw = nested[0]
+                nested_type = nested_raw.get("type")
+                outcome_scope = nested_raw.get("target_scope", "any_row")
+                outcome_side = nested_raw.get("target_side", "opposing")
+                allowed_raw = nested_raw.get("allowed_types", [])
+                allowed_types: tuple[str, ...] = ()
+                if nested_type == "add_current_points":
+                    nested_amount = nested_raw.get("amount")
+                    if (isinstance(nested_amount, bool) or not isinstance(nested_amount, int)
+                            or nested_amount <= 0):
+                        raise AbilityValidationError(f"{where}: point outcome amount must be positive.")
+                    nested_effect = Effect(type=nested_type, amount=nested_amount)
+                elif nested_type == "grant_status":
+                    nested_status = nested_raw.get("status")
+                    if nested_status != "immune_to_elimination":
+                        raise AbilityValidationError(f"{where}: unsupported outcome status {nested_status!r}.")
+                    nested_effect = Effect(type=nested_type, status=nested_status)
+                elif nested_type == "eliminate_target":
+                    if (outcome_scope != "same_row" or outcome_side != "opposing"
+                            or not isinstance(allowed_raw, list)
+                            or not all(isinstance(card_type, str) and card_type.strip() for card_type in allowed_raw)):
+                        raise AbilityValidationError(f"{where}: elimination outcome has invalid targeting.")
+                    allowed_types = tuple(card_type.strip() for card_type in allowed_raw)
+                    nested_effect = Effect(type=nested_type)
+                else:
+                    raise AbilityValidationError(f"{where}: unsupported slot outcome effect {nested_type!r}.")
+                parsed_outcomes.append(SlotOutcome(
+                    number=number,
+                    name=name.strip(),
+                    description=description.strip(),
+                    effect=nested_effect,
+                    target_scope=str(outcome_scope),
+                    target_side=str(outcome_side),
+                    allowed_types=allowed_types,
+                ))
+            if {outcome.number for outcome in parsed_outcomes} != {1, 2, 3}:
+                raise AbilityValidationError(f"{where}: slot outcome numbers must be 1, 2, and 3.")
+            outcomes = tuple(sorted(parsed_outcomes, key=lambda outcome: outcome.number))
+        elif effect_type == "gain_points_on_friendly_elimination":
+            amount = item.get("amount")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+                raise AbilityValidationError(f"{where}: 'amount' must be a positive integer.")
         elif effect_type in {"set_current_points", "set_base_points"}:
             amount = item.get("amount")
             if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
@@ -361,6 +501,8 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
             type=str(effect_type), amount=int(amount), target_type=target_type,
             require_revealed=require_revealed, max_amount=max_amount,
             include_self=include_self, min_count=min_count,
+            preserve_bonus_points=preserve_bonus_points, visual_style=visual_style,
+            status=status, outcomes=outcomes,
         ))
 
     activation_limit = raw.get("activation_limit", "once_per_card_per_match")
@@ -373,6 +515,7 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
         "add_current_points_per_friendly_type",
         "add_current_points_per_opposing_character",
         "add_current_points_per_friendly_character",
+        "add_current_points_per_opposing_excess_over_friendly",
     } for effect in effects):
         if activation_limit != "continuous":
             raise AbilityValidationError(
@@ -412,7 +555,7 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
     has_elimination = any(
         effect.type in {
             "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-            "revive_target", "reduce_target_base_points",
+            "revive_target", "reduce_target_base_points", "move_character",
         }
         for effect in effects
     )
@@ -549,6 +692,7 @@ class AbilityManager:
     def reset(self) -> None:
         """Clear registrations for a new match (activation records live on cards)."""
         self._pending: list[_PendingAbility] = []
+        self._pending_placements: list[_PendingPlacementAbility] = []
         self._sequence = 0
         self._resolving = False
         self._reported_failures: set[tuple[str, str]] = set()
@@ -560,6 +704,36 @@ class AbilityManager:
             if abilities:
                 for ability in abilities:
                     self._ability_by_id[ability.id] = ability
+
+    def row_abilities_disabled_for_card(self, row: Any, card: Any, state: Any) -> bool:
+        """Apply row-wide ability locks while honoring Luffy's opposing-only immunity."""
+        if not row.get("abilities_disabled", False):
+            return False
+        if not self._has_broad_opposing_immunity(card):
+            return True
+        found_disable_source = False
+        for source in row.slots:
+            if source is None:
+                continue
+            active_ids = set(source.get("activated_abilities") or [])
+            active_ids.update(source.get("resolved_abilities") or [])
+            source_definition = self.definitions.get(source.definition_id)
+            for ability in (getattr(source_definition, "abilities", None) or []):
+                if (ability.id in active_ids
+                        and any(effect.type == "disable_row_abilities" for effect in ability.effects)):
+                    found_disable_source = True
+                    if source.owner_id == card.owner_id:
+                        return True
+        # Preserve an unknown/legacy row lock if its source cannot be found.
+        return not found_disable_source
+
+    def _has_broad_opposing_immunity(self, card: Any) -> bool:
+        definition = self.definitions.get(card.definition_id)
+        return any(
+            effect.type == "ignore_opposing_abilities"
+            for ability in (getattr(definition, "abilities", None) or [])
+            for effect in ability.effects
+        )
 
     @property
     def pending_abilities(self) -> tuple[tuple[int, str, str], ...]:
@@ -580,7 +754,8 @@ class AbilityManager:
         emit: Callable[[AbilityActivation], None] | None = None,
     ) -> list[AbilityActivation]:
         """Resolve abilities triggered only when their card enters an empty row."""
-        if not row_was_empty or self._resolving:
+        if (not row_was_empty or self._resolving
+                or self.row_abilities_disabled_for_card(row, placed_card, state)):
             return []
         self._resolving = True
         try:
@@ -605,6 +780,146 @@ class AbilityManager:
         finally:
             self._resolving = False
 
+    def on_card_placed(
+        self,
+        state: Any,
+        placed_card: Any,
+        row: Any,
+        slot_index: int,
+        emit: Callable[[AbilityActivation], None] | None = None,
+    ) -> list[AbilityActivation]:
+        """Resolve row-local next-placement effects and arm the newly placed card."""
+        if self._resolving or self.row_abilities_disabled_for_card(row, placed_card, state):
+            return []
+        activations: list[AbilityActivation] = []
+        remaining: list[_PendingPlacementAbility] = []
+        pending_now = sorted(
+            self._pending_placements,
+            key=lambda item: (item.owner_card_id, item.ability.id),
+        )
+        for pending in pending_now:
+            if pending.row_id != row.id:
+                remaining.append(pending)
+                continue
+            # A card cannot satisfy its own pending effect. This also protects
+            # against duplicate placement notifications for the same instance.
+            if pending.owner_card_id == placed_card.id:
+                remaining.append(pending)
+                continue
+            owner_location = _find_card(state, pending.owner_card_id)
+            if owner_location is None:
+                continue
+            owner_row, owner_index, owner_card = owner_location
+            if (owner_row.id != row.id or getattr(owner_card, "eliminated", False)
+                    or self._is_ability_suppressed(owner_card)):
+                continue
+            if self.row_abilities_disabled_for_card(owner_row, owner_card, state):
+                continue
+
+            if (pending.ability.trigger == "on_next_opposing_placement"
+                    and placed_card.owner_id == owner_card.owner_id):
+                # Opposing-placement effects wait through any number of allied
+                # placements in the row.
+                remaining.append(pending)
+                continue
+
+            ability = pending.ability
+            activated = list(owner_card.get("activated_abilities") or [])
+            if ability.id in activated or ability.id in (owner_card.get("resolved_abilities") or []):
+                continue
+            # This is a one-shot: the first subsequent placement consumes it,
+            # including an allied placement that produces no point change.
+            activated.append(ability.id)
+            owner_card.activated_abilities = activated
+            target_card_id = owner_card.id
+            affected_card_ids: tuple[str, ...] = ()
+            if (placed_card.owner_id != owner_card.owner_id
+                    and any(effect.type == "copy_next_opposing_base_points" for effect in ability.effects)):
+                before = self._current_points(owner_card, self._base_points(owner_card))
+                owner_card.base_points = self._base_points(placed_card)
+                owner_card.current_points = self._calculated_points(owner_card)
+                definition = self.definitions[owner_card.definition_id]
+                activation = AbilityActivation(
+                    ability=ability,
+                    owner_card_id=owner_card.id,
+                    target_card_id=owner_card.id,
+                    row_id=owner_row.id,
+                    slot_index=owner_index,
+                    definition_id=owner_card.definition_id,
+                    owner_name=str(definition.name),
+                    delta=owner_card.current_points - before,
+                    base_points=self._base_points(owner_card),
+                    current_points=owner_card.current_points,
+                )
+                activations.append(activation)
+                if emit is not None:
+                    emit(activation)
+            elif (placed_card.owner_id != owner_card.owner_id
+                    and any(effect.type == "suppress_next_opposing_ability" for effect in ability.effects)):
+                if passive_protection_blocks(placed_card, owner_card, self.definitions):
+                    # Broad immunity also prevents the suppression itself.
+                    continue
+                suppression_effect = next(
+                    effect for effect in ability.effects
+                    if effect.type == "suppress_next_opposing_ability"
+                )
+                before = self._current_points(owner_card, self._base_points(owner_card))
+                placed_card.ability_suppressed = True
+                placed_card.ability_suppression_blocks_bonus_points = not suppression_effect.preserve_bonus_points
+                placed_card.ability_suppression_style = suppression_effect.visual_style
+                if not suppression_effect.preserve_bonus_points:
+                    placed_card.applied_bonuses = {}
+                    placed_card.current_points = self._calculated_points(placed_card, {})
+                self._pending = [
+                    item for item in self._pending
+                    if item.owner_card_id != placed_card.id
+                ]
+                definition = self.definitions[owner_card.definition_id]
+                activation = AbilityActivation(
+                    ability=ability,
+                    owner_card_id=owner_card.id,
+                    target_card_id=placed_card.id,
+                    row_id=owner_row.id,
+                    slot_index=owner_index,
+                    definition_id=owner_card.definition_id,
+                    owner_name=str(definition.name),
+                    delta=0,
+                    base_points=self._base_points(owner_card),
+                    current_points=before,
+                    affected_card_ids=(placed_card.id,),
+                )
+                activations.append(activation)
+                if emit is not None:
+                    emit(activation)
+            else:
+                resolved = list(owner_card.get("resolved_abilities") or [])
+                if ability.id not in resolved:
+                    resolved.append(ability.id)
+                owner_card.resolved_abilities = resolved
+
+        self._pending_placements = remaining
+
+        definition = self.definitions.get(placed_card.definition_id)
+        if self._is_ability_suppressed(placed_card):
+            return activations
+        for ability in getattr(definition, "abilities", None) or []:
+            if (ability.trigger not in {"on_next_placement_in_row", "on_next_opposing_placement"}
+                    or self._limit_reached(ability, placed_card)):
+                continue
+            if not any(effect.type in {
+                "copy_next_opposing_base_points", "suppress_next_opposing_ability",
+            } for effect in ability.effects):
+                continue
+            if any(
+                item.owner_card_id == placed_card.id and item.ability.id == ability.id
+                for item in self._pending_placements
+            ):
+                continue
+            self._pending_placements.append(_PendingPlacementAbility(
+                row_id=row.id, ability=ability, owner_card_id=placed_card.id,
+            ))
+        return activations
+
     def on_card_revealed(
         self,
         state: Any,
@@ -627,6 +942,22 @@ class AbilityManager:
             return []
         self._resolving = True
         try:
+            if self.row_abilities_disabled_for_card(row, revealed_card, state):
+                kept_pending = []
+                for item in self._pending:
+                    location = _find_card(state, item.owner_card_id)
+                    if (location is None or location[0].id != row.id
+                            or not self.row_abilities_disabled_for_card(row, location[2], state)):
+                        kept_pending.append(item)
+                self._pending = kept_pending
+                kept_placements = []
+                for item in self._pending_placements:
+                    location = _find_card(state, item.owner_card_id)
+                    if (item.row_id != row.id or location is None
+                            or not self.row_abilities_disabled_for_card(row, location[2], state)):
+                        kept_placements.append(item)
+                self._pending_placements = kept_placements
+                return []
             activations: list[AbilityActivation] = []
             kept: list[_PendingAbility] = []
 
@@ -634,10 +965,16 @@ class AbilityManager:
             for pending in sorted(
                 self._pending, key=lambda item: (item.sequence, item.ability.id)
             ):
+                if self._is_passive_rule_modifier(pending.ability):
+                    continue
                 owner = _find_card(state, pending.owner_card_id)
                 if owner is None:
                     continue  # owner left the board; drop the registration
                 owner_row, owner_index, owner_card = owner
+                if self.row_abilities_disabled_for_card(owner_row, owner_card, state):
+                    continue
+                if self._is_ability_suppressed(owner_card):
+                    continue
                 # Gon is event-triggered: an unresolved attempt waits for
                 # Gon himself to be revealed again via revival. Other cards'
                 # reveals must not retry his ability.
@@ -690,9 +1027,11 @@ class AbilityManager:
 
             # Phase B - the just-revealed character's own on-reveal abilities.
             definition = self.definitions.get(revealed_card.definition_id)
-            if definition is not None:
+            if definition is not None and not self._is_ability_suppressed(revealed_card):
                 for ability in definition.abilities or []:
                     if ability.trigger != "on_reveal":
+                        continue
+                    if self._is_passive_rule_modifier(ability):
                         continue
                     if revived:
                         # A revived card's own on-reveal abilities must not
@@ -705,6 +1044,7 @@ class AbilityManager:
                             "add_current_points_per_friendly_type",
                             "add_current_points_per_opposing_character",
                             "add_current_points_per_friendly_character",
+                            "add_current_points_per_opposing_excess_over_friendly",
                         }
                         for effect in ability.effects
                     ) or (
@@ -896,12 +1236,27 @@ class AbilityManager:
             for slot in row.slots:
                 if slot is None or getattr(slot, "eliminated", False):
                     continue
+                if owner_row_disabled := any(
+                    candidate.id == slot.id
+                    and self.row_abilities_disabled_for_card(owner_row, slot, state)
+                    for owner_row in state.rows
+                    for candidate in owner_row.slots if candidate is not None
+                ):
+                    continue
                 # Identify owner row for the slot
                 owner_row, _owner_index, _owner_card = _find_card(state, slot.id)
                 if owner_row is None:
                     continue
                 definition = self.definitions.get(slot.definition_id)
                 if definition is None:
+                    continue
+                if self._is_ability_suppressed(slot):
+                    if self._blocks_additional_point_gains(slot):
+                        applied = dict(slot.get("applied_bonuses") or {})
+                        if applied:
+                            slot.applied_bonuses = {}
+                            slot.current_points = self._calculated_points(slot, {})
+                            changed.append(slot)
                     continue
                 for ability in definition.abilities or []:
                     if ability.activation_limit != "continuous":
@@ -916,6 +1271,7 @@ class AbilityManager:
                         or effect.type == "add_current_points_per_friendly_type"
                         or effect.type == "add_current_points_per_opposing_character"
                         or effect.type == "add_current_points_per_friendly_character"
+                        or effect.type == "add_current_points_per_opposing_excess_over_friendly"
                     ), None)
                     if point_effect is None:
                         continue
@@ -993,6 +1349,22 @@ class AbilityManager:
                             if friendly_count >= point_effect.min_count
                             else 0
                         )
+                    elif point_effect.type == "add_current_points_per_opposing_excess_over_friendly":
+                        allied_count = sum(
+                            1
+                            for candidate in owner_row.slots
+                            if candidate is not None
+                            and candidate.owner_id == slot.owner_id
+                            and not getattr(candidate, "eliminated", False)
+                        )
+                        opposing_count = sum(
+                            1
+                            for candidate in owner_row.slots
+                            if candidate is not None
+                            and candidate.owner_id != slot.owner_id
+                            and not getattr(candidate, "eliminated", False)
+                        )
+                        amount *= max(0, opposing_count - allied_count)
                     conditions_ok = conditions_ok and amount != 0
                     applied_bonuses = dict(slot.get("applied_bonuses") or {})
                     suppressed_bonuses = set(slot.get("suppressed_bonuses") or [])
@@ -1141,13 +1513,14 @@ class AbilityManager:
                     and target.id != owner_card.id
                     and target.owner_id == owner_card.owner_id
                     and not getattr(target, "eliminated", False)
+                    and not self._blocks_additional_point_gains(target)
                     and getattr(self.definitions.get(target.definition_id), "type", None) == effect.target_type
                     for row in state.rows for target in row.slots
                 ):
                     return False
             elif effect.type in {
                 "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-                "revive_target", "reduce_target_base_points",
+                "revive_target", "reduce_target_base_points", "move_character",
             }:
                 owner_row = next((
                     row for row in state.rows
@@ -1170,6 +1543,12 @@ class AbilityManager:
                             continue
                         if ability.target_side == "friendly" and target.owner_id != owner_card.owner_id:
                             continue
+                        if (effect.type in {
+                                "eliminate_target", "remove_target_bonus", "steal_target_bonus",
+                                "reduce_target_base_points", "move_character",
+                            }
+                                and passive_protection_blocks(target, owner_card, self.definitions)):
+                            continue
                         target_definition = self.definitions.get(target.definition_id)
                         base = self._base_points(target)
                         if ability.max_base_points is not None and base > ability.max_base_points:
@@ -1189,6 +1568,16 @@ class AbilityManager:
                         break
                 if not found:
                     return False
+                if effect.type == "move_character" and (
+                    owner_row is None
+                    or not any(
+                        row.id != owner_row.id
+                        and not row.scored
+                        and any(candidate is None for candidate in row.slots)
+                        for row in state.rows
+                    )
+                ):
+                    return False
         return True
 
     def _try_activate(
@@ -1200,16 +1589,66 @@ class AbilityManager:
         state: Any,
     ) -> AbilityActivation | None:
         """Check every condition; if satisfied, apply effects once and record it."""
+        if self._is_ability_suppressed(owner_card):
+            return None
         if not self._has_effect_targets(ability, owner_card, state):
             return None
         for condition in ability.conditions:
             if not self._condition_holds(condition, owner_card, owner_row, state):
                 return None
 
+        # Rule modifiers are read directly by the central rules managers and
+        # stay active for the card's lifetime. They are not reveal-time actions.
+        if self._is_passive_rule_modifier(ability):
+            return None
+
+        if any(effect.type == "disable_row_abilities" for effect in ability.effects):
+            owner_row.abilities_disabled = True
+            kept_pending = []
+            for item in self._pending:
+                location = _find_card(state, item.owner_card_id)
+                if (location is None or location[0].id != owner_row.id
+                        or (location[2].owner_id != owner_card.owner_id
+                            and self._has_broad_opposing_immunity(location[2]))):
+                    kept_pending.append(item)
+            self._pending = kept_pending
+            kept_placements = []
+            for item in self._pending_placements:
+                location = _find_card(state, item.owner_card_id)
+                if (item.row_id != owner_row.id or location is None
+                        or (location[2].owner_id != owner_card.owner_id
+                            and self._has_broad_opposing_immunity(location[2]))):
+                    kept_placements.append(item)
+            self._pending_placements = kept_placements
+
+        if any(effect.type == "random_slot_choice" for effect in ability.effects):
+            # The server applies Crazy Slots only after the synchronized spin
+            # presentation completes. Activation is recorded now to prevent
+            # duplicate reveal callbacks from opening another spin.
+            definition = self.definitions[owner_card.definition_id]
+            base_points = self._base_points(owner_card)
+            current_points = self._current_points(owner_card, base_points)
+            activated = list(owner_card.get("activated_abilities") or [])
+            if ability.id not in activated:
+                activated.append(ability.id)
+            owner_card.activated_abilities = activated
+            return AbilityActivation(
+                ability=ability,
+                owner_card_id=owner_card.id,
+                target_card_id=owner_card.id,
+                row_id=owner_row.id,
+                slot_index=owner_index,
+                definition_id=owner_card.definition_id,
+                owner_name=str(definition.name),
+                delta=0,
+                base_points=base_points,
+                current_points=current_points,
+            )
+
         definition = self.definitions[owner_card.definition_id]
         target_effects = {
             "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-            "revive_target", "reduce_target_base_points",
+            "revive_target", "reduce_target_base_points", "move_character",
         }
         # reduce_target_base_points with same_row+opposing is auto-processing,
         # not player-targeted
@@ -1265,6 +1704,8 @@ class AbilityManager:
                             continue
                         if target.owner_id != owner_card.owner_id or getattr(target, "eliminated", False):
                             continue
+                        if self._blocks_additional_point_gains(target):
+                            continue
                         target_definition = self.definitions.get(target.definition_id)
                         if getattr(target_definition, "type", None) != effect.target_type:
                             continue
@@ -1273,6 +1714,31 @@ class AbilityManager:
                             continue
                         target_bonuses[activation_key] = effect.amount
                         target.applied_bonuses = target_bonuses
+                        target.current_points = self._calculated_points(target, target_bonuses)
+                        affected_card_ids.append(target.id)
+            elif effect.type == "reduce_next_card_points":
+                next_index = owner_index + 1
+                if next_index < len(owner_row.slots):
+                    target = owner_row.slots[next_index]
+                    if (target is not None and target.owner_id != owner_card.owner_id
+                            and not getattr(target, "eliminated", False)
+                            and not passive_protection_blocks(target, owner_card, self.definitions)):
+                        remaining = min(effect.amount, max(0, int(target.current_points)))
+                        target_bonuses = dict(target.get("applied_bonuses") or {})
+                        target.applied_bonuses = target_bonuses
+                        bonus_reductions = dict(target.get("bonus_point_reductions") or {})
+                        available_bonus = max(0, sum(target_bonuses.values()) - sum(bonus_reductions.values()))
+                        bonus_reduction = min(remaining, available_bonus)
+                        reduction_key = f"{ability.id}:{owner_card.id}"
+                        if bonus_reduction:
+                            bonus_reductions[reduction_key] = bonus_reduction
+                            target.bonus_point_reductions = bonus_reductions
+                            remaining -= bonus_reduction
+                        base_reduction = min(remaining, self._base_points(target))
+                        if base_reduction:
+                            self.reduce_base_points(
+                                target, f"{reduction_key}:base", base_reduction,
+                            )
                         target.current_points = self._calculated_points(target, target_bonuses)
                         affected_card_ids.append(target.id)
             elif (
@@ -1295,6 +1761,8 @@ class AbilityManager:
                             continue
                         if target.owner_id == owner_card.owner_id:
                             continue  # Skip friendly characters
+                        if passive_protection_blocks(target, owner_card, self.definitions):
+                            continue
                         # Apply the base point reduction to this target
                         if not self.reduce_base_points(target, reduction_id, effect.amount):
                             # Already reduced; skip
@@ -1314,6 +1782,9 @@ class AbilityManager:
                 # roster definition remains the immutable source value.
                 owner_card.base_points = effect.amount
                 base_points = effect.amount
+            elif effect.type == "grant_status":
+                if effect.status == "immune_to_elimination":
+                    owner_card.immune_to_elimination = True
             # Target effects are not applied here: target selection
             # happens in the client layer via the pending-elimination state.
         owner_card.applied_bonuses = bonuses
@@ -1339,8 +1810,22 @@ class AbilityManager:
             affected_card_ids=tuple(affected_card_ids),
         )
 
+    @staticmethod
+    def _is_passive_rule_modifier(ability: AbilityDefinition) -> bool:
+        """Whether an ability only declares a persistent rule modifier."""
+        return bool(ability.effects) and all(
+            effect.type in {
+                "cannot_be_eliminated_by_opposing_ability",
+                "ignore_opposing_abilities",
+                "gain_points_on_friendly_elimination",
+            }
+            for effect in ability.effects
+        )
+
     def apply_deferred_effects(self, ability: AbilityDefinition, owner_card: Any, state: Any) -> None:
         """Apply non-target effects after a targeted effect succeeds."""
+        if self._is_ability_suppressed(owner_card):
+            return
         bonuses = dict(owner_card.get("applied_bonuses") or {})
         activation_key = f"{ability.id}:{owner_card.id}"
         base_points = self._base_points(owner_card)
@@ -1353,6 +1838,8 @@ class AbilityManager:
                         if target is None or target.id == owner_card.id:
                             continue
                         if target.owner_id != owner_card.owner_id or getattr(target, "eliminated", False):
+                            continue
+                        if self._blocks_additional_point_gains(target):
                             continue
                         target_definition = self.definitions.get(target.definition_id)
                         if getattr(target_definition, "type", None) != effect.target_type:
@@ -1377,10 +1864,21 @@ class AbilityManager:
         definition = self.definitions.get(card.definition_id)
         return int(getattr(definition, "base_points", 0))
 
+    @staticmethod
+    def _is_ability_suppressed(card: Any) -> bool:
+        return bool(card.get("ability_suppressed", False))
+
+    @staticmethod
+    def _blocks_additional_point_gains(card: Any) -> bool:
+        return bool(card.get("ability_suppressed", False)) and bool(
+            card.get("ability_suppression_blocks_bonus_points", True)
+        )
+
     def _calculated_points(self, card: Any, bonuses: dict[str, int] | None = None) -> int:
         """Build a total from the card instance's base and its ability bonuses."""
         applied = bonuses if bonuses is not None else dict(card.get("applied_bonuses") or {})
-        return max(0, self._base_points(card) + sum(applied.values()))
+        reductions = dict(card.get("bonus_point_reductions") or {})
+        return max(0, self._base_points(card) + sum(applied.values()) - sum(reductions.values()))
 
     def reduce_base_points(self, card: Any, reduction_id: str, amount: int) -> bool:
         """Permanently reduce this card instance's base, once per activation."""

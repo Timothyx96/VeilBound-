@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from veilbound.shared.models import BattleRow, CardInstance, GameState
+from veilbound.shared.protection import passive_protection_blocks
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,8 @@ class EliminationTargeting:
     min_base_points: int | None = None
     require_bonus_points: bool = False
     require_eliminated: bool = False
+    ability_elimination: bool = False
+    opposing_ability: bool = False
 
     def __post_init__(self) -> None:
         if self.target_scope not in {"same_row", "any_row"}:
@@ -66,9 +69,15 @@ class EliminationManager:
             return False
         if not targeting.require_eliminated and not card.revealed:
             return False
+        if not targeting.require_eliminated and bool(card.get("immune_to_elimination", False)):
+            return False
         if targeting.target_side == "opposing" and card.owner_id == attacker_card.owner_id:
             return False
         if targeting.target_side == "friendly" and card.owner_id != attacker_card.owner_id:
+            return False
+        if (targeting.ability_elimination or targeting.opposing_ability) and self.is_protected_from_opposing_ability(
+            card, attacker_card,
+        ):
             return False
         definition = self.cards.get(card.definition_id)
         base_points = getattr(card, "base_points", None)
@@ -105,9 +114,19 @@ class EliminationManager:
                     return row
         return None
 
-    def eliminate_target(self, state, target_card, attacker_card) -> None:
-        if getattr(target_card, "eliminated", False):
-            return
+    def is_protected_from_opposing_ability(self, target_card, attacker_card) -> bool:
+        """Whether an unsuppressed passive ability blocks this opposing source."""
+        return passive_protection_blocks(target_card, attacker_card, self.cards)
+
+    def eliminate_target(
+        self, state, target_card, attacker_card, *, by_ability: bool = False,
+    ) -> bool:
+        if (getattr(target_card, "eliminated", False)
+                or bool(target_card.get("immune_to_elimination", False))):
+            return False
+        if (by_ability and self.is_protected_from_opposing_ability(
+                target_card, attacker_card)):
+            return False
         target_card.eliminated = True
         target_card.current_points = 0
         row = self._find_card_row(state, target_card.id)
@@ -119,3 +138,4 @@ class EliminationManager:
                         eliminated.append(index)
                     break
             row.eliminated_slots = eliminated
+        return True

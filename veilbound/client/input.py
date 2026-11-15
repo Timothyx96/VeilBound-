@@ -30,6 +30,10 @@ class InputController:
         self.animation_stage: str | None = None
         self.turn_confirmation_player_id: str | None = None
         self.remote = bool(getattr(engine, "is_remote", False))
+        self._crazy_slots_completion_sent: str | None = None
+        self._crazy_slots_spin_requested_for: str | None = None
+        self._crazy_slots_landing_played_for: str | None = None
+        self._crazy_slots_last_tick: tuple[str, int] | None = None
         # Debug Mode scrollbar drag state.
         self._debug_scrollbar_drag: bool = False
         self._debug_scrollbar_grab_offset: float = 0.0
@@ -97,6 +101,45 @@ class InputController:
     def handle(self, event: pygame.event.Event, screen) -> bool | str:
         if event.type == pygame.QUIT:
             return False
+        pending_crazy = self.engine.state.get("pending_crazy_slots")
+        if pending_crazy:
+            # Crazy Slots owns the interaction until its authoritative result
+            # is applied. This prevents escape, placement, and duplicate spin
+            # inputs from skipping or replaying the one-shot ability.
+            if event.type == pygame.MOUSEMOTION:
+                self.mouse_pos = event.pos
+                return True
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_TAB:
+                    self.renderer.crazy_slots_button_focused = not self.renderer.crazy_slots_button_focused
+                    return True
+                if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    if self.renderer.crazy_slots_button_focused:
+                        status = str(pending_crazy.get("status", ""))
+                        if status == "awaiting_spin" and self.renderer.crazy_slots_spin_ready:
+                            self._request_crazy_slots_spin(pending_crazy)
+                        elif (status == "spinning"
+                              and self.renderer.crazy_slots_animation_complete
+                              and not self.renderer.crazy_slots_continue_pending):
+                            self._continue_crazy_slots(pending_crazy)
+                    return True
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                owner_id = str(pending_crazy.get("owner_id", ""))
+                viewer_id = str(getattr(self.engine, "player_id", "") or owner_id)
+                if viewer_id == owner_id:
+                    if (pending_crazy.get("status") == "awaiting_spin"
+                            and self.renderer.crazy_slots_spin_ready
+                            and self.renderer.crazy_slots_spin_rect is not None
+                            and self.renderer.crazy_slots_spin_rect.collidepoint(event.pos)):
+                        self._request_crazy_slots_spin(pending_crazy)
+                    elif (pending_crazy.get("status") == "spinning"
+                            and self.renderer.crazy_slots_animation_complete
+                            and not self.renderer.crazy_slots_continue_pending
+                            and self.renderer.crazy_slots_continue_rect is not None
+                            and self.renderer.crazy_slots_continue_rect.collidepoint(event.pos)):
+                        self._continue_crazy_slots(pending_crazy)
+                return True
+            return True
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
                 return "pause"
@@ -142,6 +185,9 @@ class InputController:
             # An armed elimination intercepts clicks: only highlighted targets
             # are interactive until the choice resolves (or the pause clears).
             if state is not None and state.get("pending_elimination"):
+                pending = state.pending_elimination
+                if not pending.get("selection_ready", True):
+                    return True
                 self._handle_elimination_click(event.pos, screen)
                 return True
             if state.phase == GamePhase.PLACEMENT and self.turn_confirmation_player_id is not None:
@@ -199,6 +245,46 @@ class InputController:
             return True
         return True
 
+    def _request_crazy_slots_spin(self, pending: dict) -> None:
+        owner_id = str(pending.get("owner_id", ""))
+        viewer_id = str(getattr(self.engine, "player_id", "") or owner_id)
+        if viewer_id != owner_id:
+            return
+        if self.remote:
+            result = self.engine.spin_crazy_slots()
+            if result.accepted:
+                self._crazy_slots_spin_requested_for = str(pending.get("owner_card_id", ""))
+                self.renderer.crazy_slots_spin_ready = False
+        else:
+            result = self.engine.spin_crazy_slots(owner_id)
+        self._apply(result)
+
+    def _continue_crazy_slots(self, pending: dict) -> None:
+        if self.remote:
+            result = self.engine.complete_crazy_slots()
+            if result.accepted:
+                self._crazy_slots_completion_sent = str(pending.get("spin_id", ""))
+                self.renderer.crazy_slots_continue_pending = True
+        else:
+            result = self.engine.complete_crazy_slots(str(pending.get("owner_id", "")))
+        self._apply(result)
+        if not result.accepted:
+            self.renderer.crazy_slots_continue_pending = False
+            self._crazy_slots_completion_sent = None
+            return
+        self.renderer.crazy_slots_overlay_ready = False
+        self.renderer.crazy_slots_animation_complete = False
+        if not self.remote:
+            if self.engine.state.get("pending_elimination"):
+                self.animation_stage = None
+                self.animation_deadline = None
+            elif self.engine.state.phase == GamePhase.REVEAL:
+                self.animation_stage = "reveal_gap"
+                self.animation_deadline = time.monotonic() + self._seconds("delay_between_reveals_ms")
+            else:
+                self.animation_stage = None
+                self.animation_deadline = None
+
     def update(self, now: float | None = None) -> None:
         now = time.monotonic() if now is None else now
         if self.remote:
@@ -210,6 +296,9 @@ class InputController:
             if notice:
                 self.renderer.notice = notice
                 self.renderer.notice_until = now + 4
+                if "reconnect" in notice.lower() or self.renderer.crazy_slots_continue_pending:
+                    self.renderer.crazy_slots_continue_pending = False
+                    self._crazy_slots_completion_sent = None
             if self.animation_stage == "await_reveal":
                 if self.engine.remote_locked:
                     return
@@ -242,6 +331,9 @@ class InputController:
         if self.animation_stage == "card_info":
             if now < self._deadline():
                 return
+            pending = self.engine.state.get("pending_elimination") or {}
+            if not self.remote and pending and phase != GamePhase.REVEAL:
+                pending["selection_ready"] = True
             if phase == GamePhase.REVEAL:
                 self.animation_stage = "reveal_gap"
                 self.animation_deadline = now + self._seconds("delay_between_reveals_ms")
@@ -254,11 +346,65 @@ class InputController:
                 self.animation_deadline = None
             return
 
+        pending_crazy = self.engine.state.get("pending_crazy_slots")
+        if pending_crazy:
+            status = str(pending_crazy.get("status", ""))
+            if status == "awaiting_spin":
+                if self.remote and self.engine.remote_locked:
+                    return
+                if (self.remote and self._crazy_slots_spin_requested_for
+                        == str(pending_crazy.get("owner_card_id", ""))):
+                    return
+                if self.animation_stage == "reveal_gap":
+                    if now < self._deadline():
+                        return
+                    self.animation_stage = None
+                    self.animation_deadline = None
+                elif self.animation_stage is not None:
+                    return
+                self.renderer.crazy_slots_overlay_ready = True
+                self.renderer.crazy_slots_spin_ready = True
+                return
+
+            if status == "spinning":
+                self._crazy_slots_spin_requested_for = None
+                spin_id = str(pending_crazy.get("spin_id", ""))
+                if (self.remote
+                        and self._crazy_slots_completion_sent == spin_id):
+                    # Keep the overlay closed after the owner presses Continue
+                    # while the authoritative result is in flight.
+                    return
+                self.renderer.crazy_slots_overlay_ready = True
+                _distance, speed, _progress, done = self.renderer._crazy_slots_motion(pending_crazy, now)
+                self.renderer.crazy_slots_animation_complete = done
+                digit = self.renderer.crazy_slots_current_digit
+                tick_key = (spin_id, self.renderer.crazy_slots_current_cell)
+                if tick_key != self._crazy_slots_last_tick:
+                    if self.audio is not None:
+                        self.audio.play_crazy_slots_tick(spin_id, digit, speed)
+                    self._crazy_slots_last_tick = tick_key
+                if done and spin_id != self._crazy_slots_landing_played_for:
+                    if self.audio is not None:
+                        self.audio.play_crazy_slots_landing(spin_id)
+                    self._crazy_slots_landing_played_for = spin_id
+                return
+
+        self.renderer.crazy_slots_spin_ready = False
+        self.renderer.crazy_slots_overlay_ready = False
+        self.renderer.crazy_slots_continue_rect = None
+        self._crazy_slots_completion_sent = None
+        self._crazy_slots_spin_requested_for = None
+        self._crazy_slots_landing_played_for = None
+        self._crazy_slots_last_tick = None
+
         # An armed elimination pauses reveals/scoring until a target is chosen.
-        # Remote clients keep the reveal-ack handshake moving (the server gates
-        # new reveals behind the pause); everything else idles here.
+        # Let the active reveal gap / duo animation finish before enabling any
+        # target menu; remote clients continue the reveal-ack handshake too.
         if self.engine.state.get("pending_elimination"):
-            if not (self.remote and self.animation_stage in {"reveal_gap", "duo_energy", "await_reveal"}):
+            allowed_stages = {"reveal_gap", "duo_energy"}
+            if self.remote:
+                allowed_stages.add("await_reveal")
+            if self.animation_stage not in allowed_stages:
                 self.animation_stage = None
                 self.animation_deadline = None
                 return
@@ -278,11 +424,23 @@ class InputController:
                 self.animation_stage = "duo_energy"
                 self.animation_deadline = self.renderer.duo_animation_deadline
                 return
+            pending = self.engine.state.get("pending_elimination") or {}
+            if not self.remote and pending:
+                pending["selection_ready"] = True
+                self.animation_stage = None
+                self.animation_deadline = None
+                return
             self._reveal_next_card(now)
             return
 
         if self.animation_stage == "duo_energy":
             if now < self._deadline():
+                return
+            pending = self.engine.state.get("pending_elimination") or {}
+            if not self.remote and pending:
+                pending["selection_ready"] = True
+                self.animation_stage = None
+                self.animation_deadline = None
                 return
             self._reveal_next_card(now)
             return
@@ -345,9 +503,29 @@ class InputController:
             self.renderer.notice_until = time.monotonic() + 3
             return
         layout = self.renderer.layout(state, screen.get_size())
+        if (pending.get("effect_type") == "move_character"
+                and pending.get("stage") == "destination_row"):
+            valid_rows = {
+                str(item.get("row_id", ""))
+                for item in (pending.get("valid_targets") or [])
+                if item.get("target_kind") == "row"
+            }
+            destination_row_id = next((
+                row_id for row_id in valid_rows
+                if (rect := layout.row_rects.get(row_id)) is not None
+                and rect.collidepoint(pos)
+            ), None)
+            if destination_row_id is None:
+                self.renderer.notice = "Click a highlighted row with an open slot."
+                self.renderer.notice_until = time.monotonic() + 2.5
+                return
+            result = self.engine.select_destination_row(destination_row_id)
+            self._apply(result)
+            return
         valid = [
             (str(item.get("row_id", "")), int(item.get("slot_index", -1)))
             for item in (pending.get("valid_targets") or [])
+            if item.get("target_kind", "character") == "character"
         ]
         hit = next(
             (
@@ -367,6 +545,8 @@ class InputController:
                 self.renderer.notice = "Click a highlighted card to copy its bonus points."
             elif pending.get("effect_type") == "eliminate_target":
                 self.renderer.notice = "Click a highlighted card to eliminate it."
+            elif pending.get("effect_type") == "move_character":
+                self.renderer.notice = "Click a highlighted opposing character in this row."
             else:
                 self.renderer.notice = "Click a highlighted card to resolve the ability."
             self.renderer.notice_until = time.monotonic() + 2.5
@@ -376,6 +556,14 @@ class InputController:
         # Local engines resolve inline (events flow through _apply); remote
         # engines send the request and the events arrive with the next update.
         self._apply(result)
+        if (result.accepted and pending.get("kite_crazy_slots")
+                and not self.engine.state.get("pending_elimination") and not self.remote
+                and self.engine.state.phase == GamePhase.REVEAL):
+            self.animation_stage = "reveal_gap"
+            self.animation_deadline = time.monotonic() + self._seconds("delay_between_reveals_ms")
+        if (result.accepted and pending.get("effect_type") == "move_character"):
+            self.renderer.notice = "Now choose a highlighted row for the selected character."
+            self.renderer.notice_until = time.monotonic() + 3
 
     def _seconds(self, setting: str) -> float:
         milliseconds = self.renderer.animation_ms.get(setting, 0)

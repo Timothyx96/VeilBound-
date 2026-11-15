@@ -6,7 +6,13 @@ Only one music track plays at a time; see ``AudioManager.play_music``.
 from __future__ import annotations
 
 import logging
+import io
+import math
 import random
+import struct
+import time
+import wave
+from array import array
 from pathlib import Path
 from typing import Any
 
@@ -55,7 +61,14 @@ class AudioManager:
         self.next_row_sound: pygame.mixer.Sound | None = None
         self.card_place_sound: pygame.mixer.Sound | None = None
         self.counter_sound: pygame.mixer.Sound | None = None
+        self.crazy_slots_spin_sound: pygame.mixer.Sound | None = None
+        self.crazy_slots_tick_sounds: list[pygame.mixer.Sound] = []
+        self.crazy_slots_chime_sound: pygame.mixer.Sound | None = None
+        self._crazy_slots_last_tick: tuple[str, float] | None = None
         self.ability_sounds: dict[str, pygame.mixer.Sound | None] = {}
+        self.luffy_haki_sounds: tuple[tuple[pygame.mixer.Sound | None, float], ...] = ()
+        self.luffy_laugh_sound: pygame.mixer.Sound | None = None
+        self.all_might_reveal_sound: pygame.mixer.Sound | None = None
         self.sfx_volume = 0.8
         # Music state: the current track, the track to restore after the
         # options screen, and whether exit music has started (blocks repeated
@@ -82,6 +95,22 @@ class AudioManager:
         if not self.mixer_ready:
             return
 
+        # Purpose-built native PCM layers: there is no Conqueror's Haki asset
+        # in the project. The only Luffy file is a laugh, so it is not reused
+        # as a misleading combat impact.
+        self.luffy_haki_sounds = (
+            (self._synthesize_haki_layer("impact", 0.58, 1701), 0.95),
+            (self._synthesize_haki_layer("burst", 0.48, 1702), 0.72),
+            (self._synthesize_haki_layer("rumble", 1.12, 1703), 0.42),
+        )
+        self.luffy_laugh_sound = self._amplify_sound(
+            self._load_sound("assets/sounds/Abillity_Sfx/Ability_Resolution/Luffy_laugh.mp3"),
+            gain=2.0,
+        )
+        self.all_might_reveal_sound = self._load_sound(
+            "assets/sounds/Abillity_Sfx/Ability_Resolution/Allmight_sfx.mp3"
+        )
+
         self._start_initial_music()
 
         reveal = self.settings.get("card_reveal", {})
@@ -101,6 +130,19 @@ class AudioManager:
         counter_sfx = self.settings.get("counter_sfx", {})
         if isinstance(counter_sfx, dict) and counter_sfx.get("enabled", False):
             self.counter_sound = self._load_sound(counter_sfx.get("sound"))
+
+        # Kite's signature spin voice/SFX plays once when the authoritative
+        # result begins animating; the existing counter sound marks the landing.
+        self.crazy_slots_spin_sound = self._load_sound(
+            "assets/sounds/Abillity_Sfx/Ability_Resolution/Kite_Spin.mp3"
+        )
+        self.crazy_slots_tick_sounds = [
+            self._synthesize_tone((frequency,), 0.024)
+            for frequency in (300, 360, 430, 510, 600, 700, 800, 900)
+        ]
+        self.crazy_slots_chime_sound = self._synthesize_tone(
+            (523, 659, 784, 1047), 0.62, arpeggio=True,
+        )
 
     def _start_initial_music(self) -> None:
         """Begin the startup/lobby music the moment the game launches."""
@@ -230,6 +272,7 @@ class AudioManager:
     def reset_match(self) -> None:
         """Allow identical row IDs to trigger sounds again in a restarted match."""
         self.played_events.clear()
+        self._crazy_slots_last_tick = None
 
     def set_music_volume(self, volume: float) -> None:
         """Set background music volume (0.0 to 1.0) and apply it immediately."""
@@ -266,6 +309,20 @@ class AudioManager:
                 self._play_once(("next_row", str(event.data.get("row_id", ""))), self.next_row_sound)
             elif event.kind == "row_scored":
                 self._play_once(("counter_sfx", str(event.data.get("row_id", ""))), self.counter_sound)
+            elif event.kind == "crazy_slots_spin_started":
+                spin_id = str(event.data.get("spin_id", ""))
+                if spin_id:
+                    self._play_once(("crazy_slots_spin", spin_id), self.crazy_slots_spin_sound)
+            elif (event.kind == "ability_activated"
+                    and str(event.data.get("ability_id", "")) == "luffy_warrior_of_liberation_eliminate"):
+                owner_id = str(event.data.get("owner_card_id", ""))
+                if owner_id:
+                    self._play_luffy_haki_once(owner_id)
+            elif (event.kind == "ability_activated"
+                    and str(event.data.get("ability_id", "")) == "mha_04_symbol_of_peace"):
+                owner_id = str(event.data.get("owner_card_id", ""))
+                if owner_id:
+                    self._play_once(("all_might_reveal", owner_id), self.all_might_reveal_sound)
             elif event.kind == "ability_resolved":
                 sound_path = event.data.get("sound")
                 if not isinstance(sound_path, str) or not sound_path.strip():
@@ -284,6 +341,146 @@ class AudioManager:
                     ("ability_sfx", resolution_id),
                     self.ability_sounds[sound_path],
                 )
+
+    def play_crazy_slots_tick(self, spin_id: str, digit: int, speed: float) -> None:
+        """Play one throttled reel tick, lowering its pitch as the reel slows."""
+        now = time.monotonic()
+        if self._crazy_slots_last_tick is not None:
+            last_spin, last_time = self._crazy_slots_last_tick
+            if last_spin == spin_id and now - last_time < 0.028:
+                return
+        self._crazy_slots_last_tick = (spin_id, now)
+        if not self.mixer_ready or self.sfx_volume <= 0:
+            return
+        if not self.crazy_slots_tick_sounds:
+            return
+        speed_ratio = min(1.0, max(0.0, float(speed) / 26.0))
+        pitch_index = min(
+            len(self.crazy_slots_tick_sounds) - 1,
+            max(0, round(speed_ratio * (len(self.crazy_slots_tick_sounds) - 1))),
+        )
+        digit_tweak = (max(1, int(digit)) - 1) % 3
+        sound = self.crazy_slots_tick_sounds[min(
+            len(self.crazy_slots_tick_sounds) - 1, pitch_index + (digit_tweak if speed_ratio > 0.45 else 0),
+        )]
+        self._play(sound, self.sfx_volume * 0.62)
+
+    def play_crazy_slots_landing(self, spin_id: str) -> None:
+        if spin_id:
+            self._play_once(("crazy_slots_chime", spin_id), self.crazy_slots_chime_sound)
+
+    def _play_luffy_haki_once(self, owner_card_id: str) -> None:
+        key = ("luffy_haki_reveal", owner_card_id)
+        if key in self.played_events:
+            return
+        self.played_events.add(key)
+        if not self.mixer_ready or self.sfx_volume <= 0:
+            return
+        self._play(self.luffy_laugh_sound, self.sfx_volume * 0.78)
+        for sound, gain in self.luffy_haki_sounds:
+            self._play(sound, self.sfx_volume * gain)
+
+    @staticmethod
+    def _synthesize_haki_layer(kind: str, duration: float, seed: int) -> pygame.mixer.Sound | None:
+        """Synthesize one short, distinct impact/energy/rumble layer in PCM."""
+        if pygame.mixer.get_init() is None:
+            return None
+        sample_rate = 22050
+        sample_count = max(1, int(sample_rate * duration))
+        rng = random.Random(seed)
+        buffer = io.BytesIO()
+        phase = 0.0
+        filtered_noise = 0.0
+        with wave.open(buffer, "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(sample_rate)
+            pcm = bytearray()
+            for index in range(sample_count):
+                t = index / sample_rate
+                progress = index / sample_count
+                noise = rng.uniform(-1.0, 1.0)
+                if kind == "impact":
+                    frequency = 39.0 + 77.0 * math.exp(-t * 5.4)
+                    phase += math.tau * frequency / sample_rate
+                    body = (math.sin(phase) * math.exp(-t * 5.1)
+                            + 0.24 * math.sin(phase * 2.03) * math.exp(-t * 8.5))
+                    transient = noise * math.exp(-t * 76.0) * 0.72
+                    value = math.tanh((body * 0.9 + transient) * 1.55) * 0.82
+                elif kind == "burst":
+                    filtered_noise = filtered_noise * 0.72 + noise * 0.28
+                    frequency = 175.0 + 475.0 * math.exp(-t * 4.0)
+                    phase += math.tau * frequency / sample_rate
+                    envelope = max(0.0, 1.0 - progress) ** 1.9
+                    value = (0.62 * filtered_noise + 0.35 * math.sin(phase)) * envelope * 0.72
+                else:  # restrained sub-bass rumble under the transient
+                    frequency = 38.0 + 4.0 * math.sin(math.tau * 2.8 * t)
+                    phase += math.tau * frequency / sample_rate
+                    attack = min(1.0, t / 0.045)
+                    envelope = attack * math.exp(-t * 2.7)
+                    modulation = 0.78 + 0.22 * math.sin(math.tau * 3.4 * t)
+                    value = (math.sin(phase) + 0.20 * math.sin(phase * 1.51)) * envelope * modulation * 0.52
+                sample = int(max(-1.0, min(1.0, value)) * 32767)
+                pcm.extend(struct.pack("<h", sample))
+            output.writeframes(pcm)
+        buffer.seek(0)
+        try:
+            return pygame.mixer.Sound(file=buffer)
+        except pygame.error:
+            return None
+
+    @staticmethod
+    def _amplify_sound(sound: pygame.mixer.Sound | None, gain: float) -> pygame.mixer.Sound | None:
+        """Raise a clip's average level with a soft limiter for loud peaks."""
+        mixer_format = pygame.mixer.get_init()
+        if sound is None or mixer_format is None or mixer_format[1] != -16:
+            return sound
+        samples = array("h")
+        try:
+            samples.frombytes(sound.get_raw())
+            limiter = math.tanh(gain)
+            for index, sample in enumerate(samples):
+                normalized = sample / 32768.0
+                amplified = math.tanh(normalized * gain) / limiter
+                samples[index] = max(-32768, min(32767, round(amplified * 32768)))
+            return pygame.mixer.Sound(buffer=samples.tobytes())
+        except (pygame.error, OverflowError, ValueError):
+            return sound
+
+    @staticmethod
+    def _synthesize_tone(
+        frequencies: tuple[int, ...], duration: float, *, arpeggio: bool = False,
+    ) -> pygame.mixer.Sound | None:
+        """Build a short PCM sound in memory for Crazy Slots reel feedback."""
+        if pygame.mixer.get_init() is None:
+            return None
+        sample_rate = 22050
+        sample_count = max(1, int(sample_rate * duration))
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(sample_rate)
+            pcm = bytearray()
+            for sample_index in range(sample_count):
+                t = sample_index / sample_rate
+                envelope = (1 - sample_index / sample_count) ** (2.2 if not arpeggio else 1.15)
+                if arpeggio:
+                    note_duration = duration / len(frequencies)
+                    note_index = min(len(frequencies) - 1, int(t / note_duration))
+                    active_frequency = frequencies[note_index]
+                    local_t = t - note_index * note_duration
+                    tone = math.sin(2 * math.pi * active_frequency * local_t)
+                else:
+                    tone = math.sin(2 * math.pi * frequencies[0] * t)
+                value = int(max(-1.0, min(1.0, tone * envelope * 0.30)) * 32767)
+                pcm.extend(struct.pack("<h", value))
+            output.writeframes(pcm)
+        buffer.seek(0)
+        try:
+            return pygame.mixer.Sound(file=buffer)
+        except pygame.error:
+            return None
 
     def _play_reveal_once(self, event_id: str) -> None:
         settings = self.settings.get("card_reveal", {})

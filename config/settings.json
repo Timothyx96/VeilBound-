@@ -37,6 +37,9 @@
       "height": 1.28
     }
   },
+  "accessibility": {
+    "reduced_motion": false
+  },
   "audio": {
     "background_music": {
       "enabled": true,

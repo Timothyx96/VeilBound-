@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import string
+import time
 from dataclasses import dataclass, field
 
 from veilbound.shared.engine import GameEngine
@@ -85,6 +86,10 @@ class Room:
             await self._reveal_ack(peer, message)
         elif message_type == "select_elimination":
             await self._select_elimination(peer, message)
+        elif message_type == "crazy_slots_spin":
+            await self._spin_crazy_slots(peer)
+        elif message_type == "crazy_slots_complete":
+            await self._complete_crazy_slots(peer)
         elif message_type in {"score", "advance_row", "continue_round", "restart"}:
             await self._progress(peer, message_type)
         else:
@@ -112,7 +117,10 @@ class Room:
             await peer.send({"type": "error", "message": result.reason})
             return
         await self._publish_result(result)
-        if self.engine.state.phase == GamePhase.REVEAL and self.pending_reveal_id is None:
+        if (self.engine.state.phase == GamePhase.REVEAL
+                and self.pending_reveal_id is None
+                and not self.engine.state.get("pending_elimination")
+                and not self.engine.state.get("pending_crazy_slots")):
             await self._start_next_final_reveal()
 
     async def _progress(self, peer: Peer, message_type: str) -> None:
@@ -126,6 +134,8 @@ class Room:
             return
         # An armed elimination pauses scoring/progress until a target is chosen.
         if self.engine.state.get("pending_elimination"):
+            return
+        if self.engine.state.get("pending_crazy_slots"):
             return
         if message_type == "score":
             result = self.engine.score_current_row()
@@ -153,8 +163,14 @@ class Room:
         self.pending_reveal_id = None
         self.pending_reveal_event = None
         self.reveal_acks.clear()
+        pending = self.engine.state.get("pending_elimination")
+        if pending:
+            pending["selection_ready"] = True
         if self.engine.state.phase == GamePhase.REVEAL:
-            await self._start_next_final_reveal()
+            if self.engine.state.get("pending_crazy_slots"):
+                await self.broadcast([])
+            else:
+                await self._start_next_final_reveal()
         else:
             await self.broadcast([])
 
@@ -187,11 +203,51 @@ class Room:
         # The pause interrupted the final-reveal sequence; resume it. (When
         # the elimination completed the board, the engine already advanced to
         # row scoring and the progress loop takes over.)
-        if self.engine.state.phase == GamePhase.REVEAL and self.pending_reveal_id is None:
+        if (self.engine.state.phase == GamePhase.REVEAL
+                and self.pending_reveal_id is None
+                and not self.engine.state.get("pending_elimination")
+                and not self.engine.state.get("pending_crazy_slots")):
+            await self._start_next_final_reveal()
+
+    async def _spin_crazy_slots(self, peer: Peer) -> None:
+        if not self.ready:
+            await peer.send({"type": "error", "message": "Waiting for the other player to reconnect."})
+            return
+        if self.pending_reveal_id is not None:
+            await peer.send({"type": "error", "message": "Wait for Kite's ability reveal to finish."})
+            return
+        result = self.engine.spin_crazy_slots(peer.player_id)
+        if not result.accepted:
+            await peer.send({"type": "error", "message": result.reason})
+            return
+        await self._publish_result(result)
+
+    async def _complete_crazy_slots(self, peer: Peer) -> None:
+        if not self.ready:
+            await peer.send({"type": "error", "message": "Waiting for the other player to reconnect."})
+            return
+        pending = self.engine.state.get("pending_crazy_slots")
+        if not pending or pending.get("status") != "spinning":
+            await peer.send({"type": "error", "message": "There is no Crazy Slots animation to complete."})
+            return
+        if str(peer.player_id) != str(pending.get("owner_id", "")):
+            await peer.send({"type": "error", "message": "Only Kite's player may continue."})
+            return
+        owner_id = str(pending.get("owner_id", ""))
+        result = self.engine.complete_crazy_slots(owner_id)
+        if not result.accepted:
+            await peer.send({"type": "error", "message": result.reason})
+            return
+        await self._publish_result(result)
+        if (self.engine.state.phase == GamePhase.REVEAL
+                and self.pending_reveal_id is None
+                and not self.engine.state.get("pending_elimination")
+                and not self.engine.state.get("pending_crazy_slots")):
             await self._start_next_final_reveal()
 
     async def _start_next_final_reveal(self) -> None:
-        if not self.ready or self.pending_reveal_id is not None:
+        if (not self.ready or self.pending_reveal_id is not None
+                or self.engine.state.get("pending_crazy_slots")):
             return
         result = self.engine.reveal_next_card()
         if result.accepted:
@@ -203,6 +259,10 @@ class Room:
         outgoing = []
         for event in result.events:
             data = dict(event.data)
+            if event.kind == "crazy_slots_spin_started":
+                pending = self.engine.state.get("pending_crazy_slots") or {}
+                started_at = float(pending.get("spin_started_at", 0.0) or 0.0)
+                data["spin_elapsed"] = max(0.0, time.time() - started_at)
             if event.kind == "card_revealed":
                 self.reveal_sequence += 1
                 reveal_id = f"{self.engine.state.round_number}:{self.reveal_sequence}"

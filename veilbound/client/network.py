@@ -231,6 +231,34 @@ class RemoteGameEngine:
             })
         return ActionResult(True)
 
+    def select_destination_row(self, row_id: str) -> ActionResult:
+        """Send the row choice for the destination stage of a move ability."""
+        return self.select_elimination_target(row_id, -1)
+
+    def spin_crazy_slots(self) -> ActionResult:
+        """Ask the authority to determine the single Crazy Slots result."""
+        pending = (self.state.get("pending_crazy_slots") or {}) if self.state else {}
+        if (self.remote_locked or str(pending.get("owner_id", "")) != str(self.player_id)
+                or pending.get("status") != "awaiting_spin"):
+            return ActionResult(False, "Wait for your Crazy Slots spin.")
+        spin_key = str(pending.get("owner_card_id", ""))
+        request = ("crazy_slots_spin", spin_key)
+        if request not in self._sent_requests:
+            self._sent_requests.add(request)
+            self.connection.send({"type": "crazy_slots_spin"})
+        return ActionResult(True)
+
+    def complete_crazy_slots(self) -> ActionResult:
+        """Report that this client's Crazy Slots animation actually finished."""
+        pending = (self.state.get("pending_crazy_slots") or {}) if self.state else {}
+        if self.remote_locked or pending.get("status") != "spinning":
+            return ActionResult(False, "There is no Crazy Slots spin to complete.")
+        request = ("crazy_slots_complete", str(pending.get("spin_id", "")))
+        if request not in self._sent_requests:
+            self._sent_requests.add(request)
+            self.connection.send({"type": "crazy_slots_complete"})
+        return ActionResult(True)
+
     def score_current_row(self) -> ActionResult:
         return self._send_progress("score")
 
@@ -287,6 +315,10 @@ def _state_from_view(view: dict) -> GameState:
                 slots.append(CardInstance(
                     f"hidden-{row_view['id']}-{slot_index}", "", str(slot_view["owner_id"]),
                     eliminated=bool(slot_view.get("eliminated", False)),
+                    ability_suppressed=bool(slot_view.get("ability_suppressed", False)),
+                    ability_suppression_blocks_bonus_points=bool(slot_view.get("ability_suppression_blocks_bonus_points", True)),
+                    ability_suppression_style=str(slot_view.get("ability_suppression_style", "black")),
+                    immune_to_elimination=bool(slot_view.get("immune_to_elimination", False)),
                 ))
             else:
                 slots.append(CardInstance(
@@ -300,7 +332,12 @@ def _state_from_view(view: dict) -> GameState:
                     applied_bonuses=dict(card_view.get("applied_bonuses") or {}),
                     suppressed_bonuses=list(card_view.get("suppressed_bonuses") or []),
                     base_point_reductions=dict(card_view.get("base_point_reductions") or {}),
+                    bonus_point_reductions=dict(card_view.get("bonus_point_reductions") or {}),
                     eliminated=bool(card_view.get("eliminated", False)),
+                    ability_suppressed=bool(card_view.get("ability_suppressed", False)),
+                    ability_suppression_blocks_bonus_points=bool(card_view.get("ability_suppression_blocks_bonus_points", True)),
+                    ability_suppression_style=str(card_view.get("ability_suppression_style", "black")),
+                    immune_to_elimination=bool(card_view.get("immune_to_elimination", False)),
                 ))
         row = BattleRow(
             id=str(row_view["id"]), number=int(row_view["number"]),
@@ -308,6 +345,8 @@ def _state_from_view(view: dict) -> GameState:
             slots=slots, scores=dict(row_view.get("scores") or {}), winner_id=row_view.get("winner_id"),
             scored=bool(row_view["scored"]), awarded_points=int(row_view["awarded_points"]),
             eliminated_slots=list(row_view.get("eliminated_slots") or []),
+            movement_blocked_slots=list(row_view.get("movement_blocked_slots") or []),
+            abilities_disabled=bool(row_view.get("abilities_disabled", False)),
         )
         rows.append(row)
 
@@ -326,4 +365,6 @@ def _state_from_view(view: dict) -> GameState:
     # Mirrors the authority's pause payload so the client can render and
     # submit elimination target selections.
     state.pending_elimination = dict(view.get("pending_elimination") or {}) or None
+    state.pending_crazy_slots = dict(view.get("pending_crazy_slots") or {}) or None
+    state.crazy_slots_results = list(view.get("crazy_slots_results") or [])
     return state

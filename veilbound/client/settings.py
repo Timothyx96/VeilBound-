@@ -54,6 +54,7 @@ class AppSettings:
     background_path: str | None
     music_volume: float
     sfx_volume: float
+    reduced_motion: bool = False
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -174,6 +175,9 @@ def load_settings(path: Path | None = None) -> AppSettings:
         sfx_volume = min(1.0, max(0.0, float(audio_raw.get("sfx_volume", 0.8))))
     except (TypeError, ValueError):
         sfx_volume = 0.8
+    accessibility = raw.get("accessibility", {})
+    reduced_motion_raw = accessibility.get("reduced_motion", False) if isinstance(accessibility, dict) else False
+    reduced_motion = reduced_motion_raw if isinstance(reduced_motion_raw, bool) else False
 
     return AppSettings(
         animation_preset=preset_name,
@@ -184,4 +188,5 @@ def load_settings(path: Path | None = None) -> AppSettings:
         background_path=valid_backgrounds.get(background_name),
         music_volume=music_volume,
         sfx_volume=sfx_volume,
+        reduced_motion=reduced_motion,
     )

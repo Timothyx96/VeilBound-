@@ -236,8 +236,25 @@
       "name": "Tobi",
       "base_points": 4,
       "type": "Trickster",
-      "effect_name": "This Was My Plan All Along",
-      "effect_text": "The row is won by the player with the lowest total points instead of the highest. This effect does not override All Might's effect.",
+      "effect_name": "Reverse Fate",
+      "effect_text": "While Tobi is active in a row, the player with the lowest total points wins that row. All Might's automatic-win effect takes priority.",
+      "ability": {
+        "id": "tobi_reverse_fate",
+        "name": "Reverse Fate",
+        "description": "While Tobi is active in a row, the player with the lowest total points wins that row. All Might's automatic-win effect takes priority.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "reverse_row_winner"
+          }
+        ],
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "LOWEST WINS",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/Naruto/Tobi.jpeg",
       "full_card_art": "assets/art/card front/Naruto/Tobi.png"
     },
@@ -438,8 +455,30 @@
       "name": "Dabi",
       "base_points": 6,
       "type": "Fighter",
-      "effect_name": "Blueflame Pursuit",
-      "effect_text": "Each opposing character placed behind Dabi in the same row loses 1 point.",
+      "effect_name": "Blueflame",
+      "effect_text": "Each opposing character placed to the right of Dabi in the same row loses 1 point.",
+      "ability": {
+        "id": "mha_03_blueflame",
+        "name": "Blueflame",
+        "description": "Each opposing character placed to the right of Dabi in the same row loses 1 point.",
+        "trigger": "on_next_opposing_placement",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "reduce_target_base_points",
+            "amount": 1
+          }
+        ],
+        "targeting": {
+          "target_scope": "same_row",
+          "target_side": "opposing"
+        },
+        "activation_limit": "continuous",
+        "presentation": {
+          "floating_text": "-1",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/My Hero Academia/Eijiro_Kirishima.jpg",
       "full_card_art": "assets/art/card front/MHA/Dabi.png"
     },
@@ -450,6 +489,23 @@
       "type": "GOAT",
       "effect_name": "Symbol of Peace",
       "effect_text": "If the opposing row contains no GOAT card, you automatically win that row. All Might's automatic-win effect takes priority over all other automatic-win effects.",
+      "ability": {
+        "id": "mha_04_symbol_of_peace",
+        "name": "Symbol of Peace",
+        "description": "Automatically wins the row if the opposing player has no GOAT card in that row. This automatic win takes priority over Reverse Fate.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "automatic_win_if_opposing_row_has_no_goat"
+          }
+        ],
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "SYMBOL OF PEACE",
+          "animation": "points_gain"
+        }
+      },
       "image": "assets/art/characters/My Hero Academia/All_Might.jpg",
       "full_card_art": "assets/art/card front/MHA/All_Might.png"
     },
@@ -486,8 +542,28 @@
       "name": "Shoto Todoroki",
       "base_points": 8,
       "type": "Fighter",
-      "effect_name": "Flashfire and Frost",
-      "effect_text": "Cancels one opposing character's effect that grants additional points.",
+      "effect_name": "Thermal Equilibrium",
+      "effect_text": "Shoto gains +2 bonus points for every opposing character exceeding his allied characters in the same row.",
+      "abilities": [
+        {
+          "id": "mha_06_thermal_equilibrium",
+          "name": "Thermal Equilibrium",
+          "description": "Shoto gains +2 bonus points for every opposing character exceeding his allied characters in the same row. Shoto counts as allied.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "add_current_points_per_opposing_excess_over_friendly",
+              "amount": 2
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+2 per opposing excess",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/My Hero Academia/Shoto_Todoroki.jpg",
       "full_card_art": "assets/art/card front/MHA/Shoto.png"
     },
@@ -498,6 +574,26 @@
       "type": "Regular",
       "effect_name": "Deadeye",
       "effect_text": "The next card in the row gets -3 points if it is an opposing card.",
+      "abilities": [
+        {
+          "id": "mha_07_silent_sniper",
+          "name": "Silent Sniper",
+          "description": "When Lady Nagant is revealed, the next card in her row loses 3 points if it belongs to the opposing player. Bonus points are reduced before base points.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "reduce_next_card_points",
+              "amount": 3
+            }
+          ],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "Deadeye",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/My Hero Academia/Minoru_Mineta.jpg",
       "full_card_art": "assets/art/card front/MHA/Lady_Nagant.png"
     },
@@ -539,10 +635,29 @@
       "name": "Toga",
       "base_points": 2,
       "type": "Trickster",
-      "effect_name": "Transform",
+      "effect_name": "Copycat",
       "effect_text": "If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.",
       "image": "assets/art/characters/My Hero Academia/Tenya_Iida.jpg",
-      "full_card_art": "assets/art/card front/MHA/Toga.png"
+      "full_card_art": "assets/art/card front/MHA/Toga.png",
+      "abilities": [
+        {
+          "id": "mha_09_copycat",
+          "name": "Copycat",
+          "description": "If the next character placed in the row belongs to the opposing team, Toga copies that character's base points.",
+          "trigger": "on_next_placement_in_row",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "copy_next_opposing_base_points"
+            }
+          ],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "BASE COPIED",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "mha_10",
@@ -724,10 +839,29 @@
       "name": "Chrollo Lucilfer",
       "base_points": 7,
       "type": "Fighter",
-      "effect_name": "Master Strategist",
+      "effect_name": "Ability Suppression",
       "effect_text": "The next opposing character placed in the same row cannot activate its ability or gain additional points.",
       "image": "assets/art/characters/Hunter x Hunter/Chrollo_Lucilfer.jpg",
-      "full_card_art": "assets/art/card front/HxH/Chrollo_Lucilfer.png"
+      "full_card_art": "assets/art/card front/HxH/Chrollo_Lucilfer.png",
+      "abilities": [
+        {
+          "id": "hxh_05_ability_suppression",
+          "name": "Ability Suppression",
+          "description": "The next opposing character placed in the same row cannot activate its ability or gain additional points.",
+          "trigger": "on_next_opposing_placement",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "suppress_next_opposing_ability"
+            }
+          ],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "ABILITY SEALED",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "hxh_06",
@@ -770,9 +904,51 @@
       "base_points": 5,
       "type": "Trickster",
       "effect_name": "Crazy Slots",
-      "effect_text": "Randomly gains one of three bonuses: 1: +4 points, 2: immunity to elimination, 3: the ability to eliminate one opposing Regular card in his row.",
+      "effect_text": "Spin once for one of three Crazy Slots outcomes: gain +4 bonus points, become immune to elimination, or eliminate one opposing Regular in Kite's row.",
       "image": "assets/art/characters/Hunter x Hunter/Tonpa.jpg",
-      "full_card_art": "assets/art/card front/HxH/Kite.png"
+      "full_card_art": "assets/art/card front/HxH/Kite.png",
+      "ability": {
+        "id": "hxh_07_crazy_slots",
+        "name": "Crazy Slots",
+        "description": "Spin once for one of three outcomes: gain +4 bonus points, become immune to elimination, or eliminate one opposing Regular in Kite's row.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "random_slot_choice",
+            "outcomes": [
+              {
+                "number": 1,
+                "name": "Powerful Strike",
+                "description": "+4 bonus points",
+                "effects": [{"type": "add_current_points", "amount": 4}]
+              },
+              {
+                "number": 2,
+                "name": "Survival Instinct",
+                "description": "Immune to elimination",
+                "effects": [{"type": "grant_status", "status": "immune_to_elimination"}]
+              },
+              {
+                "number": 3,
+                "name": "Deadly Precision",
+                "description": "Eliminate an opposing Regular",
+                "effects": [{
+                  "type": "eliminate_target",
+                  "target_scope": "same_row",
+                  "target_side": "opposing",
+                  "allowed_types": ["Regular"]
+                }]
+              }
+            ]
+          }
+        ],
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "CRAZY SLOTS",
+          "animation": "points_gain"
+        }
+      }
     },
     {
       "id": "hxh_08",
@@ -905,6 +1081,23 @@
             "floating_text": "WARRIOR OF LIBERATION",
             "animation": "elimination"
           }
+          },
+          {
+            "id": "luffy_warrior_of_liberation_passive",
+            "name": "Warrior of Liberation",
+            "description": "Ignores opposing abilities that would eliminate, weaken, move, or disable Luffy.",
+            "trigger": "on_reveal",
+            "conditions": [],
+            "effects": [
+              {
+                "type": "ignore_opposing_abilities"
+              }
+            ],
+            "activation_limit": "continuous",
+            "presentation": {
+              "floating_text": "UNSTOPPABLE",
+              "animation": "points_gain"
+            }
         }
       ]
     },
@@ -938,7 +1131,8 @@
         "activation_limit": "once_per_card_per_match",
         "presentation": {
           "floating_text": "ONI GIRI",
-          "animation": "elimination"
+          "animation": "elimination",
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Roronoa_zoro.mp3"
         }
       }
     },
@@ -987,7 +1181,19 @@
       "effect_name": "Conqueror's Haki",
       "effect_text": "Cancels all abilities in the row, including friendly and opposing abilities. Abilities in that row can no longer activate, and eliminated characters remain eliminated.",
       "image": "assets/art/characters/One Piece/Shanks.jpg",
-      "full_card_art": "assets/art/card front/One_Piece/Shanks.png"
+      "full_card_art": "assets/art/card front/One_Piece/Shanks.png",
+      "abilities": [
+        {
+          "id": "onepiece_04_conquerors_haki_row_silence",
+          "name": "Conqueror's Haki",
+          "description": "Cancels all abilities in the row, including friendly and opposing abilities. Abilities in that row can no longer activate, and eliminated characters remain eliminated.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [{"type": "disable_row_abilities"}],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {"floating_text": "ABILITIES SEALED", "animation": "points_gain"}
+        }
+      ]
     },
     {
       "id": "onepiece_05",
@@ -1032,7 +1238,31 @@
       "effect_name": "Room",
       "effect_text": "Moves one opposing card from his row to another row chosen by the player.",
       "image": "assets/art/characters/One Piece/Trafalgar_D_Water_Law.jpg",
-      "full_card_art": "assets/art/card front/One_Piece/Trafalgar_Law.png"
+      "full_card_art": "assets/art/card front/One_Piece/Trafalgar_Law.png",
+      "abilities": [
+        {
+          "id": "onepiece_06_room_tactical_relocation",
+          "name": "Room — Tactical Relocation",
+          "description": "Move one opposing character in Law's row to another available row.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "move_character"
+            }
+          ],
+          "targeting": {
+            "target_scope": "same_row",
+            "target_side": "opposing",
+            "allowed_types": []
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "ROOM",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "onepiece_07",
@@ -1042,7 +1272,26 @@
       "effect_name": "The one piece is real",
       "effect_text": "Cannot be eliminated by an opposing ability.",
       "image": "assets/art/characters/One Piece/Buggy_the_Clown.jpg",
-      "full_card_art": "assets/art/card front/One_Piece/whitebeard.png"
+      "full_card_art": "assets/art/card front/One_Piece/whitebeard.png",
+      "abilities": [
+        {
+          "id": "onepiece_07_opposing_ability_protection",
+          "name": "The One Piece Is Real",
+          "description": "Cannot be eliminated by an opposing ability.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "cannot_be_eliminated_by_opposing_ability"
+            }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "PROTECTED",
+            "animation": "points_gain"
+          }
+        }
+      ]
     },
     {
       "id": "onepiece_08",
@@ -1155,9 +1404,21 @@
       "base_points": 9,
       "type": "Dynamic Duo",
       "effect_name": "Autonomous Ultra Instinct",
-      "effect_text": "The first time an opposing ability would eliminate Goku, he cancels that ability's effect on himself.",
+      "effect_text": "Goku cannot be eliminated by opposing abilities.",
       "image": "assets/art/characters/Dragon Ball/Goku_Ultra_Instinct.jpg",
-      "full_card_art": "assets/art/card front/Dragon_Ball/Goku.png"
+      "full_card_art": "assets/art/card front/Dragon_Ball/Goku.png",
+      "abilities": [
+        {
+          "id": "dragonball_01_limitless_potential",
+          "name": "Limitless Potential",
+          "description": "Goku cannot be eliminated by opposing abilities.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [{"type": "cannot_be_eliminated_by_opposing_ability"}],
+          "activation_limit": "continuous",
+          "presentation": {"floating_text": "PROTECTED", "animation": "points_gain"}
+        }
+      ]
     },
     {
       "id": "dragonball_02",
@@ -1295,10 +1556,22 @@
       "name": "Future Trunks",
       "base_points": 5,
       "type": "Trickster",
-      "effect_name": "Hope of the Future",
+      "effect_name": "Saiyan Resolve",
       "effect_text": "Gains +5 points if another friendly card in his row is eliminated.",
       "image": "assets/art/characters/Dragon Ball/Future_Trunks.jpg",
-      "full_card_art": "assets/art/card front/Dragon_Ball/Trunks.png"
+      "full_card_art": "assets/art/card front/Dragon_Ball/Trunks.png",
+      "abilities": [
+        {
+          "id": "dragonball_06_saiyan_resolve",
+          "name": "Saiyan Resolve",
+          "description": "Gains +5 points if another friendly card in his row is eliminated.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [{"type": "gain_points_on_friendly_elimination", "amount": 5}],
+          "activation_limit": "continuous",
+          "presentation": {"floating_text": "+5", "animation": "points_gain"}
+        }
+      ]
     },
     {
       "id": "dragonball_07",
@@ -1337,8 +1610,29 @@
       "name": "Hit",
       "base_points": 7,
       "type": "Fighter",
-      "effect_name": "Time Skip",
+      "effect_name": "Time Suppression",
       "effect_text": "The next opposing card played after Hit in the same row cannot activate its ability.",
+      "abilities": [
+        {
+          "id": "dragonball_08_time_suppression",
+          "name": "Time Suppression",
+          "description": "The next opposing card played after Hit in the same row cannot activate its ability.",
+          "trigger": "on_next_opposing_placement",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "suppress_next_opposing_ability",
+              "preserve_bonus_points": true,
+              "visual_style": "time_freeze"
+            }
+          ],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "TIME FROZEN",
+            "animation": "points_gain"
+          }
+        }
+      ],
       "image": "assets/art/characters/Dragon Ball/Piccolo_Orange.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Hit.png"
     },

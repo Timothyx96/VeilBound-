@@ -2,7 +2,7 @@ import json
 import pickle
 import shutil
 
-GAME = r'veilbound/assets/data/anime_bedriegers_bedrogen.json'
+GAME = r'veilbound/assets/data/cards_active_english.json'
 REF = r'veilbound/assets/data/NEW_DESCRIPTIONS_AND EFFECTS.json'
 
 with open('update_plan.pkl', 'rb') as f:

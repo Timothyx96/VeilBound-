@@ -35,7 +35,7 @@ Pause offers **Options** (live SFX + music volume, 10% steps) and **Quit Game**.
 
 ## Customize
 
-Add portraits under `assets/art/characters/`, then register them in `veilbound/assets/data/anime_bedriegers_bedrogen.json` (`id`, `name`, `base_points`, `effect_name`, `effect_text`, `image`). Missing art falls back to a generated placeholder. Backgrounds, animation presets, and audio live in `config/settings.json`.
+Add portraits under `assets/art/characters/`, then register them in `veilbound/assets/data/cards_active_english.json` (`id`, `name`, `base_points`, `effect_name`, `effect_text`, `image`). The active roster is `cards_active_english.json`; `cards_inactive_dutch.json` and `cards_inactive_proposal.json` are not loaded by the game. Missing art falls back to a generated placeholder. Backgrounds, animation presets, and audio live in `config/settings.json`.
 
 ## Project layout
 

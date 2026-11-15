@@ -74,6 +74,11 @@ class CardInstance(StateRecord):
         applied_bonuses: dict[str, int] | None = None,
         suppressed_bonuses: list[str] | None = None,
         base_point_reductions: dict[str, int] | None = None,
+        bonus_point_reductions: dict[str, int] | None = None,
+        ability_suppressed: bool = False,
+        ability_suppression_blocks_bonus_points: bool = True,
+        ability_suppression_style: str = "black",
+        immune_to_elimination: bool = False,
     ):
         super().__init__(
             id=id,
@@ -84,6 +89,10 @@ class CardInstance(StateRecord):
             activated_abilities=list(activated_abilities or []),
             resolved_abilities=list(resolved_abilities or []),
             eliminated=eliminated,
+            ability_suppressed=bool(ability_suppressed),
+            ability_suppression_blocks_bonus_points=bool(ability_suppression_blocks_bonus_points),
+            ability_suppression_style=str(ability_suppression_style),
+            immune_to_elimination=bool(immune_to_elimination),
             base_points=base_points,
             # Dynamic bonuses granted by abilities (ability_id -> amount). Kept
             # separate from the immutable base so removing a bonus never
@@ -93,6 +102,9 @@ class CardInstance(StateRecord):
             # Match-scoped changes to this instance's base points, keyed by source.
             base_point_reductions=(
                 dict(base_point_reductions) if base_point_reductions is not None else {}
+            ),
+            bonus_point_reductions=(
+                dict(bonus_point_reductions) if bonus_point_reductions is not None else {}
             ),
         )
 
@@ -127,16 +139,21 @@ class BattleRow(StateRecord):
         awarded_points: int = 0,
         point_value: int | None = None,
         eliminated_slots: list[int] | None = None,
+        movement_blocked_slots: list[int] | None = None,
+        abilities_disabled: bool = False,
     ):
         super().__init__(
             id=id, number=number, capacity=capacity, point_value=capacity if point_value is None else point_value,
             slots=slots, scores=scores or {}, winner_id=winner_id, scored=scored,
             awarded_points=awarded_points, eliminated_slots=eliminated_slots or [],
+            movement_blocked_slots=list(movement_blocked_slots or []),
+            abilities_disabled=bool(abilities_disabled),
         )
 
     @property
     def is_full(self) -> bool:
-        return all(card is not None for card in self.slots)
+        blocked = set(self.get("movement_blocked_slots", []))
+        return all(card is not None or index in blocked for index, card in enumerate(self.slots))
 
     @property
     def placed_count(self) -> int:
@@ -174,6 +191,9 @@ class GameState(StateRecord):
             final_reveal_active=final_reveal_active, winner_id=winner_id, round_winner_id=round_winner_id,
             scored_row_order=scored_row_order or [], events=events or [], pending_ability_choice=None,
             pending_elimination=None,
+            pending_movement_reveals=[],
+            pending_crazy_slots=None,
+            crazy_slots_results=[],
             viewer_id=viewer_id,
         )
 
