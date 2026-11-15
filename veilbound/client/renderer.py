@@ -84,6 +84,7 @@ class Renderer:
         self.score_animation_started = 0.0
         # Timed floating ability texts; presentation only, never mutates points.
         self.floating_texts: list[dict] = []
+        self._endeavor_reveal_texts: dict[str, dict] = {}
         self.trunks_bonus_animations: list[dict] = []
         # Dedupe key -> start time, so a duplicated event cannot replay text.
         self.floating_texts_started: dict[tuple[str, str, str], float] = {}
@@ -156,6 +157,7 @@ class Renderer:
         self.flip_started.clear()
         self.last_card_reveal = ""
         self.floating_texts.clear()
+        self._endeavor_reveal_texts.clear()
         self.trunks_bonus_animations.clear()
         self.floating_texts_started.clear()
         self._processed_ability_resolution_ids.clear()
@@ -305,6 +307,15 @@ class Renderer:
                 if key in self.flip_started:
                     continue
                 self.flip_started[key] = time.monotonic()
+                endeavor_text = self._endeavor_reveal_texts.pop(
+                    str(event.data.get("card_id", "")), None,
+                )
+                if endeavor_text is not None:
+                    self._queue_ability_floating_text({
+                        **endeavor_text,
+                        "row_id": event.data["row_id"],
+                        "slot_index": event.data["slot_index"],
+                    }, now)
                 self.last_card_reveal = event.message
                 now = time.monotonic()
                 self.reveal_card = dict(event.data)
@@ -416,7 +427,14 @@ class Renderer:
                     self._crazy_slots_background = None
                     self._crazy_slots_background_size = None
                 elif not event.data.get("requires_target_selection", False):
-                    self._queue_ability_floating_text(event.data, now)
+                    if str(event.data.get("ability_id", "")) == "mha_05_hellflame_first_in_empty_row":
+                        # Endeavor's bonus is applied at placement, but keep its
+                        # floating point presentation hidden until the card flips.
+                        owner_id = str(event.data.get("owner_card_id", ""))
+                        if owner_id:
+                            self._endeavor_reveal_texts[owner_id] = dict(event.data)
+                    else:
+                        self._queue_ability_floating_text(event.data, now)
                     transformed_art = event.data.get("transformed_card_art")
                     if (isinstance(transformed_art, str) and self.reveal_card is not None
                             and self.reveal_card.get("row_id") == event.data.get("row_id")
@@ -1768,7 +1786,7 @@ class Renderer:
             if getattr(slot, "ability_suppressed", False):
                 self._draw_suppression_marker(
                     screen, card_rect, now,
-                    str(card.get("ability_suppression_style", "black")),
+                    str(slot.get("ability_suppression_style", "black")),
                 )
             if self._elimination_flash_is_selection_target:
                 self._draw_selected_elimination_outline(screen, card_rect)

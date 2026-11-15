@@ -1342,6 +1342,21 @@ class GameEngine:
                 "destination_slot_index": destination_index,
             },
         )
+        # Relocation is a placement into the destination row for event and
+        # reveal purposes. Keep the distinct character_moved event above for
+        # movement presentation and include the origin so clients can retain
+        # the Law-specific movement animation.
+        self._emit(
+            "placement",
+            f"{target_name} is placed in Row {destination.number} by Law's ability.",
+            {
+                "player_id": target_card.owner_id,
+                "row_id": destination.id,
+                "slot_index": destination_index,
+                "source": "law_movement",
+                "card_id": target_card.id,
+            },
+        )
         self._emit_ability_resolved(
             ability_id=str(pending.get("ability_id", "")),
             ability_name=str(pending.get("ability_name", "")),
@@ -1360,8 +1375,8 @@ class GameEngine:
         # destination position through the regular reveal pipeline. The helper
         # and _reveal_card both guard against duplicate reveals.
         state.pending_movement_reveals = [
-            {"row_id": source_row.id, "placed_slot_index": target_index},
             {"row_id": destination.id, "placed_slot_index": destination_index},
+            {"row_id": source_row.id, "placed_slot_index": target_index},
         ]
         self._resume_reveal_after_target_selection()
         return ActionResult(True, events=tuple(state.events[event_start:]))
