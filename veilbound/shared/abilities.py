@@ -1265,7 +1265,7 @@ class AbilityManager:
                         effect for effect in ability.effects
                         if effect.type in {
                             "add_current_points",
-                            "add_current_points_per_friendly_type"
+                            "add_current_points_per_friendly_type",
                             "add_current_points_per_opposing_type_after_owner",
                         }
                         or effect.type == "add_current_points_per_friendly_type"

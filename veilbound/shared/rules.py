@@ -22,8 +22,12 @@ KITE_CRAZY_SLOTS_ABILITY_ID = "hxh_07_crazy_slots"
 
 
 def _card_resolved_for_reveal(card: CardInstance | None) -> bool:
-    """A card is finished with the reveal pass when revealed or eliminated."""
-    return card is not None and (card.revealed or getattr(card, "eliminated", False))
+    """A slot is finished with the reveal pass when empty, revealed, or eliminated.
+
+    Law can leave an intentionally blocked empty source slot after moving a
+    card. Such a slot must not hold the global reveal counter open forever.
+    """
+    return card is None or card.revealed or getattr(card, "eliminated", False)
 
 
 def deal_player_pool(roster: Mapping[str, object] | Iterable[str], pool_size: int = PLAYER_POOL_SIZE, seed: int | None = None) -> list[str]:
@@ -227,14 +231,19 @@ class GameEngine:
             return []
         legal: list[tuple[str, int]] = []
         for row in state.rows:
-            blocked = set(row.get("movement_blocked_slots", []))
-            next_index = next((
-                index for index, card in enumerate(row.slots)
-                if card is None and (index not in blocked or index == row.capacity - 1)
-            ), None)
+            next_index = self._next_placement_slot(row)
             if next_index is not None:
                 legal.append((row.id, next_index))
         return legal
+
+    @staticmethod
+    def _next_placement_slot(row: BattleRow) -> int | None:
+        """Return the same legal left-to-right slot for plays and relocations."""
+        blocked = set(row.get("movement_blocked_slots", []))
+        return next((
+            index for index, card in enumerate(row.slots)
+            if card is None and (index not in blocked or index == row.capacity - 1)
+        ), None)
 
     def play_card(self, player_id: str, card_id: str, row_id: str, slot_index: int) -> ActionResult:
         """Place into one empty slot; rejection paths do not mutate the state."""
@@ -267,10 +276,7 @@ class GameEngine:
         if row.slots[slot_index] is not None:
             return ActionResult(False, "That slot is already occupied.")
         blocked = set(row.get("movement_blocked_slots", []))
-        next_slot = next((
-            index for index, placed in enumerate(row.slots)
-            if placed is None and (index not in blocked or index == row.capacity - 1)
-        ), None)
+        next_slot = self._next_placement_slot(row)
         if slot_index in blocked and slot_index != row.capacity - 1:
             return ActionResult(False, "That slot was closed by a character movement.")
         if slot_index != next_slot:
@@ -284,47 +290,7 @@ class GameEngine:
         self._emit("placement", f"{player.name} places a face-down card in Row {row.number}.", {
             "player_id": player.id, "row_id": row.id, "slot_index": slot_index,
         })
-        placement_activations = self.abilities.on_card_placed(
-            state, card, row, slot_index, emit=self._emit_ability_activation,
-        )
-        for activation in placement_activations:
-            if any(
-                effect.type == "suppress_next_opposing_ability"
-                for effect in activation.ability.effects
-            ):
-                target = next((
-                    placed for placed in row.slots
-                    if placed is not None and placed.id == activation.target_card_id
-                ), None)
-                if target is not None:
-                    self._emit(
-                        "ability_suppressed",
-                        f"{self.cards[target.definition_id].name}'s ability is suppressed by {activation.owner_name}.",
-                        {
-                            "ability_id": activation.ability.id,
-                            "source_card_id": activation.owner_card_id,
-                            "source_row_id": row.id,
-                            "source_slot_index": activation.slot_index,
-                            "target_card_id": target.id,
-                            "target_row_id": row.id,
-                            "target_slot_index": slot_index,
-                            "visual_style": str(target.get("ability_suppression_style", "black")),
-                        },
-                    )
-        self.abilities.on_card_placed_in_empty_row(
-            state,
-            card,
-            row,
-            slot_index,
-            row_was_empty=row_was_empty,
-            emit=self._emit_ability_activation,
-        )
-        self._reveal_preceding_card(row, slot_index)
-        self._resolve_zeno_trap(row, card, slot_index)
-        self._resolve_dabi_blueflame(row, card, slot_index)
-        # Continuous placement conditions depend on the latest occupied slot,
-        # including cards that have not yet been revealed.
-        self.abilities.recalculate_continuous_bonuses(state)
+        self._process_row_placement(card, row, slot_index, row_was_empty=row_was_empty)
         # A placement reveal may trigger an elimination ability: arm the pause
         # before turn bookkeeping so the choice resolves with this turn's
         # events. Subsequent placements are blocked until a target is chosen.
@@ -351,6 +317,54 @@ class GameEngine:
         else:
             self._advance_turn()
         return ActionResult(True, events=tuple(state.events[event_start:]))
+
+    def _process_row_placement(
+        self, card: CardInstance, row: BattleRow, slot_index: int,
+        *, row_was_empty: bool,
+    ) -> None:
+        """Run the shared row-entry mechanics after a card occupies a slot.
+
+        Both hand placements and Law relocations use this pipeline. It handles
+        row-local placement effects, normal adjacent reveal resolution, traps,
+        and continuous bonuses without changing the card's reveal state.
+        """
+        state = self.state
+        placement_activations = self.abilities.on_card_placed(
+            state, card, row, slot_index, emit=self._emit_ability_activation,
+        )
+        for activation in placement_activations:
+            if not any(
+                effect.type == "suppress_next_opposing_ability"
+                for effect in activation.ability.effects
+            ):
+                continue
+            target = next((
+                placed for placed in row.slots
+                if placed is not None and placed.id == activation.target_card_id
+            ), None)
+            if target is not None:
+                self._emit(
+                    "ability_suppressed",
+                    f"{self.cards[target.definition_id].name}'s ability is suppressed by {activation.owner_name}.",
+                    {
+                        "ability_id": activation.ability.id,
+                        "source_card_id": activation.owner_card_id,
+                        "source_row_id": row.id,
+                        "source_slot_index": activation.slot_index,
+                        "target_card_id": target.id,
+                        "target_row_id": row.id,
+                        "target_slot_index": slot_index,
+                        "visual_style": str(target.get("ability_suppression_style", "black")),
+                    },
+                )
+        self.abilities.on_card_placed_in_empty_row(
+            state, card, row, slot_index, row_was_empty=row_was_empty,
+            emit=self._emit_ability_activation,
+        )
+        self._reveal_preceding_card(row, slot_index)
+        self._resolve_zeno_trap(row, card, slot_index)
+        self._resolve_dabi_blueflame(row, card, slot_index)
+        self.abilities.recalculate_continuous_bonuses(state)
 
     def _resolve_dabi_blueflame(self, row, placed_card: CardInstance, slot_index: int) -> None:
         """Apply Dabi's instance-scoped base reduction to an enemy placed behind him."""
@@ -663,6 +677,7 @@ class GameEngine:
                 target_card_id=owner.id,
                 floating_text=floating_text,
             )
+        self._resume_reveal_after_target_selection()
         return ActionResult(True, events=tuple(state.events[event_start:]))
 
     # ---------------------------------------------------------------- elimination
@@ -1187,15 +1202,9 @@ class GameEngine:
         state.pending_elimination = None
         if followup_event_start is not None:
             self._begin_pending_elimination(followup_event_start)
-        # The pause skipped the reveal-completion check; re-run it so a fully
-        # revealed board proceeds to row scoring instead of stalling.
-        if state.phase == GamePhase.REVEAL and not state.pending_elimination and all(
-            placed is not None and placed.revealed
-            for full_row in state.rows for placed in full_row.slots
-        ):
-            state.final_reveal_active = False
-            state.phase = GamePhase.ROW_SCORING
-            self._emit("final_reveal_complete", "All cards are revealed. Compare scores starting with Row 1.", {})
+        # Resume queued row checks after the chosen effect resolves, then use
+        # the same completion test as every other reveal continuation.
+        self._resume_reveal_after_target_selection()
         return ActionResult(True, events=tuple(state.events[event_start:]))
 
     def select_destination_row(self, row_id: str) -> ActionResult:
@@ -1209,7 +1218,7 @@ class GameEngine:
             for row in self.state.rows
             if row.id != source_row_id
             and not row.scored
-            and any(card is None for card in row.slots)
+            and self._next_placement_slot(row) is not None
         ]
 
     def _select_move_destination(
@@ -1291,19 +1300,25 @@ class GameEngine:
             )
             return ActionResult(True, events=tuple(state.events[event_start:]))
 
-        destination_index = next(
-            index for index, card in enumerate(destination.slots) if card is None
-        )
+        destination_index = self._next_placement_slot(destination)
+        if destination_index is None:
+            return self._refresh_move_target_selection(
+                pending, valid_targets,
+                "That row no longer has a legal open slot. Choose another highlighted row.",
+            )
+        destination_was_empty = all(card is None for card in destination.slots)
         destination.slots[destination_index] = target_card
         destination.movement_blocked_slots = [
             index for index in destination.get("movement_blocked_slots", [])
             if index != destination_index
         ]
         source_row.slots[target_index] = None
-        if target_index != source_row.capacity - 1:
-            source_row.movement_blocked_slots = sorted({
-                *source_row.get("movement_blocked_slots", []), target_index,
-            })
+        # Mark the vacated slot as consumed for row counting, including the
+        # final slot. The normal placement selector still permits that final
+        # slot as a refill, matching its existing special-case rule.
+        source_row.movement_blocked_slots = sorted({
+            *source_row.get("movement_blocked_slots", []), target_index,
+        })
         source_row.eliminated_slots = [
             index for index in (source_row.get("eliminated_slots") or [])
             if index != target_index
@@ -1313,9 +1328,8 @@ class GameEngine:
         source_row_id = source_row.id
         destination_row_id = destination.id
 
-        # Recalculate passive row-dependent bonuses after the card changes rows.
-        # Do not run placement or reveal handlers: this is a relocation, not a
-        # new placement or reveal of the existing card instance.
+        # Keep Law's selected effect available to its resolver before row-entry
+        # effects can create their own pending selections.
         resolved_ability = next((
             ability for ability in (
                 getattr(self.cards.get(attacker_card.definition_id), "abilities", None) or []
@@ -1323,10 +1337,6 @@ class GameEngine:
         ), None)
         if resolved_ability is not None:
             self.abilities.apply_deferred_effects(resolved_ability, attacker_card, state)
-        self.abilities.recalculate_continuous_bonuses(state)
-        player_ids = tuple(player.id for player in state.players)
-        source_row.scores = calculate_row_scores(source_row, player_ids, self.cards)
-        destination.scores = calculate_row_scores(destination, player_ids, self.cards)
         self._emit(
             "character_moved",
             f"{target_name} moved from Row {source_row.number} to Row {destination.number}.",
@@ -1370,15 +1380,21 @@ class GameEngine:
             floating_text=str(pending.get("floating_text", "")),
         )
         state.pending_elimination = None
-        # Relocation can satisfy the same left-adjacency reveal condition as a
-        # normal placement. Check the vacated source position and the new
-        # destination position through the regular reveal pipeline. The helper
-        # and _reveal_card both guard against duplicate reveals.
+        # The destination uses the exact same row-entry pipeline as a normal
+        # play. Its preceding-card reveal is processed first; source-row checks
+        # wait if a revealed ability needs target selection.
         state.pending_movement_reveals = [
-            {"row_id": destination.id, "placed_slot_index": destination_index},
             {"row_id": source_row.id, "placed_slot_index": target_index},
         ]
+        self._process_row_placement(
+            target_card, destination, destination_index,
+            row_was_empty=destination_was_empty,
+        )
+        self._begin_pending_elimination(event_start)
         self._resume_reveal_after_target_selection()
+        player_ids = tuple(player.id for player in state.players)
+        source_row.scores = calculate_row_scores(source_row, player_ids, self.cards)
+        destination.scores = calculate_row_scores(destination, player_ids, self.cards)
         return ActionResult(True, events=tuple(state.events[event_start:]))
 
     def _refresh_move_target_selection(
@@ -1429,16 +1445,19 @@ class GameEngine:
         # Keep source/destination checks ordered and resume the next one only
         # after that choice is resolved, avoiding overwriting pending choices.
         queued_checks = state.get("pending_movement_reveals") or []
-        while queued_checks and not state.pending_elimination:
+        while queued_checks and not state.pending_elimination and not state.pending_crazy_slots:
             check = queued_checks.pop(0)
             row = next((item for item in state.rows if item.id == check.get("row_id")), None)
             if row is not None:
+                event_start = len(state.events)
                 self._reveal_preceding_card(row, int(check.get("placed_slot_index", -1)))
+                self._begin_pending_elimination(event_start)
         state.pending_movement_reveals = queued_checks
-        if state.phase == GamePhase.REVEAL and not state.pending_elimination and all(
-            placed is not None and placed.revealed
+        if (state.phase == GamePhase.REVEAL and not state.pending_elimination
+                and not state.pending_crazy_slots and all(
+            _card_resolved_for_reveal(placed)
             for row in state.rows for placed in row.slots
-        ):
+        )):
             state.final_reveal_active = False
             state.phase = GamePhase.ROW_SCORING
             self._emit(
