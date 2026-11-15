@@ -353,6 +353,10 @@ class AudioManager:
                 self._play_once(
                     ("ability_sfx", resolution_id),
                     self.ability_sounds[sound_path],
+                    volume_multiplier=(
+                        0.5 if sound_path.replace("\\", "/").casefold().endswith("/roronoa_zoro.mp3")
+                        else 1.0
+                    ),
                 )
 
     def play_crazy_slots_tick(self, spin_id: str, digit: int, speed: float) -> None:
@@ -517,11 +521,17 @@ class AudioManager:
         if isinstance(settings, dict) and settings.get("enabled", False):
             self._play_once(key, self.card_place_sound)
 
-    def _play_once(self, key: tuple[str, str], sound: pygame.mixer.Sound | None) -> None:
+    def _play_once(
+        self,
+        key: tuple[str, str],
+        sound: pygame.mixer.Sound | None,
+        *,
+        volume_multiplier: float = 1.0,
+    ) -> None:
         if key in self.played_events:
             return
         self.played_events.add(key)
-        self._play(sound, self.sfx_volume)
+        self._play(sound, self.sfx_volume * volume_multiplier)
 
     @staticmethod
     def _play(sound: pygame.mixer.Sound | None, volume: float = 1.0) -> None:
