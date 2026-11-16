@@ -35,7 +35,6 @@ class InputController:
         self._crazy_slots_landing_played_for: str | None = None
         self._crazy_slots_last_tick: tuple[str, int] | None = None
         self._sogeking_completion_sent: str | None = None
-        self._sogeking_impact_audio_played: str | None = None
         # Debug Mode scrollbar drag state.
         self._debug_scrollbar_drag: bool = False
         self._debug_scrollbar_grab_offset: float = 0.0
@@ -313,14 +312,14 @@ class InputController:
         sogeking = self.engine.state.get("pending_sogeking_cinematic")
         if sogeking:
             cinematic_id = str(sogeking.get("cinematic_id", ""))
-            if (cinematic_id and self.renderer.sogeking_cinematic_stage == "impact"
-                    and self._sogeking_impact_audio_played != cinematic_id):
-                self._sogeking_impact_audio_played = cinematic_id
-                if self.audio is not None:
-                    self.audio.play_sogeking_impact(cinematic_id)
+            if (cinematic_id and self.renderer.sogeking_cinematic_stage == "footage"
+                    and self.audio is not None):
+                self.audio.start_sogeking_footage_audio(cinematic_id)
             if (cinematic_id and self.renderer.sogeking_cinematic_complete
                     and self._sogeking_completion_sent != cinematic_id):
                 self._sogeking_completion_sent = cinematic_id
+                if self.audio is not None:
+                    self.audio.finish_sogeking_cinematic()
                 result = self.engine.complete_sogeking_cinematic(cinematic_id)
                 if not self.remote:
                     self._apply(result, now)
@@ -329,7 +328,8 @@ class InputController:
                         self.animation_deadline = now + self._seconds("score_count_ms")
             return
         self._sogeking_completion_sent = None
-        self._sogeking_impact_audio_played = None
+        if self.audio is not None and self.audio.sogeking_cinematic_active:
+            self.audio.finish_sogeking_cinematic()
         phase = self.engine.state.phase
         if phase == GamePhase.MATCH_RESULTS:
             self.animation_deadline = None

@@ -897,6 +897,77 @@ def test_chopper_revives_only_an_eliminated_friendly_card_in_the_same_row():
         assert revived_view["resolved_abilities"] == []
 
 
+def test_sakura_automatically_revives_all_friendly_naruto_cards_and_preserves_base_modifiers():
+    engine = scripted_engine(capacity=3)
+    sakura_ability_ids = [ability.id for ability in engine.cards["naruto_04"].abilities]
+    assert sakura_ability_ids == [
+        "sakura_naruto_or_sasuke_row_bonus",
+        "sakura_medical_ninjutsu_revive_naruto_allies",
+    ]
+    p1, p2 = engine.state.players
+    sakura = card(engine, "naruto_04", p1.id)
+    engine.state.rows[0].slots[0] = sakura
+
+    revived = []
+    for row_index, definition_id in ((1, GO), (2, KAKASHI), (3, "naruto_10")):
+        target = card(engine, definition_id, p1.id)
+        target.revealed = definition_id != "naruto_10"
+        target.eliminated = True
+        target.current_points = 0
+        engine.state.rows[row_index].slots[1] = target
+        engine.state.rows[row_index].eliminated_slots = [1]
+        revived.append((row_index, target))
+
+    modified = revived[1][1]
+    modified.base_points = 4
+    modified.base_point_reductions = {"prior_match_effect": 3}
+    modified.applied_bonuses = {"existing_bonus": 2}
+
+    friendly_non_naruto = card(engine, HISOKA, p1.id)
+    friendly_non_naruto.eliminated = True
+    friendly_non_naruto.current_points = 0
+    engine.state.rows[1].slots[2] = friendly_non_naruto
+    engine.state.rows[1].eliminated_slots.append(2)
+
+    opposing_naruto = card(engine, GO, p2.id)
+    opposing_naruto.eliminated = True
+    opposing_naruto.current_points = 0
+    engine.state.rows[2].slots[2] = opposing_naruto
+    engine.state.rows[2].eliminated_slots.append(2)
+
+    row = engine.state.rows[0]
+    event_start = len(engine.state.events)
+    engine._reveal_card(row, 0, sakura)
+    assert engine.state.pending_elimination is None
+
+    assert all(not target.eliminated for _, target in revived)
+    assert all(target.revealed for _, target in revived)
+    assert all(engine.state.rows[index].slots[1] is target for index, target in revived)
+    assert all(1 not in engine.state.rows[index].eliminated_slots for index, _ in revived)
+    assert friendly_non_naruto.eliminated
+    assert opposing_naruto.eliminated
+    assert modified.base_points == 4
+    assert modified.base_point_reductions == {"prior_match_effect": 3}
+    assert modified.applied_bonuses == {}
+    assert modified.current_points == 4
+    revival_event = next(
+        event for event in engine.state.events[event_start:]
+        if event.kind == "revival" and event.data.get("target_card_id") == modified.id
+    )
+    assert revival_event.data["base_points"] == 4
+    assert any(
+        event.kind == "card_revealed"
+        and event.data.get("card_id") == revived[2][1].id
+        for event in engine.state.events[event_start:]
+    )
+    assert len([
+        event for event in engine.state.events
+        if event.kind == "revival" and event.data.get("attacker_card_id") == sakura.id
+    ]) == 3
+
+    assert "sakura_medical_ninjutsu_revive_naruto_allies" in sakura.resolved_abilities
+
+
 def test_chopper_restores_gon_after_robin_eliminates_transformed_gon():
     engine = scripted_engine(capacity=4)
     p1, p2 = engine.state.players

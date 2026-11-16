@@ -19,7 +19,7 @@ ROW_COUNT = 4
 logger = logging.getLogger(__name__)
 ZENO_TRAP_ABILITY_ID = "zeno_erase_from_existence_trap"
 KITE_CRAZY_SLOTS_ABILITY_ID = "hxh_07_crazy_slots"
-SOGEKING_ABILITY_ID = "usopp_luffy_sogeking_secret_synergy"
+SOGEKING_ABILITY_ID = "usopp_sogeking_shoot_down_flag"
 
 
 def _card_resolved_for_reveal(card: CardInstance | None) -> bool:
@@ -65,11 +65,14 @@ def calculate_row_scores(row, player_ids: tuple[str, str], cards) -> dict[str, i
 
 
 def row_uses_reverse_fate(row, cards) -> bool:
-    """Whether a revealed Tobi in one of the first four slots reverses the result."""
+    """Whether an unsealed, revealed Tobi reverses this row's result."""
+    if row.get("abilities_disabled", False):
+        return False
     for slot_index, card in enumerate(row.slots):
         if slot_index >= 4:
             break
-        if card is None or not card.revealed or getattr(card, "eliminated", False):
+        if (card is None or not card.revealed or getattr(card, "eliminated", False)
+                or bool(card.get("ability_suppressed", False))):
             continue
         definition = cards.get(card.definition_id)
         if any(
@@ -140,6 +143,7 @@ class GameEngine:
         self._rng = random.Random(seed)
         self._card_serial = 0
         self._empty_draw_piles_warned: set[str] = set()
+        self._draining_auto_revivals = False
         self.state: GameState
         self.start_new_match(seed=seed)
 
@@ -1009,21 +1013,14 @@ class GameEngine:
                 # his pending ability for one revival retry.
                 pass
             else:
-                # Restore any revived card to its original definition state so
-                # match-scoped modifications from before elimination (base
-                # points, applied bonuses, reductions) are not preserved.
-                # resolved_abilities is a historical record of what the card
-                # has already accomplished and is intentionally preserved.
-                definition = self.cards.get(target_card.definition_id)
-                if definition is not None:
-                    original_base = int(definition.base_points)
-                    target_card.base_points = original_base
-                    target_card.base_point_reductions = {}
+                # Revival preserves match-scoped base-point changes. Existing
+                # bonus cleanup remains the normal revival rule.
+                if self.cards.get(target_card.definition_id) is not None:
                     target_card.bonus_point_reductions = {}
                     target_card.applied_bonuses = {}
                     target_card.suppressed_bonuses = []
                     target_card.activated_abilities = []
-                    target_card.current_points = original_base
+                target_card.current_points = self.abilities._calculated_points(target_card)
             self.abilities.reset_failure_reports(target_card.id)
             self.abilities.recalculate_after_revival(state, target_card)
             self._emit(
@@ -1232,22 +1229,23 @@ class GameEngine:
         if resolved_ability is not None:
             self.abilities.apply_deferred_effects(resolved_ability, attacker_card, state)
 
-        self._emit_ability_resolved(
-            ability_id=str(pending.get("ability_id", "")),
-            ability_name=str(pending.get("ability_name", "")),
-            owner_card_id=str(pending["attacker_card_id"]),
-            definition_id=str(pending.get("definition_id", attacker_card.definition_id)),
-            row_id=str(pending.get("row_id", "")),
-            slot_index=int(pending.get("slot_index", 0)),
-            sound=pending.get("sound"),
-            target_card_id=target_card.id,
-            target_name=target_name,
-            floating_text=(
-                f"+{copied_bonus}"
-                if effect_type == "copy_target_bonus"
-                else str(pending.get("floating_text", ""))
-            ),
-        )
+        if not pending.get("suppress_ability_resolved", False):
+            self._emit_ability_resolved(
+                ability_id=str(pending.get("ability_id", "")),
+                ability_name=str(pending.get("ability_name", "")),
+                owner_card_id=str(pending["attacker_card_id"]),
+                definition_id=str(pending.get("definition_id", attacker_card.definition_id)),
+                row_id=str(pending.get("row_id", "")),
+                slot_index=int(pending.get("slot_index", 0)),
+                sound=pending.get("sound"),
+                target_card_id=target_card.id,
+                target_name=target_name,
+                floating_text=(
+                    f"+{copied_bonus}"
+                    if effect_type == "copy_target_bonus"
+                    else str(pending.get("floating_text", ""))
+                ),
+            )
         self._eliminate_zero_base_point_cards(
             str(pending.get("ability_id", "")),
         )
@@ -1505,6 +1503,7 @@ class GameEngine:
     def _resume_reveal_after_target_selection(self) -> None:
         """Continue reveal scoring once a staged target selection has ended."""
         state = self.state
+        self._drain_pending_auto_revivals()
         # A row-movement check can reveal a card with a staged ability choice.
         # Keep source/destination checks ordered and resume the next one only
         # after that choice is resolved, avoiding overwriting pending choices.
@@ -1529,6 +1528,44 @@ class GameEngine:
                 "All cards are revealed. Compare scores starting with Row 1.",
                 {},
             )
+
+    def _drain_pending_auto_revivals(self) -> None:
+        """Resolve Sakura's queued automatic targets through normal revival."""
+        state = self.state
+        batches = state.get("pending_auto_revivals") or []
+        if (not batches or self._draining_auto_revivals or state.pending_elimination
+                or state.pending_crazy_slots):
+            return
+        self._draining_auto_revivals = True
+        try:
+            while batches and not state.pending_elimination and not state.pending_crazy_slots:
+                batch = batches[0]
+                if batch["targets"]:
+                    target = batch["targets"].pop(0)
+                    pending = dict(batch["pending"])
+                    pending["selection_ready"] = True
+                    state.pending_elimination = pending
+                    result = self.select_elimination_target(
+                        str(target["row_id"]), int(target["slot_index"]),
+                    )
+                    if not result.accepted and state.pending_elimination is not None:
+                        state.pending_elimination = None
+                    continue
+                pending = batch["pending"]
+                self._emit_ability_resolved(
+                    ability_id=str(pending.get("ability_id", "")),
+                    ability_name=str(pending.get("ability_name", "")),
+                    owner_card_id=str(pending.get("attacker_card_id", "")),
+                    definition_id=str(pending.get("definition_id", "")),
+                    row_id=str(pending.get("row_id", "")),
+                    slot_index=int(pending.get("slot_index", 0)),
+                    sound=pending.get("sound"),
+                    floating_text=str(pending.get("floating_text", "")),
+                )
+                batches.pop(0)
+            state.pending_auto_revivals = batches
+        finally:
+            self._draining_auto_revivals = False
 
     def _eliminate_if_base_is_zero(
         self, card: CardInstance, ability_id: str,
@@ -1656,6 +1693,8 @@ class GameEngine:
             return ActionResult(False, prompt)
         if state.get("pending_crazy_slots"):
             return ActionResult(False, "Finish Crazy Slots before scoring the row.")
+        if state.get("pending_auto_revivals"):
+            return ActionResult(False, "Wait for automatic revival abilities to finish.")
         if state.get("pending_sogeking_cinematic"):
             return ActionResult(False, "Wait for Sogeking's cutscene to finish before scoring.")
         if not all(
@@ -1667,7 +1706,7 @@ class GameEngine:
         if row is None or row.scored:
             return ActionResult(False, "This row has already been scored.")
         scores = calculate_row_scores(row, tuple(player.id for player in state.players), self.cards)
-        synergy = self._sogeking_synergy_for_scoring(row, scores)
+        synergy = self._usopp_sogeking_for_scoring(row, scores)
         if synergy is not None:
             event_start = len(state.events)
             cinematic_id = f"{state.round_number}:{row.id}:{synergy['usopp'].id}"
@@ -1676,13 +1715,12 @@ class GameEngine:
                 "row_id": row.id,
                 "row_number": row.number,
                 "team_player_id": synergy["player_id"],
-                "luffy_card_id": synergy["luffy"].id,
                 "usopp_card_id": synergy["usopp"].id,
                 "bonus_points": synergy["bonus"],
             }
             self._emit(
                 "sogeking_cinematic_started",
-                "Sogeking and Luffy prepare their secret attack!",
+                "Usopp prepares the Sogeking flag shot!",
                 dict(state.pending_sogeking_cinematic),
             )
             return ActionResult(True, events=tuple(state.events[event_start:]))
@@ -1715,24 +1753,17 @@ class GameEngine:
         })
         return ActionResult(True, events=tuple(state.events[event_start:]))
 
-    def _sogeking_synergy_for_scoring(self, row: BattleRow, scores: dict[str, int]):
-        """Return the one eligible Luffy/Usopp team only when +6 wins outright."""
+    def _usopp_sogeking_for_scoring(self, row: BattleRow, scores: dict[str, int]):
+        """Return Usopp only when the row is losing and +6 wins outright."""
         if row.get("sogeking_bonus_points"):
             return None
-        luffy = next((
-            card for card in row.slots
-            if card is not None and card.definition_id == "onepiece_01"
-            and card.revealed and not getattr(card, "eliminated", False)
-        ), None)
         usopp = next((
             card for card in row.slots
             if card is not None and card.definition_id == "onepiece_08"
             and card.revealed and not getattr(card, "eliminated", False)
         ), None)
-        if luffy is None or usopp is None or luffy.owner_id != usopp.owner_id:
+        if usopp is None:
             return None
-        # All Might's row override remains the first authority in winner
-        # calculation; this shared bonus is disabled entirely in that row.
         if any(
             card is not None and card.definition_id == "mha_04"
             for card in row.slots
@@ -1745,14 +1776,25 @@ class GameEngine:
         ), None)
         effect = next((
             item for item in (ability.effects if ability is not None else ())
-            if item.type == "luffy_usopp_sogeking_bonus"
+            if item.type == "usopp_sogeking_flag_shot"
         ), None)
         if effect is None:
             return None
         bonus = effect.amount
         players = self.state.players
+        opposing_player = next((
+            player for player in players if player.id != usopp.owner_id
+        ), None)
+        if opposing_player is None:
+            return None
+        own_score = int(scores.get(usopp.owner_id, 0))
+        opposing_score = int(scores.get(opposing_player.id, 0))
+        # A tie is never an eligible activation. +6 must put Usopp's team
+        # strictly ahead by raw score, even if another rule decides row wins.
+        if own_score >= opposing_score or own_score + bonus <= opposing_score:
+            return None
         winner_before = determine_row_winner(row, scores, players, self.cards)
-        if winner_before is None or winner_before == usopp.owner_id:
+        if winner_before == usopp.owner_id:
             return None
         scores_after_bonus = dict(scores)
         scores_after_bonus[usopp.owner_id] = scores_after_bonus.get(usopp.owner_id, 0) + bonus
@@ -1761,7 +1803,6 @@ class GameEngine:
             return None
         return {
             "player_id": usopp.owner_id,
-            "luffy": luffy,
             "usopp": usopp,
             "bonus": bonus,
         }
@@ -1792,7 +1833,7 @@ class GameEngine:
         ), None)
         if usopp is None:
             state.pending_sogeking_cinematic = None
-            return ActionResult(False, "Usopp is no longer eligible to complete the shared ability.")
+            return ActionResult(False, "Usopp is no longer eligible to complete his ability.")
         bonuses[team_player_id] = bonus_points
         row.sogeking_bonus_points = bonuses
         for field_name in ("activated_abilities", "resolved_abilities"):
@@ -1803,10 +1844,9 @@ class GameEngine:
         state.pending_sogeking_cinematic = None
         self._emit(
             "sogeking_cinematic_completed",
-            "Sogeking and Luffy shoot down the flag! +6 row score.",
+            "Sogeking shoots down the flag! +6 row score.",
             {
                 **dict(pending),
-                "luffy_card_id": str(pending.get("luffy_card_id", "")),
                 "usopp_card_id": str(pending.get("usopp_card_id", "")),
             },
         )
@@ -2048,12 +2088,15 @@ class GameEngine:
         *, revealed_by: CardInstance | None = None,
     ) -> None:
         """Run the central ability manager: Phase A pending, Phase B this card."""
+        was_resolving = self.abilities.is_resolving
         self.abilities.on_card_revealed(
             self.state, card, row, slot_index,
             emit=self._emit_ability_activation,
             emit_failure=self._handle_ability_failure,
             revealed_by=revealed_by,
         )
+        if not was_resolving:
+            self._drain_pending_auto_revivals()
 
     def _handle_ability_failure(
         self,
@@ -2254,6 +2297,12 @@ class GameEngine:
                     )
                     self._eliminate_zero_base_point_cards(activation.ability.id)
             return
+        if any(
+            effect.type == "revive_all_targets"
+            for effect in activation.ability.effects
+        ):
+            self._start_automatic_revival(activation)
+            return
         # Immediate point effects resolve now. Target-selection effects wait
         # until select_elimination_target validates and applies the chosen card.
         if not activation.requires_target_selection and not activation.requires_crazy_slots_spin:
@@ -2268,6 +2317,89 @@ class GameEngine:
                 target_card_id=activation.target_card_id,
             )
             self._eliminate_zero_base_point_cards(activation.ability.id)
+
+    def _start_automatic_revival(self, activation: AbilityActivation) -> None:
+        """Queue every eligible card through the ordinary revival resolver."""
+        owner = next((
+            card for row in self.state.rows for card in row.slots
+            if card is not None and card.id == activation.owner_card_id
+        ), None)
+        if owner is None or owner.eliminated:
+            return
+        ability = activation.ability
+        targeting = EliminationTargeting(
+            target_scope=ability.target_scope,
+            target_side=ability.target_side,
+            allowed_types=ability.allowed_types,
+            excluded_types=ability.excluded_types,
+            max_base_points=ability.max_base_points,
+            min_base_points=ability.min_base_points,
+            character_set=ability.target_character_set,
+            require_eliminated=True,
+        )
+        targets = self.elimination.get_valid_targets(self.state, owner, targeting)
+        batches = self.state.get("pending_auto_revivals") or []
+        queued_ids = {
+            str(target.get("card_id", ""))
+            for batch in batches
+            for target in batch.get("targets", [])
+        }
+        targets = [
+            (row, index, card) for row, index, card in targets
+            if card.id not in queued_ids
+        ]
+        if not targets:
+            self._emit_ability_resolved(
+                ability_id=ability.id,
+                ability_name=ability.name,
+                owner_card_id=owner.id,
+                definition_id=activation.definition_id,
+                row_id=activation.row_id,
+                slot_index=activation.slot_index,
+                sound=ability.presentation.sound,
+                floating_text=ability.presentation.floating_text,
+            )
+            return
+        pending = {
+            "attacker_card_id": owner.id,
+            "attacker_owner_id": owner.owner_id,
+            "attacker_name": activation.owner_name,
+            "ability_id": ability.id,
+            "ability_name": ability.name,
+            "effect_amount": 0,
+            "floating_text": ability.presentation.floating_text,
+            "effect_type": "revive_target",
+            "sound": ability.presentation.sound,
+            "definition_id": activation.definition_id,
+            "row_id": activation.row_id,
+            "slot_index": activation.slot_index,
+            "suppress_ability_resolved": True,
+            "targeting": {
+                "target_scope": targeting.target_scope,
+                "target_side": targeting.target_side,
+                "allowed_types": list(targeting.allowed_types),
+                "excluded_types": list(targeting.excluded_types),
+                "max_base_points": targeting.max_base_points,
+                "min_base_points": targeting.min_base_points,
+                "require_bonus_points": False,
+                "require_eliminated": True,
+                "opposing_ability": False,
+                "character_set": targeting.character_set,
+                "require_base_point_reduction": False,
+            },
+            "valid_targets": [
+                {"row_id": row.id, "slot_index": index, "card_id": card.id}
+                for row, index, card in targets
+            ],
+        }
+        batches = self.state.get("pending_auto_revivals")
+        if not isinstance(batches, list):
+            batches = []
+        batches.append({
+            "pending": pending,
+            "targets": list(pending["valid_targets"]),
+        })
+        self.state.pending_auto_revivals = batches
 
     def _emit_ability_resolved(
         self,

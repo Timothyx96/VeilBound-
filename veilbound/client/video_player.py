@@ -74,11 +74,19 @@ class VideoPlayer:
         except Exception as exc:  # pragma: no cover - codec dependent
             self._fail(f"Cutscene decode failed: {exc}")
 
+    def start(self, now: float) -> None:
+        """Start the playback clock when footage first becomes visible."""
+        self.next_frame_at = now + self.frame_delay
+
     def update(self, now: float) -> None:
         if self.finished or now < self.next_frame_at:
             return
-        self._read_frame()
-        self.next_frame_at = now + self.frame_delay
+        frames_due = max(1, int((now - self.next_frame_at) / self.frame_delay) + 1)
+        for _ in range(frames_due):
+            self._read_frame()
+            if self.finished:
+                break
+        self.next_frame_at += frames_due * self.frame_delay
 
     def draw(self, screen: pygame.Surface) -> None:
         if self.frame is None:
@@ -87,20 +95,18 @@ class VideoPlayer:
         size = screen.get_size()
         if self._size != size:
             source_w, source_h = self.frame.get_size()
-            scale = max(size[0] / source_w, size[1] / source_h)
+            # Contain the full frame to preserve the source aspect ratio.
+            scale = min(size[0] / source_w, size[1] / source_h)
             scaled_size = (
-                max(size[0], round(source_w * scale)),
-                max(size[1], round(source_h * scale)),
+                max(1, round(source_w * scale)),
+                max(1, round(source_h * scale)),
             )
             scaled = pygame.transform.smoothscale(self.frame, scaled_size)
-            left = (scaled_size[0] - size[0]) // 2
-            top = (scaled_size[1] - size[1]) // 2
-            self._scaled_frame = scaled.subsurface(
-                pygame.Rect(left, top, size[0], size[1]),
-            ).copy()
+            self._scaled_frame = scaled
             self._size = size
         if self._scaled_frame is not None:
-            screen.blit(self._scaled_frame, (0, 0))
+            screen.fill((0, 0, 0))
+            screen.blit(self._scaled_frame, self._scaled_frame.get_rect(center=screen.get_rect().center))
 
     def close(self) -> None:
         if self.capture is not None:

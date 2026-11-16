@@ -164,7 +164,7 @@
       "base_points": 6,
       "type": "Fighter",
       "effect_name": "Cherry Blossom Impact",
-      "effect_text": "Gains +2 points if Naruto or Sasuke is in the same row. On reveal, Sakura may restore the base points of one friendly Naruto character with a base-point reduction anywhere on the board. Existing bonuses remain active when their conditions are met.",
+      "effect_text": "Gains +2 points if Naruto or Sasuke is in the same row. On reveal, Sakura automatically revives all eliminated friendly Naruto characters anywhere on the board.",
       "abilities": [
         {
           "id": "sakura_naruto_or_sasuke_row_bonus",
@@ -193,25 +193,24 @@
           }
         },
         {
-          "id": "sakura_medical_ninjutsu_restore_base_points",
+          "id": "sakura_medical_ninjutsu_revive_naruto_allies",
           "name": "Medical Ninjutsu",
-          "description": "On reveal, restore the base points of one friendly Naruto character anywhere on the board. The target must have a base-point reduction; existing bonuses remain active when their conditions are met.",
+          "description": "On reveal, automatically revive all eliminated friendly Naruto characters anywhere on the board.",
           "trigger": "on_reveal",
           "conditions": [],
           "effects": [
             {
-              "type": "heal_target_base_points"
+              "type": "revive_all_targets"
             }
           ],
           "targeting": {
             "target_scope": "any_row",
             "target_side": "friendly",
-            "target_character_set": "Naruto",
-            "require_base_point_reduction": true
+            "target_character_set": "Naruto"
           },
           "activation_limit": "once_per_card_per_match",
           "presentation": {
-            "floating_text": "HEALED",
+            "floating_text": "REVIVED",
             "animation": "points_gain"
           }
         }
@@ -1354,7 +1353,7 @@
       "base_points": 4,
       "type": "Trickster",
       "effect_name": "God Usopp",
-      "effect_text": "Passive: Gains +3 points if there is an opposing GOAT card in his row. Shared ability with Luffy: At final row scoring, if your team is losing by fewer than 6 points and would win outright with +6, Usopp and Luffy shoot down the flag. All Might in the row prevents this effect.",
+      "effect_text": "Passive: Gains +3 points if there is an opposing GOAT card in his row. Before final row scoring, if your team is losing and +6 makes it the outright winner, Usopp shoots down the flag. All Might in the row prevents this effect.",
       "abilities": [
         {
           "id": "usopp_god_opposing_goat_bonus",
@@ -1381,14 +1380,14 @@
           }
         },
         {
-          "id": "usopp_luffy_sogeking_secret_synergy",
+          "id": "usopp_sogeking_shoot_down_flag",
           "name": "Sogeking! Shoot Down the Flag!",
-          "description": "Shared ability with Luffy. Immediately before row scoring, if Luffy and Usopp are on your team in this row, All Might is absent, and your team is losing by fewer than 6 points, play the Sogeking cutscene and gain +6 row score. A resulting draw does not qualify.",
+          "description": "Immediately before row scoring, if your team is losing and +6 makes it the outright winner, Usopp plays the Sogeking cutscene and gains +6 row score. All Might in the row prevents this effect.",
           "trigger": "on_row_scoring",
           "conditions": [],
           "effects": [
             {
-              "type": "luffy_usopp_sogeking_bonus",
+              "type": "usopp_sogeking_flag_shot",
               "amount": 6
             }
           ],

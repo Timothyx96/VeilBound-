@@ -52,7 +52,7 @@ SUPPORTED_EFFECT_TYPES = frozenset({
     "add_current_points_per_opposing_excess_over_friendly",
     "reverse_row_winner",
     "automatic_win_if_opposing_row_has_no_goat",
-    "luffy_usopp_sogeking_bonus",
+    "usopp_sogeking_flag_shot",
     "add_current_points_to_friendly_type",
     "add_current_points_per_opposing_type_after_owner",
     "add_current_points_per_opposing_character",
@@ -73,6 +73,7 @@ SUPPORTED_EFFECT_TYPES = frozenset({
     "steal_target_bonus",
     "copy_target_bonus",
     "revive_target",
+    "revive_all_targets",
     "heal_target_base_points",
     "reduce_target_base_points",
     "reduce_next_card_points",
@@ -368,10 +369,10 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
             amount = item.get("amount")
             if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
                 raise AbilityValidationError(f"{where}: 'amount' must be a non-zero integer.")
-        elif effect_type == "luffy_usopp_sogeking_bonus":
+        elif effect_type == "usopp_sogeking_flag_shot":
             amount = item.get("amount")
             if isinstance(amount, bool) or not isinstance(amount, int) or amount != 6:
-                raise AbilityValidationError(f"{where}: Sogeking's scoring bonus must be exactly 6.")
+                raise AbilityValidationError(f"{where}: Usopp's Sogeking bonus must be exactly 6.")
         elif effect_type in {
             "add_current_points_to_friendly_type",
             "add_current_points_per_friendly_type",
@@ -565,7 +566,7 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
     has_elimination = any(
         effect.type in {
             "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-            "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
+            "revive_target", "revive_all_targets", "heal_target_base_points", "reduce_target_base_points", "move_character",
         }
         for effect in effects
     )
@@ -714,6 +715,11 @@ class AbilityManager:
 
     def __post_init__(self) -> None:
         self.reset()
+
+    @property
+    def is_resolving(self) -> bool:
+        """Whether the manager is currently processing a reveal chain."""
+        return self._resolving
 
     def reset(self) -> None:
         """Clear registrations for a new match (activation records live on cards)."""
@@ -1588,7 +1594,8 @@ class AbilityManager:
                     return False
             elif effect.type in {
                 "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-                "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
+                "revive_target", "revive_all_targets", "heal_target_base_points",
+                "reduce_target_base_points", "move_character",
             }:
                 owner_row = next((
                     row for row in state.rows
@@ -1602,7 +1609,7 @@ class AbilityManager:
                         if target is None:
                             continue
                         eliminated = bool(getattr(target, "eliminated", False))
-                        needs_eliminated = effect.type == "revive_target"
+                        needs_eliminated = effect.type in {"revive_target", "revive_all_targets"}
                         if eliminated != needs_eliminated:
                             continue
                         if not needs_eliminated and not getattr(target, "revealed", False):
@@ -1611,6 +1618,20 @@ class AbilityManager:
                             continue
                         if ability.target_side == "friendly" and target.owner_id != owner_card.owner_id:
                             continue
+                        if (ability.target_character_set is not None
+                                and getattr(
+                                    self.definitions.get(target.definition_id),
+                                    "character_set", "",
+                                ) != ability.target_character_set):
+                            continue
+                        if needs_eliminated:
+                            base_points = target.get("base_points")
+                            if base_points is None:
+                                definition = self.definitions.get(target.definition_id)
+                                base_points = getattr(definition, "base_points", None)
+                            if (base_points is None or int(base_points) <= 0
+                                    and target.definition_id != "hxh_01"):
+                                continue
                         if (effect.type in {
                                 "eliminate_target", "remove_target_bonus", "steal_target_bonus",
                                 "reduce_target_base_points", "move_character",

@@ -12,6 +12,7 @@ from veilbound.shared.config import GameConfig
 from veilbound.shared.definitions import DATA_DIR, deal_player_pool, load_card_definitions
 from veilbound.shared.engine import GameEngine
 from veilbound.shared.models import GamePhase
+from veilbound.shared.rules import determine_row_winner, row_uses_reverse_fate
 from veilbound.shared.scoring import calculate_row_scores
 
 
@@ -447,6 +448,100 @@ def test_tied_rows_have_no_winner_and_award_no_points():
     assert engine.state.player("player-1").match_points == 0
     assert engine.state.player("player-2").match_points == 0
     assert engine.state.round_winner_id is None
+
+
+def _sogeking_scoring_board(usopp_points=4, opponent_points=9, all_might=False):
+    engine = fixed_engine(capacity=2)
+    p1, p2 = engine.state.players
+    row = engine.state.rows[0]
+    usopp = engine._new_card("onepiece_08", p1.id)
+    usopp.revealed = True
+    usopp.current_points = usopp_points
+    opponent_id = "mha_04" if all_might else "naruto_05"
+    opponent = engine._new_card(opponent_id, p2.id)
+    opponent.revealed = True
+    opponent.current_points = opponent_points
+    row.slots[:] = [usopp, opponent]
+    for other_row in engine.state.rows[1:]:
+        other_row.slots[:] = [
+            engine._new_card("naruto_09", p1.id),
+            engine._new_card("naruto_09", p2.id),
+        ]
+        for card in other_row.slots:
+            card.revealed = True
+    engine.state.phase = GamePhase.ROW_SCORING
+    return engine, row, usopp, p1, p2
+
+
+def test_usopp_sogeking_activates_without_luffy_and_adds_row_score_once():
+    engine, row, usopp, p1, p2 = _sogeking_scoring_board(4, 9)
+    original_base = usopp.base_points
+
+    started = engine.score_current_row()
+
+    assert started.accepted
+    assert started.events[0].kind == "sogeking_cinematic_started"
+    pending = engine.state.pending_sogeking_cinematic
+    assert "luffy_card_id" not in pending
+    assert pending["usopp_card_id"] == usopp.id
+    assert pending["bonus_points"] == 6
+
+    completed = engine.complete_sogeking_cinematic(pending["cinematic_id"])
+
+    assert completed.accepted
+    assert row.scored and row.scores == {p1.id: 10, p2.id: 9}
+    assert row.winner_id == p1.id
+    assert row.sogeking_bonus_points == {p1.id: 6}
+    assert usopp.base_points == original_base
+    assert usopp.activated_abilities.count("usopp_sogeking_shoot_down_flag") == 1
+    assert usopp.resolved_abilities.count("usopp_sogeking_shoot_down_flag") == 1
+
+
+def test_usopp_sogeking_requires_an_outright_win_and_never_overrides_all_might():
+    # +6 would draw, the row is already tied, or the row remains lost.
+    for usopp_points, opponent_points in ((4, 10), (7, 7), (4, 11), (8, 7)):
+        engine, _row, _usopp, _p1, _p2 = _sogeking_scoring_board(
+            usopp_points, opponent_points,
+        )
+        result = engine.score_current_row()
+        assert result.accepted
+        assert not any(event.kind == "sogeking_cinematic_started" for event in result.events)
+        assert engine.state.pending_sogeking_cinematic is None
+
+    engine, _row, _usopp, _p1, _p2 = _sogeking_scoring_board(4, 9, all_might=True)
+    result = engine.score_current_row()
+    assert result.accepted
+    assert not any(event.kind == "sogeking_cinematic_started" for event in result.events)
+
+
+def test_sealed_tobi_does_not_reverse_row_scoring_or_announce_lowest_wins():
+    engine = fixed_engine(capacity=2)
+    p1, p2 = engine.state.players
+    row = engine.state.rows[0]
+    tobi = engine._new_card("naruto_07", p1.id)
+    tobi.revealed = True
+    opponent = engine._new_card("naruto_05", p2.id)
+    opponent.revealed = True
+    row.slots[:] = [tobi, opponent]
+    scores = {p1.id: 4, p2.id: 9}
+
+    assert row_uses_reverse_fate(row, engine.cards)
+    assert determine_row_winner(row, scores, engine.state.players, engine.cards) == p1.id
+
+    # Shanks' live seal state suppresses both the rules override and the UI's
+    # shared LOWEST WINS indicator through the same helper.
+    row.abilities_disabled = True
+    assert not row_uses_reverse_fate(row, engine.cards)
+    assert determine_row_winner(row, scores, engine.state.players, engine.cards) == p2.id
+
+    # Removing the seal restores Tobi's unchanged ability.
+    row.abilities_disabled = False
+    assert row_uses_reverse_fate(row, engine.cards)
+    assert determine_row_winner(row, scores, engine.state.players, engine.cards) == p1.id
+
+    row.abilities_disabled = False
+    tobi.ability_suppressed = True
+    assert not row_uses_reverse_fate(row, engine.cards)
 
 
 def test_cumulative_points_survive_round_reset_and_final_match_result():

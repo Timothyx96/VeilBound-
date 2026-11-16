@@ -196,6 +196,7 @@ class GameState(StateRecord):
             scored_row_order=scored_row_order or [], events=events or [], pending_ability_choice=None,
             pending_elimination=None,
             pending_movement_reveals=[],
+            pending_auto_revivals=[],
             pending_crazy_slots=None,
             crazy_slots_results=[],
             pending_sogeking_cinematic=None,

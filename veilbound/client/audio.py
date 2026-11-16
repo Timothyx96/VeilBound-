@@ -69,8 +69,10 @@ class AudioManager:
         self.character_reveal_sounds: dict[str, pygame.mixer.Sound | None] = {}
         self.luffy_haki_sounds: tuple[tuple[pygame.mixer.Sound | None, float], ...] = ()
         self.luffy_laugh_sound: pygame.mixer.Sound | None = None
-        self.sogeking_tension_sound: pygame.mixer.Sound | None = None
-        self.sogeking_impact_sound: pygame.mixer.Sound | None = None
+        self.sogeking_cinematic_active = False
+        self.sogeking_cinematic_id: str | None = None
+        self.sogeking_footage_audio_id: str | None = None
+        self.sogeking_resume_music: str | None = None
         self.all_might_reveal_sound: pygame.mixer.Sound | None = None
         self.sfx_volume = 0.8
         # Music state: the current track, the track to restore after the
@@ -105,14 +107,6 @@ class AudioManager:
             (self._synthesize_haki_layer("impact", 0.58, 1701), 0.95),
             (self._synthesize_haki_layer("burst", 0.48, 1702), 0.72),
             (self._synthesize_haki_layer("rumble", 1.12, 1703), 0.42),
-        )
-        # A light, native two-stage cue supports the locally rendered Sogeking
-        # sequence without relying on an unrelated character SFX asset.
-        self.sogeking_tension_sound = self._synthesize_tone(
-            (98, 147, 196), 1.45, arpeggio=True,
-        )
-        self.sogeking_impact_sound = self._synthesize_tone(
-            (294, 392, 587), 0.34, arpeggio=True,
         )
         self.luffy_laugh_sound = self._amplify_sound(
             self._load_sound("assets/sounds/Abillity_Sfx/Ability_Resolution/Luffy_laugh.mp3"),
@@ -209,7 +203,7 @@ class AudioManager:
         Only one track plays at a time: the current track fades out before the
         new one starts, so screen changes never overlap music.
         """
-        if not self.mixer_ready or not self.music_enabled:
+        if not self.mixer_ready or not self.music_enabled or self.sogeking_cinematic_active:
             return
         if key == self.current_music:
             return
@@ -318,6 +312,14 @@ class AudioManager:
 
     def on_events(self, events: tuple[GameEvent, ...]) -> None:
         for event in events:
+            if event.kind == "sogeking_cinematic_started":
+                self.begin_sogeking_cinematic(str(event.data.get("cinematic_id", "")))
+                continue
+            if event.kind == "sogeking_cinematic_completed":
+                self.finish_sogeking_cinematic()
+                continue
+            if self.sogeking_cinematic_active:
+                continue
             if event.kind == "card_revealed":
                 event_id = str(event.data.get("card_id", ""))
                 character_name = str(event.data.get("name", "")).strip().casefold()
@@ -332,14 +334,6 @@ class AudioManager:
                 self._play_once(("next_row", str(event.data.get("row_id", ""))), self.next_row_sound)
             elif event.kind == "row_scored":
                 self._play_once(("counter_sfx", str(event.data.get("row_id", ""))), self.counter_sound)
-            elif event.kind == "sogeking_cinematic_started":
-                cinematic_id = str(event.data.get("cinematic_id", ""))
-                if cinematic_id:
-                    self._play_once(
-                        ("sogeking_tension", cinematic_id),
-                        self.sogeking_tension_sound,
-                        volume_multiplier=0.38,
-                    )
             elif event.kind == "crazy_slots_spin_started":
                 spin_id = str(event.data.get("spin_id", ""))
                 if spin_id:
@@ -377,13 +371,59 @@ class AudioManager:
                     ),
                 )
 
-    def play_sogeking_impact(self, cinematic_id: str) -> None:
-        """Play the golden-blue impact cue once during the finishing move."""
-        if cinematic_id:
-            self._play_once(
-                ("sogeking_impact", cinematic_id), self.sogeking_impact_sound,
-                volume_multiplier=0.52,
-            )
+    def begin_sogeking_cinematic(self, cinematic_id: str) -> None:
+        """Silence game audio for the cinematic, preserving its music choice."""
+        if not self.mixer_ready or not cinematic_id:
+            return
+        if self.sogeking_cinematic_id == cinematic_id and self.sogeking_cinematic_active:
+            return
+        self.sogeking_cinematic_id = cinematic_id
+        self.sogeking_cinematic_active = True
+        self.sogeking_footage_audio_id = None
+        self.sogeking_resume_music = self.current_music
+        try:
+            pygame.mixer.stop()
+            pygame.mixer.music.stop()
+        except pygame.error:
+            pass
+
+    def start_sogeking_footage_audio(self, cinematic_id: str) -> bool:
+        """Play the PCM copy of the clip's embedded AAC track through SDL_mixer."""
+        if (not self.mixer_ready or not self.sogeking_cinematic_active
+                or cinematic_id != self.sogeking_cinematic_id):
+            return False
+        if self.sogeking_footage_audio_id == cinematic_id:
+            return True
+        self.sogeking_footage_audio_id = cinematic_id
+        path = self._resolve_path("assets/Cut_Scenes/Sogeking_CutScene_Audio.wav")
+        if path is None:
+            logger.warning("Sogeking embedded audio track is unavailable.")
+            return False
+        try:
+            pygame.mixer.music.load(str(path))
+            pygame.mixer.music.set_volume(1.0)
+            pygame.mixer.music.play(0)
+            return True
+        except (OSError, pygame.error, TypeError, ValueError) as exc:
+            logger.warning("Could not play Sogeking's embedded soundtrack: %s", exc)
+            return False
+
+    def finish_sogeking_cinematic(self) -> None:
+        """Stop the clip track and restore the background music after impact."""
+        if not self.sogeking_cinematic_active:
+            return
+        try:
+            pygame.mixer.music.stop()
+        except pygame.error:
+            pass
+        resume, self.sogeking_resume_music = self.sogeking_resume_music, None
+        self.sogeking_cinematic_active = False
+        self.sogeking_cinematic_id = None
+        self.sogeking_footage_audio_id = None
+        if resume is not None:
+            # Force play_music to reload the interrupted track from its start.
+            self.current_music = None
+            self.play_music(resume)
 
     def play_crazy_slots_tick(self, spin_id: str, digit: int, speed: float) -> None:
         """Play one throttled reel tick, lowering its pitch as the reel slows."""
@@ -554,7 +594,7 @@ class AudioManager:
         *,
         volume_multiplier: float = 1.0,
     ) -> None:
-        if key in self.played_events:
+        if self.sogeking_cinematic_active or key in self.played_events:
             return
         self.played_events.add(key)
         self._play(sound, self.sfx_volume * volume_multiplier)
