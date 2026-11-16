@@ -56,11 +56,35 @@ class Renderer:
         self.ability_panel = AbilityInspectionPanel(self.assets)
         self.card_frame_art = self._prepare_card_frame()
         self.options_background = self.assets.load_image("assets/backgrounds/Options Background.png")
-        self.menu_background = self.assets.load_image("assets/backgrounds/Main Menu.png")
+        self.menu_background = self.assets.load_image("assets/backgrounds/Veilbound_S1.png")
         self._background_cache_size: tuple[int, int] | None = None
         self._background_cache: tuple[pygame.Surface, pygame.Surface] | None = None
         self._menu_bg_cache_size: tuple[int, int] | None = None
         self._menu_bg_cache: pygame.Surface | None = None
+        self._menu_effect_layer: pygame.Surface | None = None
+        self._menu_effect_layer_size: tuple[int, int] | None = None
+        menu_rng = random.Random(7101)
+        self._menu_ambient_particles = [
+            {
+                "x": menu_rng.random(), "y": menu_rng.random(),
+                "speed": menu_rng.uniform(0.006, 0.023),
+                "drift": menu_rng.uniform(0.002, 0.012),
+                "phase": menu_rng.random() * math.tau,
+                "size": menu_rng.choice((1, 1, 1, 2)),
+                "energy": menu_rng.random() < 0.24,
+            }
+            for _ in range(36)
+        ]
+        self._menu_blossoms = [
+            {
+                "x": menu_rng.random(), "y": menu_rng.random(),
+                "speed": menu_rng.uniform(0.012, 0.034),
+                "drift": menu_rng.uniform(0.004, 0.018),
+                "phase": menu_rng.random() * math.tau,
+                "size": menu_rng.uniform(2.0, 4.2),
+            }
+            for _ in range(15)
+        ]
         self._render_size: tuple[int, int] | None = None
         self._overlay_cache: dict[tuple[int, int, int, int, int, int], pygame.Surface] = {}
         self._row_backplates: dict[tuple[int, int], pygame.Surface] = {}
@@ -322,13 +346,17 @@ class Renderer:
                 self.reveal_card_visible_after = now + self.animation_ms["card_flip_ms"] / 1000
                 self.reveal_card_until = self.reveal_card_visible_after + self.animation_ms["card_information_ms"] / 1000
             elif event.kind == "ability_suppressed":
-                self.ability_suppression_animations.append({
-                    "row_id": str(event.data.get("target_row_id", "")),
-                    "source_slot_index": int(event.data.get("source_slot_index", -1)),
-                    "target_slot_index": int(event.data.get("target_slot_index", -1)),
-                    "visual_style": str(event.data.get("visual_style", "black")),
-                    "started": now,
-                })
+                visual_style = str(event.data.get("visual_style", "black"))
+                # Shanks uses the live, orbiting seal marker on affected cards.
+                # Do not draw a second red trail/impact over card faces.
+                if visual_style != "shanks_red":
+                    self.ability_suppression_animations.append({
+                        "row_id": str(event.data.get("target_row_id", "")),
+                        "source_slot_index": int(event.data.get("source_slot_index", -1)),
+                        "target_slot_index": int(event.data.get("target_slot_index", -1)),
+                        "visual_style": visual_style,
+                        "started": now,
+                    })
             elif event.kind == "elimination_blocked":
                 self._queue_ability_floating_text({
                     "ability_id": str(event.data.get("ability_id", "blocked_elimination")),
@@ -725,7 +753,7 @@ class Renderer:
             self._draw_fps(screen, fps)
         self._draw_rows(screen, state, cards, layout, set(legal_slots), drag_id, mouse_pos)
         self._draw_trunks_bonus_animations(screen, layout, now)
-        self._draw_ability_suppression_animation(screen, layout, now)
+        self._draw_ability_suppression_animation(screen, state, layout, now)
         self._draw_reverse_fate_animation(screen, state, cards, layout, now)
         self._draw_elimination_flash(screen, state, cards, layout, now)
         reveal_view_active = self._reveal_view_active(state)
@@ -1864,12 +1892,7 @@ class Renderer:
         screen.blit(self._overlay(screen.get_size(), (8, 12, 22, 145)), (0, 0))
 
     def _draw_menu_background(self, screen) -> None:
-        """Cover-fit the dedicated Main Menu art behind the title screens.
-
-        The window is resizable/fullscreen, so the art is cover-scaled to the
-        current surface and cached per size (same approach as ``_draw_background``
-        but a single full-bleed layer with no tint).
-        """
+        """Draw Season 1 art with a restrained, resolution-aware lobby ambience."""
         if self.menu_background is None:
             screen.fill(BG)
             return
@@ -1877,7 +1900,136 @@ class Renderer:
         if self._menu_bg_cache_size != size or self._menu_bg_cache is None:
             self._menu_bg_cache = self.assets.scale_cover(self.menu_background, size)
             self._menu_bg_cache_size = size
-        screen.blit(self._menu_bg_cache, (0, 0))
+        now = time.monotonic()
+        background = self._menu_bg_cache
+        screen.blit(background, (0, 0))
+        source_width, source_height = self.menu_background.get_size()
+        scale = max(background.get_width() / source_width, background.get_height() / source_height)
+        crop_x = (source_width * scale - background.get_width()) / 2
+        crop_y = (source_height * scale - background.get_height()) / 2
+
+        def art_point(x_ratio: float, y_ratio: float) -> tuple[int, int]:
+            """Map a point in the original art through its static cover-crop."""
+            return (
+                round(x_ratio * source_width * scale - crop_x),
+                round(y_ratio * source_height * scale - crop_y),
+            )
+
+        if self._menu_effect_layer_size != size or self._menu_effect_layer is None:
+            self._menu_effect_layer = pygame.Surface(size, pygame.SRCALPHA)
+            self._menu_effect_layer_size = size
+        effects = self._menu_effect_layer
+        effects.fill((0, 0, 0, 0))
+        width, height = size
+
+        # Purple moonlight breathes very gently around the already painted moon.
+        moon = art_point(0.713, 0.085)
+        pulse = 0.5 + 0.5 * math.sin(now * 0.42)
+        moon_radius = max(12, round(min(size) * 0.074))
+        pygame.draw.circle(effects, (148, 83, 255, round(5 + pulse * 7)), moon, moon_radius)
+        pygame.draw.circle(
+            effects, (211, 166, 255, round(10 + pulse * 8)), moon,
+            round(moon_radius * 0.80), width=max(1, round(min(size) * 0.0015)),
+        )
+
+        # A low-alpha diagonal glint travels across the baked-in VeilBound title.
+        title_left = art_point(0.31, 0.145)[0]
+        title_right = art_point(0.68, 0.145)[0]
+        title_top = art_point(0.31, 0.145)[1]
+        title_bottom = art_point(0.31, 0.285)[1]
+        title_phase = (now / 13.0) % 1.0
+        shimmer_x = title_left + round((title_right - title_left) * title_phase)
+        effects.set_clip(pygame.Rect(title_left, title_top, title_right - title_left, title_bottom - title_top))
+        pygame.draw.line(
+            effects, (255, 225, 164, 17),
+            (shimmer_x - round(width * 0.035), title_bottom),
+            (shimmer_x + round(width * 0.035), title_top),
+            max(1, round(width * 0.003)),
+        )
+        effects.set_clip(None)
+
+        # Two barely visible drifting haze wisps suggest movement in the clouds
+        # without repainting or masking any part of the provided background.
+        for index, (base_x, base_y, span) in enumerate(((0.18, 0.43, 0.045), (0.82, 0.39, 0.035))):
+            cx, cy = art_point(base_x + math.sin(now * 0.035 + index) * span, base_y)
+            pygame.draw.ellipse(
+                effects, (168, 127, 255, 5),
+                pygame.Rect(cx - round(width * 0.07), cy - round(height * 0.012),
+                            round(width * 0.14), round(height * 0.024)),
+            )
+
+        # Lantern light breathes at the two foreground lanterns.
+        for index, x_ratio in enumerate((0.083, 0.918)):
+            center = art_point(x_ratio, 0.72)
+            lantern_pulse = 0.5 + 0.5 * math.sin(now * 1.35 + index * 1.7)
+            pygame.draw.circle(
+                effects, (255, 176, 74, round(8 + lantern_pulse * 8)),
+                center, max(4, round(min(size) * 0.022)),
+            )
+
+        # Fine moving highlights follow the existing waterfall paths.
+        falls = ((0.155, 0.585, 0.72), (0.255, 0.625, 0.745), (0.714, 0.58, 0.75), (0.775, 0.635, 0.76))
+        for index, (x_ratio, top_ratio, bottom_ratio) in enumerate(falls):
+            top_y = art_point(x_ratio, top_ratio)[1]
+            bottom_y = art_point(x_ratio, bottom_ratio)[1]
+            path_height = bottom_y - top_y
+            for stream in range(2):
+                travel = (now * (0.07 + stream * 0.012) + stream * 0.48 + index * 0.19) % 1.0
+                x = art_point(x_ratio, top_ratio)[0] + stream * 2 - 1
+                y = round(top_y + path_height * travel)
+                pygame.draw.line(
+                    effects, (203, 199, 255, 24), (x, y),
+                    (x + 1, min(bottom_y, y + max(5, round(height * 0.045)))),
+                    1,
+                )
+
+        # Small highlights glide along the wet arena floor.
+        for index in range(5):
+            travel = (now * 0.026 + index * 0.21) % 1.0
+            x, y = art_point(
+                0.20 + travel * 0.60,
+                0.86 + 0.025 * math.sin(travel * math.tau),
+            )
+            pygame.draw.ellipse(
+                effects, (205, 174, 255, 28),
+                pygame.Rect(x - max(2, round(width * 0.009)), y,
+                            max(4, round(width * 0.018)), max(1, round(height * 0.0018))),
+            )
+
+        # Seeded particles drift deterministically, so no per-frame randomness
+        # or unbounded particle creation is used.
+        for particle in self._menu_ambient_particles:
+            phase = particle["phase"]
+            x_ratio = particle["x"] + math.sin(now * 0.24 + phase) * particle["drift"]
+            y_ratio = (particle["y"] - now * particle["speed"]) % 1.04 - 0.02
+            x = round((x_ratio % 1.0) * width)
+            y = round(y_ratio * height)
+            if particle["energy"]:
+                color = (195, 150, 255, 64)
+                pygame.draw.circle(effects, (135, 90, 235, 17), (x, y), 4)
+            else:
+                color = (238, 218, 255, 48)
+            pygame.draw.circle(effects, color, (x, y), particle["size"])
+
+        for petal in self._menu_blossoms:
+            phase = petal["phase"]
+            x_ratio = (petal["x"] + math.sin(now * 0.42 + phase) * petal["drift"]) % 1.0
+            y_ratio = (petal["y"] + now * petal["speed"]) % 1.08 - 0.04
+            x = x_ratio * width
+            y = y_ratio * height
+            radius = petal["size"] * min(size) / 900
+            angle = now * 0.7 + phase
+            along_x, along_y = math.cos(angle) * radius, math.sin(angle) * radius * 0.55
+            across_x, across_y = -math.sin(angle) * radius * 0.38, math.cos(angle) * radius * 0.38
+            points = [
+                (round(x - along_x), round(y - along_y)),
+                (round(x + across_x), round(y + across_y)),
+                (round(x + along_x), round(y + along_y)),
+                (round(x - across_x), round(y - across_y)),
+            ]
+            pygame.draw.polygon(effects, (244, 111, 164, 76), points)
+
+        screen.blit(effects, (0, 0))
 
     def _overlay(self, size: tuple[int, int], color: tuple[int, int, int, int]) -> pygame.Surface:
         key = (*size, *color)
@@ -2341,7 +2493,7 @@ class Renderer:
             )
         screen.blit(distortion, rect.topleft)
 
-    def _draw_ability_suppression_animation(self, screen, layout, now: float) -> None:
+    def _draw_ability_suppression_animation(self, screen, state, layout, now: float) -> None:
         """Send a short black-energy pulse from Chrollo to the suppressed slot."""
         if not self.ability_suppression_animations:
             return
@@ -2349,6 +2501,13 @@ class Renderer:
         layer = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
         active: list[dict] = []
         for animation in self.ability_suppression_animations:
+            if animation.get("visual_style") == "shanks_red":
+                source_row = next(
+                    (row for row in state.rows if row.id == animation["row_id"]),
+                    None,
+                )
+                if source_row is None or not source_row.get("abilities_disabled", False):
+                    continue
             progress = (now - animation["started"]) / duration
             if progress >= 1.0:
                 continue
@@ -2410,7 +2569,7 @@ class Renderer:
                             (47, 42, 57, round(150 * fade))),
                     (round(px), round(py + drift)), 2 + particle % 2,
                 )
-            if progress >= 0.72:
+            if progress >= 0.72 and not red_seal:
                 engulf = min(1.0, (progress - 0.72) / 0.28)
                 radius = round(18 + engulf * max(target_rect.size) * 0.55)
                 alpha = round(105 * fade * (1.0 - engulf * 0.55))
@@ -2427,20 +2586,15 @@ class Renderer:
     ) -> None:
         """Persistent per-instance suppression aura that keeps card details legible."""
         if visual_style == "shanks_red":
-            pulse = (math.sin(now * 3.2) + 1.0) / 2.0
-            overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
-            overlay.fill((106, 9, 27, round(24 + pulse * 20)))
-            screen.blit(overlay, rect.topleft)
-            aura_rect = rect.inflate(8 + round(pulse * 4), 8 + round(pulse * 4))
-            aura = pygame.Surface(aura_rect.size, pygame.SRCALPHA)
-            pygame.draw.rect(aura, (220, 31, 57, round(100 + pulse * 78)), aura.get_rect(), width=4, border_radius=9)
-            screen.blit(aura, aura_rect.topleft)
-            pygame.draw.rect(screen, (169, 19, 43), rect, width=2, border_radius=6)
+            # Keep Shanks' seal as orbiting motes outside the card face. No
+            # tint, flashing border, or glow should alter player/card colors.
             for particle in range(4):
                 angle = now * 1.3 + particle * (math.tau / 4)
-                px = rect.centerx + math.cos(angle) * (rect.width * 0.46)
-                py = rect.centery + math.sin(angle) * (rect.height * 0.46)
-                pygame.draw.circle(screen, (255, 86, 101), (round(px), round(py)), 1 + particle % 2)
+                px = rect.centerx + math.cos(angle) * (rect.width * 0.54)
+                py = rect.centery + math.sin(angle) * (rect.height * 0.54)
+                pygame.draw.circle(
+                    screen, (224, 211, 177), (round(px), round(py)), 1 + particle % 2,
+                )
             return
         if visual_style == "time_freeze":
             pulse = (math.sin(now * 3.0) + 1.0) / 2.0

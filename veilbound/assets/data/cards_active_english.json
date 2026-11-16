@@ -1680,14 +1680,14 @@
       "base_points": 4,
       "type": "Regular",
       "effect_name": "Temporal Rewind",
-      "effect_text": "Revives one friendly card eliminated in the same row, restoring its original points and ability.",
+      "effect_text": "Revives one eligible friendly card eliminated anywhere on the board, restoring its original points and ability.",
       "image": "assets/art/characters/Dragon Ball/Yamcha.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Whis.png",
       "abilities": [
         {
           "id": "whis_temporal_rewind",
           "name": "Temporal Rewind",
-          "description": "Revives one friendly card eliminated in the same row",
+          "description": "Revives one eligible friendly card eliminated anywhere on the board",
           "trigger": "on_reveal",
           "conditions": [],
           "effects": [
@@ -1696,7 +1696,7 @@
             }
           ],
           "targeting": {
-            "target_scope": "same_row",
+            "target_scope": "any_row",
             "target_side": "friendly",
             "allowed_types": []
           },

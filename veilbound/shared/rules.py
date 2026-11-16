@@ -965,6 +965,7 @@ class GameEngine:
         event_start = len(state.events)
         effect_type = str(pending.get("effect_type", "eliminate_target"))
         followup_event_start: int | None = None
+        revived_unrevealed_card = False
         target_definition = self.cards.get(target_card.definition_id)
         target_name = str(getattr(target_definition, "name", "Unknown character"))
         copied_bonus = 0
@@ -981,6 +982,7 @@ class GameEngine:
         if effect_type == "revive_target":
             if not target_card.eliminated or row.slots[target_slot_index] is not target_card:
                 return ActionResult(False, "That character is no longer eligible for revival.")
+            revived_unrevealed_card = not target_card.revealed
             gon_reset = self.abilities.reset_gon_for_revival(state, target_card)
             row.eliminated_slots = [
                 index for index in (row.get("eliminated_slots") or [])
@@ -1213,6 +1215,15 @@ class GameEngine:
         state.pending_elimination = None
         if followup_event_start is not None:
             self._begin_pending_elimination(followup_event_start)
+        if revived_unrevealed_card and not target_card.eliminated:
+            # Zeno can erase a newly placed face-down card before its normal
+            # reveal. Once Whis restores it, reveal it immediately through the
+            # ordinary reveal pipeline instead of leaving it for round-end.
+            revival_reveal_start = len(state.events)
+            self._reveal_card(row, target_slot_index, target_card)
+            if state.phase == GamePhase.REVEAL and state.final_reveal_active:
+                state.reveal_card_index += 1
+            self._begin_pending_elimination(revival_reveal_start)
         # Resume queued row checks after the chosen effect resolves, then use
         # the same completion test as every other reveal continuation.
         self._resume_reveal_after_target_selection()

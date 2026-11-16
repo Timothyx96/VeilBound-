@@ -7,6 +7,8 @@ thread, so the menu polls thread-safe events and never blocks the Pygame frame l
 
 from __future__ import annotations
 
+import time
+
 import pygame
 
 from veilbound.client.network import NetworkConnection, RemoteGameEngine
@@ -72,6 +74,10 @@ class MenuScreen:
         # Set by the app when a match starts ("local"/"debug"/online); the pause
         # menu only offers a return to the main menu for the offline modes.
         self.game_mode: str | None = None
+        self._transition_screen = self.screen
+        self._transition_started = time.monotonic()
+        self._transition_layer: pygame.Surface | None = None
+        self._transition_layer_size: tuple[int, int] | None = None
 
     def take_outcome(self) -> tuple | None:
         outcome, self._outcome = self._outcome, None
@@ -367,19 +373,36 @@ class MenuScreen:
                 renderer.options_background.get_rect(center=screen.get_rect().center),
             )
         else:
-            # Main-menu flow (root/join/waiting): dedicated cover-fit art, no tint.
+            # Main-menu flow (root/join/waiting): Season 1 art and ambience.
             renderer._draw_menu_background(screen)
         self.layout(screen.get_size())
+        now = time.monotonic()
+        if self.screen != self._transition_screen:
+            self._transition_screen = self.screen
+            self._transition_started = now
+        progress = min(1.0, max(0.0, (now - self._transition_started) / 0.24))
+        easing = 1.0 - (1.0 - progress) ** 3
+        ui = screen
+        if progress < 1.0:
+            if self._transition_layer_size != screen.get_size() or self._transition_layer is None:
+                self._transition_layer = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+                self._transition_layer_size = screen.get_size()
+            ui = self._transition_layer
+            ui.fill((0, 0, 0, 0))
         if self.screen == "root":
-            self._draw_root(screen)
+            self._draw_root(ui)
         elif self.screen == "join":
-            self._draw_join(screen)
+            self._draw_join(ui)
         elif self.screen == "waiting":
-            self._draw_waiting(screen)
+            self._draw_waiting(ui)
         elif self.screen == "pause":
-            self._draw_pause(screen)
+            self._draw_pause(ui)
         elif self.screen == "audio":
-            self._draw_audio(screen)
+            self._draw_audio(ui)
+        if ui is not screen:
+            ui.set_alpha(round(255 * easing))
+            screen.blit(ui, (0, 0))
+            ui.set_alpha(255)
 
     def _draw_root(self, screen: pygame.Surface) -> None:
         labels = {

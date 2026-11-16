@@ -33,7 +33,7 @@ MUSIC_EXIT = "exit"  # shutdown
 # Project-relative file for each music track (existing files, never renamed).
 MUSIC_TRACKS: dict[str, str] = {
     MUSIC_LOBBY: "assets/sounds/Background_music/Intro_Lobby_New.mp3",
-    MUSIC_GAME: "assets/sounds/Background_music/Game_Music_New.mp3",
+    MUSIC_GAME: "assets/sounds/Background_music/S1_Game_Music.mp3",
     MUSIC_LOADING: "assets/sounds/Background_music/Loading_into_match_music.mp3",
     MUSIC_OPTIONS: "assets/sounds/Background_music/Options_Menu_Music.mp3",
     MUSIC_EXIT: "assets/sounds/Background_music/Bye_Bye.mp3",
