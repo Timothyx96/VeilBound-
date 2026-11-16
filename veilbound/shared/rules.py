@@ -1996,6 +1996,26 @@ class GameEngine:
             ),
             event_data,
         )
+        if any(effect.type == "disable_row_abilities" for effect in activation.ability.effects):
+            sealed_row = next((row for row in self.state.rows if row.id == activation.row_id), None)
+            if sealed_row is not None:
+                for target_index, target in enumerate(sealed_row.slots):
+                    if target is None or target.id == activation.owner_card_id:
+                        continue
+                    self._emit(
+                        "ability_suppressed",
+                        f"{target.id}'s ability is sealed by {activation.owner_name}.",
+                        {
+                            "ability_id": activation.ability.id,
+                            "source_card_id": activation.owner_card_id,
+                            "source_row_id": sealed_row.id,
+                            "source_slot_index": activation.slot_index,
+                            "target_card_id": target.id,
+                            "target_row_id": sealed_row.id,
+                            "target_slot_index": target_index,
+                            "visual_style": "shanks_red",
+                        },
+                    )
         # Immediate point effects resolve now. Target-selection effects wait
         # until select_elimination_target validates and applies the chosen card.
         if not activation.requires_target_selection and not activation.requires_crazy_slots_spin:

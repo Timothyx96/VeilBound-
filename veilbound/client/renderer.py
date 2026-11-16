@@ -2365,8 +2365,13 @@ class Renderer:
             tx, ty = target_rect.center
             fade = min(1.0, (1.0 - progress) * 3.0)
             time_freeze = animation.get("visual_style") == "time_freeze"
-            trail_outer = (48, 25, 91, round(145 * fade)) if time_freeze else (26, 22, 35, round(125 * fade))
-            trail_inner = (160, 91, 255, round(205 * fade)) if time_freeze else (88, 77, 102, round(145 * fade))
+            red_seal = animation.get("visual_style") == "shanks_red"
+            trail_outer = ((94, 10, 29, round(155 * fade)) if red_seal else
+                           (48, 25, 91, round(145 * fade)) if time_freeze else
+                           (26, 22, 35, round(125 * fade)))
+            trail_inner = ((255, 67, 88, round(225 * fade)) if red_seal else
+                           (160, 91, 255, round(205 * fade)) if time_freeze else
+                           (88, 77, 102, round(145 * fade)))
             control_x = (sx + tx) / 2
             control_y = min(sy, ty) - max(36, abs(tx - sx) * 0.22)
             curve = []
@@ -2382,9 +2387,15 @@ class Renderer:
             y = (1 - travel) ** 2 * sy + 2 * (1 - travel) * travel * control_y + travel ** 2 * ty
             pulse = 0.5 + 0.5 * math.sin(now * 17)
             orb_radius = round(9 + pulse * 5)
-            orb_halo = (94, 37, 177, round(190 * fade)) if time_freeze else (20, 17, 27, round(185 * fade))
-            orb_core = (184, 128, 255, round(240 * fade)) if time_freeze else (67, 55, 83, round(230 * fade))
-            orb_center = (45, 20, 83, round(250 * fade)) if time_freeze else (10, 9, 14, round(245 * fade))
+            orb_halo = ((196, 24, 53, round(215 * fade)) if red_seal else
+                        (94, 37, 177, round(190 * fade)) if time_freeze else
+                        (20, 17, 27, round(185 * fade)))
+            orb_core = ((255, 98, 113, round(245 * fade)) if red_seal else
+                        (184, 128, 255, round(240 * fade)) if time_freeze else
+                        (67, 55, 83, round(230 * fade)))
+            orb_center = ((93, 9, 25, round(250 * fade)) if red_seal else
+                          (45, 20, 83, round(250 * fade)) if time_freeze else
+                          (10, 9, 14, round(245 * fade)))
             pygame.draw.circle(layer, orb_halo, (round(x), round(y)), orb_radius + 7)
             pygame.draw.circle(layer, orb_core, (round(x), round(y)), orb_radius)
             pygame.draw.circle(layer, orb_center, (round(x), round(y)), max(2, orb_radius // 2))
@@ -2394,15 +2405,18 @@ class Renderer:
                 py = (1 - t) ** 2 * sy + 2 * (1 - t) * t * control_y + t ** 2 * ty
                 drift = math.sin(now * 9 + particle * 2.1) * 7
                 pygame.draw.circle(
-                    layer, ((184, 128, 255, round(205 * fade)) if time_freeze
-                            else (47, 42, 57, round(150 * fade))),
+                    layer, ((255, 101, 119, round(215 * fade)) if red_seal else
+                            (184, 128, 255, round(205 * fade)) if time_freeze else
+                            (47, 42, 57, round(150 * fade))),
                     (round(px), round(py + drift)), 2 + particle % 2,
                 )
             if progress >= 0.72:
                 engulf = min(1.0, (progress - 0.72) / 0.28)
                 radius = round(18 + engulf * max(target_rect.size) * 0.55)
                 alpha = round(105 * fade * (1.0 - engulf * 0.55))
-                engulf_color = (55, 22, 105, alpha) if time_freeze else (17, 15, 23, alpha)
+                engulf_color = ((126, 13, 35, alpha) if red_seal else
+                                (55, 22, 105, alpha) if time_freeze else
+                                (17, 15, 23, alpha))
                 pygame.draw.circle(layer, engulf_color, target_rect.center, radius)
         self.ability_suppression_animations = active
         screen.blit(layer, (0, 0))
@@ -2412,6 +2426,22 @@ class Renderer:
         screen, rect: pygame.Rect, now: float, visual_style: str = "black",
     ) -> None:
         """Persistent per-instance suppression aura that keeps card details legible."""
+        if visual_style == "shanks_red":
+            pulse = (math.sin(now * 3.2) + 1.0) / 2.0
+            overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
+            overlay.fill((106, 9, 27, round(24 + pulse * 20)))
+            screen.blit(overlay, rect.topleft)
+            aura_rect = rect.inflate(8 + round(pulse * 4), 8 + round(pulse * 4))
+            aura = pygame.Surface(aura_rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(aura, (220, 31, 57, round(100 + pulse * 78)), aura.get_rect(), width=4, border_radius=9)
+            screen.blit(aura, aura_rect.topleft)
+            pygame.draw.rect(screen, (169, 19, 43), rect, width=2, border_radius=6)
+            for particle in range(4):
+                angle = now * 1.3 + particle * (math.tau / 4)
+                px = rect.centerx + math.cos(angle) * (rect.width * 0.46)
+                py = rect.centery + math.sin(angle) * (rect.height * 0.46)
+                pygame.draw.circle(screen, (255, 86, 101), (round(px), round(py)), 1 + particle % 2)
+            return
         if visual_style == "time_freeze":
             pulse = (math.sin(now * 3.0) + 1.0) / 2.0
             overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
@@ -2509,11 +2539,6 @@ class Renderer:
                 pygame.draw.rect(backplate, (*PANEL, 112), backplate.get_rect(), border_radius=10)
                 self._row_backplates[rect.size] = backplate
             screen.blit(backplate, rect)
-            if row.get("abilities_disabled", False):
-                disabled_tint = pygame.Surface(rect.size, pygame.SRCALPHA)
-                pygame.draw.rect(disabled_tint, (118, 22, 35, 38), disabled_tint.get_rect(), border_radius=10)
-                pygame.draw.rect(disabled_tint, (196, 54, 70, 150), disabled_tint.get_rect(), width=3, border_radius=10)
-                screen.blit(disabled_tint, rect.topleft)
             pygame.draw.rect(
                 screen, outline, rect,
                 width=4 if reverse_fate_active else 3 if active_row or row.scored else 2,
@@ -2814,7 +2839,7 @@ class Renderer:
                 screen, self._owner_card_outline(card.owner_id),
                 rect, width=3, border_radius=6,
             )
-            if getattr(card, "ability_suppressed", False):
+            if getattr(card, "ability_suppressed", False) and not row.get("abilities_disabled", False):
                 self._draw_suppression_marker(
                     screen, rect, now,
                     str(card.get("ability_suppression_style", "black")),
@@ -2858,7 +2883,7 @@ class Renderer:
             if bool(card.get("immune_to_elimination", False)):
                 self._draw_immunity_shield(screen, rect)
             if row.get("abilities_disabled", False):
-                self._draw_sealed_card_effect(screen, rect)
+                self._draw_suppression_marker(screen, rect, now, "shanks_red")
             return
         # Persistent per-instance point indicator: the cached face underneath
         # uses roster art, while this overlay shows the live total and any
@@ -2886,7 +2911,7 @@ class Renderer:
                     pill.topright = (rect.right - 4, rect.y + 4)
                     pygame.draw.rect(screen, GOLD, pill, border_radius=8)
                     screen.blit(badge_text, badge_text.get_rect(center=pill.center))
-        if getattr(card, "ability_suppressed", False):
+        if getattr(card, "ability_suppressed", False) and not row.get("abilities_disabled", False):
             self._draw_suppression_marker(
                 screen, rect, now,
                 str(card.get("ability_suppression_style", "black")),
@@ -2894,18 +2919,7 @@ class Renderer:
         if bool(card.get("immune_to_elimination", False)):
             self._draw_immunity_shield(screen, rect)
         if row.get("abilities_disabled", False):
-            self._draw_sealed_card_effect(screen, rect)
-
-    @staticmethod
-    def _draw_sealed_card_effect(screen, rect: pygame.Rect) -> None:
-        """Give every card in a silenced row a readable red seal treatment."""
-        tint = pygame.Surface(rect.size, pygame.SRCALPHA)
-        tint.fill((168, 24, 42, 28))
-        screen.blit(tint, rect.topleft)
-        pygame.draw.rect(screen, (221, 48, 64), rect, width=3, border_radius=6)
-        inner = rect.inflate(-8, -8)
-        if inner.width > 0 and inner.height > 0:
-            pygame.draw.rect(screen, (244, 92, 99, 180), inner, width=1, border_radius=4)
+            self._draw_suppression_marker(screen, rect, now, "shanks_red")
 
     @staticmethod
     def _draw_immunity_shield(screen, rect: pygame.Rect) -> None:
