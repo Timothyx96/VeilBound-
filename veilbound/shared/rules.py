@@ -19,6 +19,7 @@ ROW_COUNT = 4
 logger = logging.getLogger(__name__)
 ZENO_TRAP_ABILITY_ID = "zeno_erase_from_existence_trap"
 KITE_CRAZY_SLOTS_ABILITY_ID = "hxh_07_crazy_slots"
+SOGEKING_ABILITY_ID = "usopp_luffy_sogeking_secret_synergy"
 
 
 def _card_resolved_for_reveal(card: CardInstance | None) -> bool:
@@ -57,12 +58,17 @@ def calculate_row_scores(row, player_ids: tuple[str, str], cards) -> dict[str, i
             definition = cards[card.definition_id]
             current = card.get("current_points")
             scores[card.owner_id] += definition.base_points if current is None else int(current)
+    for player_id, amount in dict(row.get("sogeking_bonus_points") or {}).items():
+        if player_id in scores:
+            scores[player_id] += int(amount)
     return scores
 
 
 def row_uses_reverse_fate(row, cards) -> bool:
-    """Whether a revealed, non-eliminated Tobi is reversing this row's result."""
-    for card in row.slots:
+    """Whether a revealed Tobi in one of the first four slots reverses the result."""
+    for slot_index, card in enumerate(row.slots):
+        if slot_index >= 4:
+            break
         if card is None or not card.revealed or getattr(card, "eliminated", False):
             continue
         definition = cards.get(card.definition_id)
@@ -805,7 +811,7 @@ class GameEngine:
             effect.type for effect in ability.effects
             if effect.type in {
                 "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-                "revive_target", "reduce_target_base_points", "move_character",
+                "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
             }
         )
         targeting = EliminationTargeting(
@@ -815,6 +821,8 @@ class GameEngine:
             excluded_types=ability.excluded_types,
             max_base_points=ability.max_base_points,
             min_base_points=ability.min_base_points,
+            character_set=ability.target_character_set,
+            require_base_point_reduction=ability.require_base_point_reduction,
             require_bonus_points=any(
                 effect.type in {"remove_target_bonus", "steal_target_bonus", "copy_target_bonus"}
                 for effect in ability.effects
@@ -873,6 +881,8 @@ class GameEngine:
                 "require_bonus_points": targeting.require_bonus_points,
                 "require_eliminated": targeting.require_eliminated,
                 "opposing_ability": targeting.opposing_ability,
+                "character_set": targeting.character_set,
+                "require_base_point_reduction": targeting.require_base_point_reduction,
             },
             "valid_targets": [
                 {"row_id": r.id, "slot_index": i, "card_id": c.id}
@@ -951,6 +961,10 @@ class GameEngine:
             require_eliminated=bool(pending["targeting"].get("require_eliminated", False)),
             ability_elimination=str(pending.get("effect_type", "")) == "eliminate_target",
             opposing_ability=bool(pending["targeting"].get("opposing_ability", False)),
+            character_set=pending["targeting"].get("character_set"),
+            require_base_point_reduction=bool(
+                pending["targeting"].get("require_base_point_reduction", False)
+            ),
         )
         valid_targets = self.elimination.get_valid_targets(state, attacker_card, targeting)
         valid_keys = {(r.id, i) for r, i, _ in valid_targets}
@@ -1053,6 +1067,31 @@ class GameEngine:
                     owner_only=gon_reset,
                 )
             self.abilities.recalculate_continuous_bonuses(state)
+        elif effect_type == "heal_target_base_points":
+            previous_base = self.abilities._base_points(target_card)
+            previous_points = int(target_card.current_points)
+            restored = self.abilities.restore_base_point_reductions(target_card)
+            if restored <= 0:
+                return ActionResult(False, "That character no longer has reduced base points.")
+            self.abilities.recalculate_continuous_bonuses(state)
+            self._emit(
+                "base_points_restored",
+                f"{target_name}'s base points were restored by {pending.get('attacker_name', 'Unknown character')}.",
+                {
+                    "attacker_card_id": attacker_card.id,
+                    "attacker_name": str(pending.get("attacker_name", "Unknown character")),
+                    "ability_id": str(pending.get("ability_id", "")),
+                    "target_card_id": target_card.id,
+                    "target_name": target_name,
+                    "row_id": target_row_id,
+                    "slot_index": target_slot_index,
+                    "restored_amount": restored,
+                    "previous_base_points": previous_base,
+                    "base_points": self.abilities._base_points(target_card),
+                    "previous_points": previous_points,
+                    "current_points": int(target_card.current_points),
+                },
+            )
         elif effect_type == "steal_target_bonus":
             previous_target_points = int(target_card.current_points)
             previous_attacker_points = int(attacker_card.current_points)
@@ -1615,6 +1654,10 @@ class GameEngine:
                 else "Select an elimination target before scoring."
             )
             return ActionResult(False, prompt)
+        if state.get("pending_crazy_slots"):
+            return ActionResult(False, "Finish Crazy Slots before scoring the row.")
+        if state.get("pending_sogeking_cinematic"):
+            return ActionResult(False, "Wait for Sogeking's cutscene to finish before scoring.")
         if not all(
             row.is_full and all(_card_resolved_for_reveal(card) for card in row.slots)
             for row in state.rows
@@ -1624,6 +1667,25 @@ class GameEngine:
         if row is None or row.scored:
             return ActionResult(False, "This row has already been scored.")
         scores = calculate_row_scores(row, tuple(player.id for player in state.players), self.cards)
+        synergy = self._sogeking_synergy_for_scoring(row, scores)
+        if synergy is not None:
+            event_start = len(state.events)
+            cinematic_id = f"{state.round_number}:{row.id}:{synergy['usopp'].id}"
+            state.pending_sogeking_cinematic = {
+                "cinematic_id": cinematic_id,
+                "row_id": row.id,
+                "row_number": row.number,
+                "team_player_id": synergy["player_id"],
+                "luffy_card_id": synergy["luffy"].id,
+                "usopp_card_id": synergy["usopp"].id,
+                "bonus_points": synergy["bonus"],
+            }
+            self._emit(
+                "sogeking_cinematic_started",
+                "Sogeking and Luffy prepare their secret attack!",
+                dict(state.pending_sogeking_cinematic),
+            )
+            return ActionResult(True, events=tuple(state.events[event_start:]))
         winner_id = determine_row_winner(row, scores, state.players, self.cards)
         if winner_id is None:
             row.winner_id = None
@@ -1651,6 +1713,107 @@ class GameEngine:
             "match_points": {player.id: player.match_points for player in state.players},
             "round_points": {player.id: player.round_points for player in state.players},
         })
+        return ActionResult(True, events=tuple(state.events[event_start:]))
+
+    def _sogeking_synergy_for_scoring(self, row: BattleRow, scores: dict[str, int]):
+        """Return the one eligible Luffy/Usopp team only when +6 wins outright."""
+        if row.get("sogeking_bonus_points"):
+            return None
+        luffy = next((
+            card for card in row.slots
+            if card is not None and card.definition_id == "onepiece_01"
+            and card.revealed and not getattr(card, "eliminated", False)
+        ), None)
+        usopp = next((
+            card for card in row.slots
+            if card is not None and card.definition_id == "onepiece_08"
+            and card.revealed and not getattr(card, "eliminated", False)
+        ), None)
+        if luffy is None or usopp is None or luffy.owner_id != usopp.owner_id:
+            return None
+        # All Might's row override remains the first authority in winner
+        # calculation; this shared bonus is disabled entirely in that row.
+        if any(
+            card is not None and card.definition_id == "mha_04"
+            for card in row.slots
+        ):
+            return None
+        definition = self.cards.get(usopp.definition_id)
+        ability = next((
+            item for item in (getattr(definition, "abilities", None) or [])
+            if item.id == SOGEKING_ABILITY_ID
+        ), None)
+        effect = next((
+            item for item in (ability.effects if ability is not None else ())
+            if item.type == "luffy_usopp_sogeking_bonus"
+        ), None)
+        if effect is None:
+            return None
+        bonus = effect.amount
+        players = self.state.players
+        winner_before = determine_row_winner(row, scores, players, self.cards)
+        if winner_before is None or winner_before == usopp.owner_id:
+            return None
+        scores_after_bonus = dict(scores)
+        scores_after_bonus[usopp.owner_id] = scores_after_bonus.get(usopp.owner_id, 0) + bonus
+        winner_after = determine_row_winner(row, scores_after_bonus, players, self.cards)
+        if winner_after != usopp.owner_id:
+            return None
+        return {
+            "player_id": usopp.owner_id,
+            "luffy": luffy,
+            "usopp": usopp,
+            "bonus": bonus,
+        }
+
+    def complete_sogeking_cinematic(self, cinematic_id: str) -> ActionResult:
+        """Apply Usopp's row-only +6 after all synchronized presentation finishes."""
+        state = self.state
+        pending = state.get("pending_sogeking_cinematic") or {}
+        if not pending or str(pending.get("cinematic_id", "")) != str(cinematic_id):
+            return ActionResult(False, "There is no matching Sogeking cutscene to complete.")
+        row = next((row for row in state.rows if row.id == str(pending.get("row_id", ""))), None)
+        if row is None or row.scored or row is not state.current_row:
+            state.pending_sogeking_cinematic = None
+            return ActionResult(False, "The Sogeking row is no longer available to score.")
+        event_start = len(state.events)
+        bonus_points = int(pending.get("bonus_points", 0))
+        team_player_id = str(pending.get("team_player_id", ""))
+        bonuses = dict(row.get("sogeking_bonus_points") or {})
+        if team_player_id in bonuses or bonus_points != 6:
+            state.pending_sogeking_cinematic = None
+            return ActionResult(False, "Sogeking's row bonus was already applied or is invalid.")
+        usopp = next((
+            card for card in row.slots
+            if card is not None and card.id == str(pending.get("usopp_card_id", ""))
+            and card.definition_id == "onepiece_08"
+            and card.owner_id == team_player_id
+            and not getattr(card, "eliminated", False)
+        ), None)
+        if usopp is None:
+            state.pending_sogeking_cinematic = None
+            return ActionResult(False, "Usopp is no longer eligible to complete the shared ability.")
+        bonuses[team_player_id] = bonus_points
+        row.sogeking_bonus_points = bonuses
+        for field_name in ("activated_abilities", "resolved_abilities"):
+            ability_ids = list(usopp.get(field_name) or [])
+            if SOGEKING_ABILITY_ID not in ability_ids:
+                ability_ids.append(SOGEKING_ABILITY_ID)
+            setattr(usopp, field_name, ability_ids)
+        state.pending_sogeking_cinematic = None
+        self._emit(
+            "sogeking_cinematic_completed",
+            "Sogeking and Luffy shoot down the flag! +6 row score.",
+            {
+                **dict(pending),
+                "luffy_card_id": str(pending.get("luffy_card_id", "")),
+                "usopp_card_id": str(pending.get("usopp_card_id", "")),
+            },
+        )
+        result = self.score_current_row()
+        if not result.accepted:
+            row.sogeking_bonus_points = {}
+            return result
         return ActionResult(True, events=tuple(state.events[event_start:]))
 
     def advance_after_row_result(self) -> ActionResult:
@@ -1760,6 +1923,7 @@ class GameEngine:
                 "winner_id": row.winner_id if row.scored else None,
                 "scored": row.scored,
                 "awarded_points": row.awarded_points,
+                "sogeking_bonus_points": dict(row.get("sogeking_bonus_points") or {}),
                 "eliminated_slots": list(row.get("eliminated_slots") or []),
                 "movement_blocked_slots": [
                     index for index in row.get("movement_blocked_slots", [])
@@ -1784,6 +1948,9 @@ class GameEngine:
             # JSON-safe pause payload; None while no elimination awaits input.
             "pending_elimination": dict(self.state.get("pending_elimination") or {}) or None,
             "pending_crazy_slots": pending_crazy_view,
+            "pending_sogeking_cinematic": (
+                dict(self.state.get("pending_sogeking_cinematic") or {}) or None
+            ),
             "crazy_slots_results": list(self.state.get("crazy_slots_results") or []),
         }
 
@@ -1841,9 +2008,14 @@ class GameEngine:
             return
         previous = row.slots[placed_slot_index - 1]
         if previous is not None and not getattr(previous, "eliminated", False):
-            self._reveal_card(row, placed_slot_index - 1, previous)
+            self._reveal_card(
+                row, placed_slot_index - 1, previous, revealed_by=row.slots[placed_slot_index],
+            )
 
-    def _reveal_card(self, row: BattleRow, slot_index: int, card: CardInstance) -> None:
+    def _reveal_card(
+        self, row: BattleRow, slot_index: int, card: CardInstance,
+        *, revealed_by: CardInstance | None = None,
+    ) -> None:
         """Reveal one card, resolve abilities, then queue presentation events.
 
         Order matters: the authoritative reveal flag flips first, the reveal
@@ -1869,14 +2041,18 @@ class GameEngine:
             "effect_name": definition.effect_name,
             "effect_text": definition.effect_text,
         })
-        self._resolve_reveal_triggers(card, row, slot_index)
+        self._resolve_reveal_triggers(card, row, slot_index, revealed_by=revealed_by)
 
-    def _resolve_reveal_triggers(self, card: CardInstance, row: BattleRow, slot_index: int) -> None:
+    def _resolve_reveal_triggers(
+        self, card: CardInstance, row: BattleRow, slot_index: int,
+        *, revealed_by: CardInstance | None = None,
+    ) -> None:
         """Run the central ability manager: Phase A pending, Phase B this card."""
         self.abilities.on_card_revealed(
             self.state, card, row, slot_index,
             emit=self._emit_ability_activation,
             emit_failure=self._handle_ability_failure,
+            revealed_by=revealed_by,
         )
 
     def _handle_ability_failure(
@@ -2027,6 +2203,57 @@ class GameEngine:
                             "visual_style": "shanks_red",
                         },
                     )
+        if any(
+            effect.type == "eliminate_revealing_opponent"
+            for effect in activation.ability.effects
+        ):
+            target_location = next((
+                (row, index, target)
+                for row in self.state.rows
+                for index, target in enumerate(row.slots)
+                if target is not None and target.id == activation.target_card_id
+            ), None)
+            owner_card = next((
+                target for row in self.state.rows for target in row.slots
+                if target is not None and target.id == activation.owner_card_id
+            ), None)
+            if target_location is not None and owner_card is not None:
+                target_row, target_index, target_card = target_location
+                if self.elimination.eliminate_target(
+                    self.state, target_card, owner_card, by_ability=True,
+                ):
+                    target_name = str(getattr(
+                        self.cards.get(target_card.definition_id), "name", "Unknown character",
+                    ))
+                    self._award_trunks_saiyan_resolve(target_row, target_card)
+                    self.abilities.recalculate_after_elimination(self.state, target_card)
+                    self._emit(
+                        "elimination",
+                        f"{target_name} has been eliminated by {activation.owner_name}.",
+                        {
+                            "attacker_card_id": activation.owner_card_id,
+                            "attacker_name": activation.owner_name,
+                            "target_card_id": target_card.id,
+                            "target_name": target_name,
+                            "row_id": target_row.id,
+                            "slot_index": target_index,
+                            "definition_id": target_card.definition_id,
+                        },
+                    )
+                    self._emit_ability_resolved(
+                        ability_id=activation.ability.id,
+                        ability_name=activation.ability.name,
+                        owner_card_id=activation.owner_card_id,
+                        definition_id=activation.definition_id,
+                        row_id=activation.row_id,
+                        slot_index=activation.slot_index,
+                        sound=activation.ability.presentation.sound,
+                        target_card_id=target_card.id,
+                        target_name=target_name,
+                        floating_text=activation.ability.presentation.floating_text,
+                    )
+                    self._eliminate_zero_base_point_cards(activation.ability.id)
+            return
         # Immediate point effects resolve now. Target-selection effects wait
         # until select_elimination_target validates and applies the chosen card.
         if not activation.requires_target_selection and not activation.requires_crazy_slots_spin:

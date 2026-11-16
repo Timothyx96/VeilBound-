@@ -24,6 +24,8 @@ class EliminationTargeting:
     require_eliminated: bool = False
     ability_elimination: bool = False
     opposing_ability: bool = False
+    character_set: str | None = None
+    require_base_point_reduction: bool = False
 
     def __post_init__(self) -> None:
         if self.target_scope not in {"same_row", "any_row"}:
@@ -80,6 +82,13 @@ class EliminationManager:
         ):
             return False
         definition = self.cards.get(card.definition_id)
+        if (targeting.character_set is not None
+                and getattr(definition, "character_set", "") != targeting.character_set):
+            return False
+        if targeting.require_base_point_reduction:
+            reductions = dict(card.get("base_point_reductions") or {})
+            if sum(max(0, int(amount)) for amount in reductions.values()) <= 0:
+                return False
         base_points = getattr(card, "base_points", None)
         if base_points is None:
             base_points = getattr(definition, "base_points", None) if definition else None

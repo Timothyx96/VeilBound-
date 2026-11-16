@@ -43,6 +43,8 @@ class CardDefinition:
     type: str = ""
     # Optional JSON-declared abilities; None for characters without any.
     abilities: list[AbilityDefinition] | None = None
+    # Anime/source set metadata used by set-restricted targeting.
+    character_set: str = ""
 
     @property
     def ability(self) -> AbilityDefinition | None:
@@ -141,6 +143,7 @@ class BattleRow(StateRecord):
         eliminated_slots: list[int] | None = None,
         movement_blocked_slots: list[int] | None = None,
         abilities_disabled: bool = False,
+        sogeking_bonus_points: dict[str, int] | None = None,
     ):
         super().__init__(
             id=id, number=number, capacity=capacity, point_value=capacity if point_value is None else point_value,
@@ -148,6 +151,7 @@ class BattleRow(StateRecord):
             awarded_points=awarded_points, eliminated_slots=eliminated_slots or [],
             movement_blocked_slots=list(movement_blocked_slots or []),
             abilities_disabled=bool(abilities_disabled),
+            sogeking_bonus_points=dict(sogeking_bonus_points or {}),
         )
 
     @property
@@ -194,6 +198,7 @@ class GameState(StateRecord):
             pending_movement_reveals=[],
             pending_crazy_slots=None,
             crazy_slots_results=[],
+            pending_sogeking_cinematic=None,
             viewer_id=viewer_id,
         )
 

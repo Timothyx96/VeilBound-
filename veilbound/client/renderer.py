@@ -11,6 +11,7 @@ from veilbound.client.assets import AssetLoader
 from veilbound.client.ability_panel import AbilityInspectionPanel
 from veilbound.client.layout import CARD_HEIGHT_RATIO, CARD_WIDTH_RATIO, BoardLayout, DEBUG_HOVER_SCALE, DEBUG_HOVER_NEIGHBOR_PUSH, DEBUG_HOVER_SECOND_PUSH
 from veilbound.client.settings import AppSettings, animation_ms_for_preset, load_settings
+from veilbound.client.video_player import VideoPlayer
 from veilbound.client.theme import (
     BG, CREAM, DEBUG, GOLD, P1, P2, P2_CARD_OUTLINE, PANEL, PANEL_LIGHT,
     DUO_ENERGY, DUO_ENERGY_DIM,
@@ -110,6 +111,9 @@ class Renderer:
         self.floating_texts: list[dict] = []
         self._endeavor_reveal_texts: dict[str, dict] = {}
         self.trunks_bonus_animations: list[dict] = []
+        self.whis_resurrection_animations: list[dict] = []
+        self.whis_healing_animations: list[dict] = []
+        self.sakura_healing_animations: list[dict] = []
         # Dedupe key -> start time, so a duplicated event cannot replay text.
         self.floating_texts_started: dict[tuple[str, str, str], float] = {}
         self._processed_ability_resolution_ids: set[str] = set()
@@ -117,6 +121,9 @@ class Renderer:
         self.luffy_haki_animations: list[dict] = []
         self._processed_luffy_haki: set[str] = set()
         self._scene_surface: pygame.Surface | None = None
+        self.sogeking_cinematic: dict | None = None
+        self.sogeking_video: VideoPlayer | None = None
+        self.sogeking_cinematic_complete = False
         # Dynamic Duo energy arc animation; one shot per genuine same-player
         # pair activation. Populated by note_events for an ability_activated
         # event and resolved against live state during draw so the arc
@@ -183,11 +190,15 @@ class Renderer:
         self.floating_texts.clear()
         self._endeavor_reveal_texts.clear()
         self.trunks_bonus_animations.clear()
+        self.whis_resurrection_animations.clear()
+        self.whis_healing_animations.clear()
+        self.sakura_healing_animations.clear()
         self.floating_texts_started.clear()
         self._processed_ability_resolution_ids.clear()
         self.reverse_fate_animation = None
         self.luffy_haki_animations.clear()
         self._processed_luffy_haki.clear()
+        self._clear_sogeking_cinematic()
         self.reveal_card = None
         self.reveal_card_visible_after = 0.0
         self.reveal_card_until = 0.0
@@ -269,7 +280,11 @@ class Renderer:
     def note_events(self, events: tuple[GameEvent, ...]) -> None:
         now = time.monotonic()
         for event in events:
-            if event.kind in {"elimination", "death"}:
+            if event.kind == "sogeking_cinematic_started":
+                self._begin_sogeking_cinematic(event.data, now)
+            elif event.kind == "sogeking_cinematic_completed":
+                self._clear_sogeking_cinematic()
+            elif event.kind in {"elimination", "death"}:
                 data = event.data
                 eliminated_key = (
                     str(data.get("row_id", "")),
@@ -390,6 +405,12 @@ class Renderer:
                 self.reveal_card = dict(event.data)
                 self.reveal_card_visible_after = now + self.animation_ms["card_flip_ms"] / 1000
                 self.reveal_card_until = self.reveal_card_visible_after + self.animation_ms["card_information_ms"] / 1000
+                if str(event.data.get("attacker_name", "")).casefold() == "whis":
+                    self.whis_resurrection_animations.append({
+                        "row_id": str(event.data["row_id"]),
+                        "slot_index": int(event.data["slot_index"]),
+                        "started": now,
+                    })
                 self.elimination_flash_card = None
                 self.elimination_flash_started = None
                 self._elimination_flash_is_selection_target = False
@@ -426,10 +447,30 @@ class Renderer:
                     "base_points_reduced": "reduce_target_base_points",
                 }[event.kind]
                 self._remember_selected_target(event.data, effect_type, now)
+            elif event.kind == "base_points_restored":
+                self._remember_selected_target(event.data, "heal_target_base_points", now)
+                if str(event.data.get("ability_id", "")) == "sakura_medical_ninjutsu_restore_base_points":
+                    self.sakura_healing_animations.append({
+                        "row_id": str(event.data.get("row_id", "")),
+                        "slot_index": int(event.data.get("slot_index", -1)),
+                        "started": now,
+                    })
             elif event.kind == "row_scored":
                 self.score_animation_row_id = event.data["row_id"]
                 self.score_animation_started = time.monotonic()
             elif event.kind == "ability_activated":
+                if str(event.data.get("ability_id", "")) == "whis_celestial_restoration":
+                    healed_card_ids = tuple(
+                        str(card_id) for card_id in event.data.get("affected_card_ids", ())
+                    )
+                    if len(healed_card_ids) >= 2:
+                        self.whis_healing_animations.append({
+                            "owner_card_id": str(event.data.get("owner_card_id", "")),
+                            "row_id": str(event.data.get("row_id", "")),
+                            "slot_index": int(event.data.get("slot_index", -1)),
+                            "target_card_ids": healed_card_ids,
+                            "started": now,
+                        })
                 if str(event.data.get("ability_id", "")) == "luffy_warrior_of_liberation_eliminate":
                     owner_id = str(event.data.get("owner_card_id", ""))
                     haki_id = str(event.data.get("resolution_id") or owner_id)
@@ -717,12 +758,14 @@ class Renderer:
     def draw(self, screen, state: GameState, cards: dict[str, CardDefinition], legal_slots: list[tuple[str, int]], drag_id: str | None = None, mouse_pos: tuple[int, int] | None = None, fps: float = 0.0):
         display_surface = screen
         draw_now = time.monotonic()
+        self._sync_sogeking_cinematic(state, draw_now)
+        sogeking_active = self.sogeking_cinematic is not None
         self.luffy_haki_animations = [
             animation for animation in self.luffy_haki_animations
             if draw_now - animation["started"] < 1.55
         ]
         shaking = bool(self.luffy_haki_animations)
-        if shaking:
+        if shaking or sogeking_active:
             size = display_surface.get_size()
             if self._scene_surface is None or self._scene_surface.get_size() != size:
                 self._scene_surface = pygame.Surface(size)
@@ -758,6 +801,9 @@ class Renderer:
         self._draw_elimination_flash(screen, state, cards, layout, now)
         reveal_view_active = self._reveal_view_active(state)
         self._draw_card_spotlight(screen, state, mouse_pos)
+        self._draw_whis_resurrection_animations(screen, layout, now)
+        self._draw_whis_healing_animations(screen, state, layout, now)
+        self._draw_sakura_healing_animations(screen, layout, now)
         self._draw_row_comparison(screen, state)
         self._draw_status(screen, state, layout)
         self._draw_hand(screen, state, cards, layout, drag_id, mouse_pos)
@@ -793,7 +839,9 @@ class Renderer:
                 screen, layout, self._selection_overlay_strength
             )
         self._draw_crazy_slots_screen(screen, state, now, mouse_pos)
-        if shaking:
+        if sogeking_active:
+            self._draw_sogeking_cinematic(display_surface, screen, state, cards, layout, now)
+        elif shaking:
             display_surface.fill(BG)
             offset = self._luffy_haki_camera_offset(now, screen.get_size())
             display_surface.blit(screen, offset)
@@ -1272,6 +1320,11 @@ class Renderer:
             "bright": (255, 174, 180),
             "target_kinds": ("character",),
         },
+        "healing": {
+            "color": (75, 205, 246),
+            "bright": (226, 251, 255),
+            "target_kinds": ("character",),
+        },
         # Ready for a future ability to first select a character, then a row.
         # No movement gameplay or destination-row interaction is added here.
         "character_movement": {
@@ -1288,6 +1341,7 @@ class Renderer:
         "steal_target_bonus": "bonus_point_transfer",
         "copy_target_bonus": "bonus_point_transfer",
         "reduce_target_base_points": "base_point_reduction",
+        "heal_target_base_points": "healing",
         "move_character": "character_movement",
         "move_character_target": "character_movement",
         "move_character_destination": "character_movement",
@@ -2091,6 +2145,193 @@ class Renderer:
             pygame.draw.circle(layer, (255, 205, 90, max(0, alpha - 45)), center, max(5, radius - 7), width=2)
             screen.blit(layer, layer.get_rect(center=rect.center))
 
+    def _draw_whis_resurrection_animations(self, screen, layout, now: float) -> None:
+        """Draw the localized celestial burst for each Whis revival event."""
+        duration = 1.65
+        self.whis_resurrection_animations = [
+            item for item in self.whis_resurrection_animations
+            if now - item["started"] < duration
+        ]
+        if not self.whis_resurrection_animations:
+            return
+        layer = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        for item in self.whis_resurrection_animations:
+            rect = layout.slot_rects.get((item["row_id"], item["slot_index"]))
+            if rect is None:
+                continue
+            progress = min(1.0, max(0.0, (now - item["started"]) / duration))
+            fade = min(1.0, (1.0 - progress) * 2.1)
+            center = rect.center
+            orbit_rect = rect.inflate(max(18, round(rect.width * 0.32)), max(18, round(rect.height * 0.32)))
+            aura_alpha = round(95 * fade * min(1.0, progress * 4.0 + 0.18))
+            pygame.draw.rect(
+                layer, (74, 221, 255, aura_alpha), orbit_rect,
+                width=max(2, round(min(rect.size) * 0.035)), border_radius=12,
+            )
+            pygame.draw.arc(
+                layer, (183, 244, 255, round(180 * fade)), orbit_rect,
+                now * 1.4, now * 1.4 + math.pi * 1.35,
+                max(1, round(min(rect.size) * 0.025)),
+            )
+            pygame.draw.arc(
+                layer, (255, 224, 155, round(135 * fade)), orbit_rect.inflate(8, 8),
+                -now * 1.1, -now * 1.1 + math.pi * 0.95,
+                max(1, round(min(rect.size) * 0.018)),
+            )
+
+            # Cyan and white motes spiral around the card, then rise and fade.
+            for particle in range(14):
+                angle = particle * (math.tau / 14) + progress * math.tau * 1.8
+                orbit_x = rect.width * (0.57 + 0.09 * math.sin(progress * math.tau + particle))
+                orbit_y = rect.height * (0.58 + 0.10 * math.cos(progress * math.tau + particle * 0.7))
+                lift = progress * rect.height * (0.18 + (particle % 4) * 0.035)
+                x = round(center[0] + math.cos(angle) * orbit_x)
+                y = round(center[1] + math.sin(angle) * orbit_y - lift)
+                particle_alpha = round(220 * fade * (0.45 + 0.55 * abs(math.sin(progress * math.pi + particle))))
+                color = (
+                    (255, 244, 206, particle_alpha) if particle % 5 == 0
+                    else (231, 252, 255, particle_alpha) if particle % 3 == 0
+                    else (103, 220, 255, particle_alpha)
+                )
+                pygame.draw.circle(layer, color, (x, y), 2 if particle % 3 == 0 else 1)
+
+            # A soft golden-white bloom grows around the return, then clears.
+            bloom = max(0.0, 1.0 - abs(progress - 0.56) / 0.28)
+            if bloom > 0:
+                glow_radius = round(max(rect.size) * (0.48 + bloom * 0.42))
+                glow_alpha = round(32 * bloom)
+                pygame.draw.circle(layer, (255, 246, 211, glow_alpha), center, glow_radius, width=3)
+                pygame.draw.circle(
+                    layer, (102, 222, 255, round(44 * bloom)), center,
+                    round(glow_radius * 0.84), width=2,
+                )
+
+            # The resurrection crest expands outward after the flip begins.
+            burst = min(1.0, max(0.0, (progress - 0.48) / 0.38))
+            if burst > 0.0:
+                radius = round(max(rect.size) * (0.18 + burst * 0.78))
+                burst_alpha = round(150 * fade * (1.0 - burst * 0.42))
+                pygame.draw.circle(
+                    layer, (244, 253, 255, burst_alpha), center, radius,
+                    width=max(1, round(min(rect.size) * 0.018)),
+                )
+                pygame.draw.circle(
+                    layer, (255, 218, 133, round(burst_alpha * 0.72)), center,
+                    max(1, round(radius * 0.72)),
+                    width=max(1, round(min(rect.size) * 0.012)),
+                )
+        screen.blit(layer, (0, 0))
+
+    def _draw_whis_healing_animations(self, screen, state, layout, now: float) -> None:
+        """Send a celestial pulse across the board when two or more allies healed."""
+        duration = 1.25
+        self.whis_healing_animations = [
+            item for item in self.whis_healing_animations
+            if now - item["started"] < duration
+        ]
+        if not self.whis_healing_animations:
+            return
+        layer = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        width, height = screen.get_size()
+        for item in self.whis_healing_animations:
+            progress = min(1.0, max(0.0, (now - item["started"]) / duration))
+            fade = 1.0 - progress
+            source_rect = layout.slot_rects.get((item["row_id"], item["slot_index"]))
+            if source_rect is None:
+                continue
+            origin = source_rect.center
+            healed_rects = []
+            healed_ids = set(item["target_card_ids"])
+            for row in state.rows:
+                for slot_index, card in enumerate(row.slots):
+                    if card is None or card.id not in healed_ids or getattr(card, "eliminated", False):
+                        continue
+                    rect = layout.slot_rects.get((row.id, slot_index))
+                    if rect is not None:
+                        healed_rects.append(rect)
+
+            # Two sweeping rings carry Whis's light outward across the board.
+            for ring_index in range(2):
+                ring_progress = min(1.0, max(0.0, progress * 1.25 - ring_index * 0.18))
+                if ring_progress <= 0:
+                    continue
+                ring_width = round(max(width, height) * (0.08 + ring_progress * 0.75))
+                ring_height = round(max(width, height) * (0.05 + ring_progress * 0.43))
+                ring_rect = pygame.Rect(0, 0, ring_width, ring_height)
+                ring_rect.center = origin
+                alpha = round(115 * fade * (1.0 - ring_index * 0.28))
+                pygame.draw.ellipse(
+                    layer, (87, 222, 255, alpha), ring_rect,
+                    width=max(2, round(min(width, height) * 0.004)),
+                )
+                gold_rect = ring_rect.inflate(-max(4, round(width * 0.018)), -max(4, round(height * 0.018)))
+                if gold_rect.width > 0 and gold_rect.height > 0:
+                    pygame.draw.ellipse(
+                        layer, (255, 233, 177, round(alpha * 0.56)), gold_rect,
+                        width=max(1, round(min(width, height) * 0.002)),
+                    )
+
+            for target_index, target_rect in enumerate(healed_rects):
+                target = target_rect.center
+                pygame.draw.line(
+                    layer, (124, 225, 255, round(58 * fade)), origin, target,
+                    max(1, round(min(width, height) * 0.002)),
+                )
+                halo = target_rect.inflate(12, 12)
+                pygame.draw.rect(
+                    layer, (170, 243, 255, round(145 * fade)), halo,
+                    width=max(2, round(min(target_rect.size) * 0.025)), border_radius=9,
+                )
+                pygame.draw.arc(
+                    layer, (255, 231, 167, round(185 * fade)), halo.inflate(7, 7),
+                    now * 2.0 + target_index, now * 2.0 + target_index + math.pi * 1.25,
+                    max(1, round(min(target_rect.size) * 0.018)),
+                )
+                for mote in range(4):
+                    travel = (progress * 1.35 + mote * 0.24 + target_index * 0.13) % 1.0
+                    x = round(origin[0] + (target[0] - origin[0]) * travel)
+                    y = round(origin[1] + (target[1] - origin[1]) * travel)
+                    pygame.draw.circle(
+                        layer, (230, 251, 255, round(210 * fade)), (x, y),
+                        2 if mote % 2 == 0 else 1,
+                    )
+        screen.blit(layer, (0, 0))
+
+    def _draw_sakura_healing_animations(self, screen, layout, now: float) -> None:
+        """Give Sakura's one-card base restoration a focused celestial pulse."""
+        duration = 0.9
+        self.sakura_healing_animations = [
+            item for item in self.sakura_healing_animations
+            if now - item["started"] < duration
+        ]
+        if not self.sakura_healing_animations:
+            return
+        layer = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        for item in self.sakura_healing_animations:
+            rect = layout.slot_rects.get((item["row_id"], item["slot_index"]))
+            if rect is None:
+                continue
+            progress = min(1.0, max(0.0, (now - item["started"]) / duration))
+            fade = 1.0 - progress
+            pulse = math.sin(math.pi * progress)
+            outer = rect.inflate(12 + round(rect.width * 0.16 * pulse), 12 + round(rect.height * 0.16 * pulse))
+            pygame.draw.rect(
+                layer, (117, 226, 255, round(155 * fade)), outer,
+                width=max(2, round(min(rect.size) * 0.03)), border_radius=10,
+            )
+            pygame.draw.arc(
+                layer, (255, 239, 181, round(220 * fade)), outer.inflate(6, 6),
+                -progress * math.tau, -progress * math.tau + math.pi * 1.25,
+                max(1, round(min(rect.size) * 0.02)),
+            )
+            for particle in range(8):
+                angle = particle * (math.tau / 8) + progress * math.tau
+                x = round(rect.centerx + math.cos(angle) * rect.width * 0.58)
+                y = round(rect.centery + math.sin(angle) * rect.height * 0.62)
+                color = (255, 247, 215, round(205 * fade)) if particle % 3 == 0 else (142, 231, 255, round(190 * fade))
+                pygame.draw.circle(layer, color, (x, y), 2 if particle % 2 == 0 else 1)
+        screen.blit(layer, (0, 0))
+
     def _reveal_view_active(self, state) -> bool:
         return (
             state.phase in {GamePhase.PLACEMENT, GamePhase.REVEAL, GamePhase.ROW_SCORING}
@@ -2343,6 +2584,240 @@ class Renderer:
             "started": started,
             "branches": branches,
         }
+
+    @property
+    def sogeking_cinematic_pending(self) -> bool:
+        return self.sogeking_cinematic is not None
+
+    @property
+    def sogeking_cinematic_stage(self) -> str | None:
+        return self.sogeking_cinematic.get("stage") if self.sogeking_cinematic else None
+
+    def _begin_sogeking_cinematic(self, data: dict, started: float) -> None:
+        cinematic_id = str(data.get("cinematic_id", ""))
+        if not cinematic_id:
+            return
+        if (self.sogeking_cinematic is not None
+                and self.sogeking_cinematic.get("cinematic_id") == cinematic_id):
+            return
+        self._clear_sogeking_cinematic()
+        self.sogeking_cinematic = {
+            "cinematic_id": cinematic_id,
+            "row_id": str(data.get("row_id", "")),
+            "luffy_card_id": str(data.get("luffy_card_id", "")),
+            "usopp_card_id": str(data.get("usopp_card_id", "")),
+            "started": started,
+            "stage": "tension",
+            "impact_started": 0.0,
+        }
+        try:
+            self.sogeking_video = VideoPlayer(
+                self.assets.resolve("assets/Cut_Scenes/Luffy_Usopp_CutScene.mp4"),
+            )
+        except (OSError, ValueError) as exc:
+            self.sogeking_video = None
+            self.notice = f"Sogeking cutscene unavailable: {exc}"
+            self.notice_until = started + 5.0
+        self.sogeking_cinematic_complete = False
+
+    def _clear_sogeking_cinematic(self) -> None:
+        if self.sogeking_video is not None:
+            self.sogeking_video.close()
+        self.sogeking_video = None
+        self.sogeking_cinematic = None
+        self.sogeking_cinematic_complete = False
+
+    def _sync_sogeking_cinematic(self, state: GameState, now: float) -> None:
+        pending = state.get("pending_sogeking_cinematic") or None
+        if pending:
+            if (self.sogeking_cinematic is None
+                    or self.sogeking_cinematic.get("cinematic_id")
+                    != str(pending.get("cinematic_id", ""))):
+                self._begin_sogeking_cinematic(pending, now)
+        elif self.sogeking_cinematic is not None:
+            self._clear_sogeking_cinematic()
+            return
+        cinematic = self.sogeking_cinematic
+        if cinematic is None:
+            return
+        elapsed = max(0.0, now - cinematic["started"])
+        if cinematic["stage"] == "tension" and elapsed >= 2.35:
+            cinematic["stage"] = "footage"
+        if cinematic["stage"] == "footage":
+            if self.sogeking_video is None:
+                cinematic["stage"] = "impact"
+                cinematic["impact_started"] = now
+            else:
+                self.sogeking_video.update(now)
+                if self.sogeking_video.finished:
+                    cinematic["stage"] = "impact"
+                    cinematic["impact_started"] = now
+        elif (cinematic["stage"] == "impact"
+              and now - cinematic["impact_started"] >= 2.5):
+            self.sogeking_cinematic_complete = True
+
+    def _draw_sogeking_cinematic(
+        self, display, scene, state, cards, layout, now: float,
+    ) -> None:
+        cinematic = self.sogeking_cinematic
+        if cinematic is None:
+            return
+        stage = cinematic["stage"]
+        if stage == "footage":
+            if self.sogeking_video is not None:
+                self.sogeking_video.draw(display)
+            else:
+                display.fill((5, 7, 19))
+            return
+
+        width, height = display.get_size()
+        row = next((item for item in state.rows if item.id == cinematic["row_id"]), None)
+        if row is None:
+            display.blit(scene, (0, 0))
+            return
+        actors: dict[str, tuple[int, pygame.Rect]] = {}
+        opposing_rects: list[pygame.Rect] = []
+        for slot_index, card in enumerate(row.slots):
+            if card is None:
+                continue
+            slot_rect = layout.slot_rects.get((row.id, slot_index))
+            if slot_rect is None:
+                continue
+            card_rect = self._portrait_card_rect(slot_rect)
+            if card.id == cinematic["luffy_card_id"]:
+                actors["luffy"] = (slot_index, card_rect)
+            elif card.id == cinematic["usopp_card_id"]:
+                actors["usopp"] = (slot_index, card_rect)
+        actor_owner = next((
+            card.owner_id for card in row.slots
+            if card is not None and card.id == cinematic["luffy_card_id"]
+        ), None)
+        for slot_index, card in enumerate(row.slots):
+            if card is None or card.owner_id == actor_owner:
+                continue
+            slot_rect = layout.slot_rects.get((row.id, slot_index))
+            if slot_rect is not None:
+                opposing_rects.append(self._portrait_card_rect(slot_rect))
+
+        elapsed = max(0.0, now - cinematic["started"])
+        zoom = 1.0
+        focus_x, focus_y = width * 0.5, height * 0.5
+        if stage == "tension":
+            progress = min(1.0, elapsed / 2.35)
+            ease = progress * progress * (3.0 - 2.0 * progress)
+            zoom = 1.0 + 0.065 * ease
+            if actors:
+                focus_x = sum(rect.centerx for _, rect in actors.values()) / len(actors)
+                focus_y = sum(rect.centery for _, rect in actors.values()) / len(actors)
+        offset_x = round(width * 0.5 - focus_x * zoom)
+        offset_y = round(height * 0.5 - focus_y * zoom)
+        impact_elapsed = max(0.0, now - cinematic.get("impact_started", now))
+        if stage == "impact":
+            fade = max(0.0, 1.0 - impact_elapsed / 2.5)
+            amplitude = 13.0 * fade * min(1.0, impact_elapsed / 0.12)
+            offset_x = round(math.sin(impact_elapsed * 71.0) * amplitude)
+            offset_y = round(math.cos(impact_elapsed * 83.0) * amplitude * 0.62)
+
+        scaled_scene = scene if zoom == 1.0 else pygame.transform.smoothscale(
+            scene, (max(1, round(width * zoom)), max(1, round(height * zoom))),
+        )
+        display.fill((3, 4, 13))
+        display.blit(scaled_scene, (offset_x, offset_y))
+
+        def transformed(rect: pygame.Rect) -> pygame.Rect:
+            return pygame.Rect(
+                round(rect.x * zoom + offset_x), round(rect.y * zoom + offset_y),
+                max(1, round(rect.width * zoom)), max(1, round(rect.height * zoom)),
+            )
+
+        if stage == "tension":
+            dim_alpha = round(18 + 178 * min(1.0, elapsed / 2.35))
+            dim = pygame.Surface((width, height), pygame.SRCALPHA)
+            dim.fill((0, 0, 8, dim_alpha))
+            display.blit(dim, (0, 0))
+            glow_layer = pygame.Surface((width, height), pygame.SRCALPHA)
+            for actor_name, (_slot, source_rect) in actors.items():
+                target_rect = transformed(source_rect)
+                pulse = 0.88 + 0.12 * math.sin(now * 3.2 + (0 if actor_name == "luffy" else 1.4))
+                center = target_rect.center
+                glow_color = (95, 190, 255, round(74 * pulse)) if actor_name == "luffy" else (255, 205, 111, round(82 * pulse))
+                pygame.draw.ellipse(glow_layer, glow_color, target_rect.inflate(34, 54))
+                pygame.draw.ellipse(glow_layer, (245, 250, 255, 120), target_rect.inflate(12, 18), width=2)
+                pygame.draw.ellipse(glow_layer, (255, 228, 165, 95), target_rect.inflate(25, 34), width=2)
+                # Re-blit each character's actual card above the darkened board.
+                source = scene.subsurface(source_rect).copy()
+                if source.get_size() != target_rect.size:
+                    source = pygame.transform.smoothscale(source, target_rect.size)
+                display.blit(source, target_rect)
+                pygame.draw.ellipse(glow_layer, (255, 246, 216, 170), target_rect.inflate(3, 6), width=2)
+                pygame.draw.line(
+                    glow_layer, (glow_color[0], glow_color[1], glow_color[2], 24),
+                    (center[0], 0), (center[0], center[1]), max(1, target_rect.width // 4),
+                )
+            display.blit(glow_layer, (0, 0))
+            return
+
+        pair_centers = [transformed(rect).center for _, rect in actors.values()]
+        if not pair_centers:
+            return
+        origin = (
+            sum(point[0] for point in pair_centers) // len(pair_centers),
+            sum(point[1] for point in pair_centers) // len(pair_centers),
+        )
+        targets = [transformed(rect).center for rect in opposing_rects]
+        target = (
+            sum(point[0] for point in targets) // len(targets),
+            sum(point[1] for point in targets) // len(targets),
+        ) if targets else (width - 32 if origin[0] < width // 2 else 32, origin[1])
+        progress = min(1.0, impact_elapsed / 1.35)
+        energy_fade = max(0.0, 1.0 - impact_elapsed / 2.5)
+        curve = -min(height * 0.18, 145) if origin[1] > target[1] else min(height * 0.18, 145)
+        points = []
+        for index in range(25):
+            t = index / 24
+            bend = 2 * t * (1 - t)
+            points.append((
+                round(origin[0] + (target[0] - origin[0]) * t),
+                round(origin[1] + (target[1] - origin[1]) * t + curve * bend),
+            ))
+        trail_count = max(2, round(progress * len(points)))
+        visible_points = points[:trail_count]
+        energy = pygame.Surface((width, height), pygame.SRCALPHA)
+        if len(visible_points) > 1:
+            pygame.draw.lines(energy, (72, 184, 255, round(160 * energy_fade)), False, visible_points, 18)
+            pygame.draw.lines(energy, (255, 215, 116, round(230 * energy_fade)), False, visible_points, 8)
+            pygame.draw.lines(energy, (255, 250, 220, round(245 * energy_fade)), False, visible_points, 2)
+        for index in range(12):
+            travel = (progress * 1.35 + index / 12) % 1.0
+            if travel > progress:
+                continue
+            sample = points[min(len(points) - 1, round(travel * (len(points) - 1)))]
+            radius = 2 + (index % 3)
+            base_color = (90, 204, 255, 220) if index % 2 else (255, 220, 128, 230)
+            color = (*base_color[:3], round(base_color[3] * energy_fade))
+            pygame.draw.circle(energy, color, sample, radius)
+        display.blit(energy, (0, 0))
+
+        if impact_elapsed >= 0.82:
+            flash_progress = min(1.0, (impact_elapsed - 0.82) / 0.42)
+            alpha = round(220 * (1.0 - flash_progress) ** 2)
+            flash = pygame.Surface((width, height), pygame.SRCALPHA)
+            flash.fill((255, 246, 220, alpha))
+            display.blit(flash, (0, 0))
+            burst = pygame.Surface((width, height), pygame.SRCALPHA)
+            burst_radius = max(8, round(min(width, height) * (0.015 + 0.22 * flash_progress)))
+            pygame.draw.circle(burst, (255, 225, 151, alpha), target, burst_radius, width=max(2, burst_radius // 8))
+            pygame.draw.circle(burst, (111, 201, 255, round(alpha * 0.78)), target, round(burst_radius * 0.7), width=max(2, burst_radius // 12))
+            display.blit(burst, (0, 0))
+        banner = render_text("SOGEKING!  +6 ROW SCORE", "title", shadow=True)
+        max_width = max(1, width - 48)
+        if banner.get_width() > max_width:
+            banner = pygame.transform.smoothscale(
+                banner, (max_width, max(1, round(banner.get_height() * max_width / banner.get_width()))),
+            )
+        banner.set_alpha(round(255 * energy_fade))
+        banner_rect = banner.get_rect(centerx=width // 2, top=max(24, round(height * 0.09)))
+        display.blit(banner, banner_rect)
 
     def _draw_luffy_haki_effect(self, screen, layout, now: float) -> None:
         if not self.luffy_haki_animations:

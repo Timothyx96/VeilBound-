@@ -2,6 +2,7 @@
   "cards": [
     {
       "id": "naruto_01",
+      "character_set": "Naruto",
       "name": "Naruto Uzumaki",
       "base_points": 10,
       "type": "GOAT",
@@ -66,12 +67,14 @@
     },
     {
       "id": "naruto_02",
+      "character_set": "Naruto",
       "name": "Sasuke Uchiha",
       "base_points": 7,
       "type": "Dynamic Duo",
       "effect_name": "Eternal Rivalry",
-      "effect_text": "Gains +3 points if allied Itachi is in the same row.",
-      "ability": {
+      "effect_text": "Passive: Gains +3 points if allied Itachi is in the same row. Active: When an opponent's card reveals Sasuke, eliminate that card if its base points are equal to or lower than Sasuke's.",
+      "abilities": [
+      {
         "id": "sasuke_shared_row_bonus",
         "name": "Shared Row Bonus",
         "description": "Gain 3 points when Sasuke and Itachi are both revealed in the same row.",
@@ -98,11 +101,30 @@
           "animation": "points_gain"
         }
       },
+      {
+        "id": "sasuke_revealing_card_elimination",
+        "name": "Sharingan Retribution",
+        "description": "When an opponent's card reveals Sasuke, eliminate that card if its base points are equal to or lower than Sasuke's. Bonus points are ignored.",
+        "trigger": "on_reveal",
+        "conditions": [],
+        "effects": [
+          {
+            "type": "eliminate_revealing_opponent"
+          }
+        ],
+        "activation_limit": "once_per_card_per_match",
+        "presentation": {
+          "floating_text": "SHARINGAN RETRIBUTION",
+          "animation": "elimination"
+        }
+      }
+      ],
       "image": "assets/art/characters/Naruto/Sasuke Uchiha .png",
       "full_card_art": "assets/art/card front/Naruto/Sasuke_Uchiha.png"
     },
     {
       "id": "naruto_03",
+      "character_set": "Naruto",
       "name": "Itachi Uchiha",
       "base_points": 6,
       "type": "Dynamic Duo",
@@ -137,11 +159,12 @@
     },
     {
       "id": "naruto_04",
+      "character_set": "Naruto",
       "name": "Sakura Haruno",
       "base_points": 6,
       "type": "Fighter",
       "effect_name": "Cherry Blossom Impact",
-      "effect_text": "Gains +2 points if Naruto or Sasuke is in the same row.",
+      "effect_text": "Gains +2 points if Naruto or Sasuke is in the same row. On reveal, Sakura may restore the base points of one friendly Naruto character with a base-point reduction anywhere on the board. Existing bonuses remain active when their conditions are met.",
       "abilities": [
         {
           "id": "sakura_naruto_or_sasuke_row_bonus",
@@ -168,6 +191,29 @@
             "floating_text": "+2",
             "animation": "points_gain"
           }
+        },
+        {
+          "id": "sakura_medical_ninjutsu_restore_base_points",
+          "name": "Medical Ninjutsu",
+          "description": "On reveal, restore the base points of one friendly Naruto character anywhere on the board. The target must have a base-point reduction; existing bonuses remain active when their conditions are met.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "heal_target_base_points"
+            }
+          ],
+          "targeting": {
+            "target_scope": "any_row",
+            "target_side": "friendly",
+            "target_character_set": "Naruto",
+            "require_base_point_reduction": true
+          },
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "HEALED",
+            "animation": "points_gain"
+          }
         }
       ],
       "image": "assets/art/characters/Naruto/Sakura Haruno.png",
@@ -175,6 +221,7 @@
     },
     {
       "id": "naruto_05",
+      "character_set": "Naruto",
       "name": "Kakashi Hatake",
       "base_points": 7,
       "type": "Fighter",
@@ -205,6 +252,7 @@
     },
     {
       "id": "naruto_06",
+      "character_set": "Naruto",
       "name": "Minato",
       "base_points": 8,
       "type": "Fighter",
@@ -234,15 +282,16 @@
     },
     {
       "id": "naruto_07",
+      "character_set": "Naruto",
       "name": "Tobi",
       "base_points": 4,
       "type": "Trickster",
       "effect_name": "Reverse Fate",
-      "effect_text": "While Tobi is active in a row, the player with the lowest total points wins that row. All Might's automatic-win effect takes priority.",
+      "effect_text": "While Tobi is in one of the first four slots in a row, the player with the lowest total points wins that row. All Might's automatic-win effect takes priority.",
       "ability": {
         "id": "tobi_reverse_fate",
         "name": "Reverse Fate",
-        "description": "While Tobi is active in a row, the player with the lowest total points wins that row. All Might's automatic-win effect takes priority.",
+        "description": "While Tobi is in one of the first four slots in a row, the player with the lowest total points wins that row. All Might's automatic-win effect takes priority.",
         "trigger": "on_reveal",
         "conditions": [],
         "effects": [
@@ -261,6 +310,7 @@
     },
     {
       "id": "naruto_08",
+      "character_set": "Naruto",
       "name": "Shikamaru Nara",
       "base_points": 5,
       "type": "Regular",
@@ -296,6 +346,7 @@
     },
     {
       "id": "naruto_09",
+      "character_set": "Naruto",
       "name": "Rock Lee",
       "base_points": 5,
       "type": "Regular",
@@ -330,6 +381,7 @@
     },
     {
       "id": "naruto_10",
+      "character_set": "Naruto",
       "name": "Hinata Hyuga",
       "base_points": 4,
       "type": "Regular",
@@ -1143,11 +1195,11 @@
       "base_points": 7,
       "type": "Dynamic Duo",
       "effect_name": "Wings of the Pirate King",
-      "effect_text": "Gains +3 points if placed in the same row as Zoro.",
+      "effect_text": "Gains +5 points if placed in the same row as Zoro.",
       "ability": {
         "id": "sanji_zoro_row_bonus",
         "name": "Shared Row Bonus",
-        "description": "Gain 3 points when Sanji and Zoro are both revealed in the same row.",
+        "description": "Gain 5 points when Sanji and Zoro are both revealed in the same row.",
         "trigger": "on_reveal",
         "conditions": [
           {
@@ -1162,12 +1214,12 @@
         "effects": [
           {
             "type": "add_current_points",
-            "amount": 3
+            "amount": 5
           }
         ],
         "activation_limit": "continuous",
         "presentation": {
-          "floating_text": "+3",
+            "floating_text": "+5",
           "animation": "points_gain"
         }
       },
@@ -1302,7 +1354,7 @@
       "base_points": 4,
       "type": "Trickster",
       "effect_name": "God Usopp",
-      "effect_text": "Gains +3 points if there is an opposing GOAT card in his row.",
+      "effect_text": "Passive: Gains +3 points if there is an opposing GOAT card in his row. Shared ability with Luffy: At final row scoring, if your team is losing by fewer than 6 points and would win outright with +6, Usopp and Luffy shoot down the flag. All Might in the row prevents this effect.",
       "abilities": [
         {
           "id": "usopp_god_opposing_goat_bonus",
@@ -1325,6 +1377,24 @@
           "activation_limit": "continuous",
           "presentation": {
             "floating_text": "+3",
+            "animation": "points_gain"
+          }
+        },
+        {
+          "id": "usopp_luffy_sogeking_secret_synergy",
+          "name": "Sogeking! Shoot Down the Flag!",
+          "description": "Shared ability with Luffy. Immediately before row scoring, if Luffy and Usopp are on your team in this row, All Might is absent, and your team is losing by fewer than 6 points, play the Sogeking cutscene and gain +6 row score. A resulting draw does not qualify.",
+          "trigger": "on_row_scoring",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "luffy_usopp_sogeking_bonus",
+              "amount": 6
+            }
+          ],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "+6 ROW SCORE",
             "animation": "points_gain"
           }
         }
@@ -1429,11 +1499,11 @@
       "base_points": 7,
       "type": "Dynamic Duo",
       "effect_name": "Prince's Rivalry",
-      "effect_text": "Gains +3 points if Goku is in the same row.",
+      "effect_text": "Gains +5 points if Goku is in the same row.",
       "ability": {
         "id": "vegeta_goku_row_bonus",
         "name": "Shared Row Bonus",
-        "description": "Gain 3 points when Vegeta and Goku are both revealed in the same row.",
+        "description": "Gain 5 points when Vegeta and Goku are both revealed in the same row.",
         "trigger": "on_reveal",
         "conditions": [
           {
@@ -1448,12 +1518,12 @@
         "effects": [
           {
             "type": "add_current_points",
-            "amount": 3
+              "amount": 5
           }
         ],
         "activation_limit": "continuous",
         "presentation": {
-          "floating_text": "+3",
+            "floating_text": "+5",
           "animation": "points_gain"
         }
       },
@@ -1680,10 +1750,27 @@
       "base_points": 4,
       "type": "Regular",
       "effect_name": "Temporal Rewind",
-      "effect_text": "Revives one eligible friendly card eliminated anywhere on the board, restoring its original points and ability.",
+      "effect_text": "Restores the original base points of all friendly cards with reduced base points across the board, then revives one eligible friendly card eliminated anywhere on the board.",
       "image": "assets/art/characters/Dragon Ball/Yamcha.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Whis.png",
       "abilities": [
+        {
+          "id": "whis_celestial_restoration",
+          "name": "Celestial Restoration",
+          "description": "Restores the original base points of all friendly cards with reduced base points across the board. Existing bonuses remain active when their conditions are met.",
+          "trigger": "on_reveal",
+          "conditions": [],
+          "effects": [
+            {
+              "type": "heal_friendly_base_points"
+            }
+          ],
+          "activation_limit": "once_per_card_per_match",
+          "presentation": {
+            "floating_text": "RESTORED",
+            "animation": "points_gain"
+          }
+        },
         {
           "id": "whis_temporal_rewind",
           "name": "Temporal Rewind",

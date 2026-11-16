@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # can never silently disable an ability.
 SUPPORTED_TRIGGERS = frozenset({
     "on_reveal", "on_next_opposing_placement", "on_first_placement_in_row",
-    "on_next_placement_in_row",
+    "on_next_placement_in_row", "on_row_scoring",
 })
 SUPPORTED_CONDITION_TYPES = frozenset({
     "character_revealed", "same_row", "same_row_any", "last_placed_in_row",
@@ -52,6 +52,7 @@ SUPPORTED_EFFECT_TYPES = frozenset({
     "add_current_points_per_opposing_excess_over_friendly",
     "reverse_row_winner",
     "automatic_win_if_opposing_row_has_no_goat",
+    "luffy_usopp_sogeking_bonus",
     "add_current_points_to_friendly_type",
     "add_current_points_per_opposing_type_after_owner",
     "add_current_points_per_opposing_character",
@@ -65,11 +66,14 @@ SUPPORTED_EFFECT_TYPES = frozenset({
     "ignore_opposing_abilities",
     "disable_row_abilities",
     "gain_points_on_friendly_elimination",
+    "heal_friendly_base_points",
     "eliminate_target",
+    "eliminate_revealing_opponent",
     "remove_target_bonus",
     "steal_target_bonus",
     "copy_target_bonus",
     "revive_target",
+    "heal_target_base_points",
     "reduce_target_base_points",
     "reduce_next_card_points",
     "move_character",
@@ -154,6 +158,8 @@ class AbilityDefinition:
     excluded_types: tuple[str, ...] = ()
     max_base_points: int | None = None
     min_base_points: int | None = None
+    target_character_set: str | None = None
+    require_base_point_reduction: bool = False
 
 
 @dataclass(frozen=True)
@@ -178,7 +184,7 @@ class AbilityActivation:
         return any(
             effect.type in {
                 "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-                "revive_target", "reduce_target_base_points", "move_character",
+                "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
             }
             for effect in self.ability.effects
         ) and not any(
@@ -362,6 +368,10 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
             amount = item.get("amount")
             if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
                 raise AbilityValidationError(f"{where}: 'amount' must be a non-zero integer.")
+        elif effect_type == "luffy_usopp_sogeking_bonus":
+            amount = item.get("amount")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount != 6:
+                raise AbilityValidationError(f"{where}: Sogeking's scoring bonus must be exactly 6.")
         elif effect_type in {
             "add_current_points_to_friendly_type",
             "add_current_points_per_friendly_type",
@@ -555,7 +565,7 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
     has_elimination = any(
         effect.type in {
             "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-            "revive_target", "reduce_target_base_points", "move_character",
+            "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
         }
         for effect in effects
     )
@@ -565,6 +575,8 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
     excluded_types: tuple[str, ...] = ()
     max_base_points: int | None = None
     min_base_points: int | None = None
+    target_character_set: str | None = None
+    require_base_point_reduction = False
     if has_elimination:
         targeting_raw = raw.get("targeting", {})
         if not isinstance(targeting_raw, dict):
@@ -593,6 +605,18 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
                 f"{context}: targeting 'excluded_types' must be a list."
             )
         excluded_types = tuple(str(t) for t in excluded_types_raw)
+        target_character_set_raw = targeting_raw.get("target_character_set")
+        if target_character_set_raw is not None:
+            if not isinstance(target_character_set_raw, str) or not target_character_set_raw.strip():
+                raise AbilityValidationError(
+                    f"{context}: targeting 'target_character_set' must be a non-empty string or null."
+                )
+            target_character_set = target_character_set_raw.strip()
+        require_base_point_reduction = targeting_raw.get("require_base_point_reduction", False)
+        if not isinstance(require_base_point_reduction, bool):
+            raise AbilityValidationError(
+                f"{context}: targeting 'require_base_point_reduction' must be a boolean."
+            )
         max_base_points = targeting_raw.get("max_base_points")
         if max_base_points is not None:
             if isinstance(max_base_points, bool) or not isinstance(max_base_points, int):
@@ -632,6 +656,8 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
         excluded_types=excluded_types,
         max_base_points=max_base_points,
         min_base_points=min_base_points,
+        target_character_set=target_character_set,
+        require_base_point_reduction=require_base_point_reduction,
     )
 
 
@@ -937,6 +963,7 @@ class AbilityManager:
         emit_failure: Callable[[AbilityDefinition, Any, Any, int, str], None] | None = None,
         revived: bool = False,
         owner_only: bool = False,
+        revealed_by: Any = None,
     ) -> list[AbilityActivation]:
         """Run Phase A then Phase B for one freshly revealed card.
 
@@ -1040,11 +1067,25 @@ class AbilityManager:
                         continue
                     if self._is_passive_rule_modifier(ability):
                         continue
+                    if not self._ability_position_is_eligible(ability, slot_index):
+                        continue
                     if revived:
                         # A revived card's own on-reveal abilities must not
                         # re-activate: its activation history was reset during
                         # revival. Gon's explicit retry is handled separately
                         # in Phase A, so skipping all abilities here is safe.
+                        continue
+                    if any(effect.type == "eliminate_revealing_opponent" for effect in ability.effects):
+                        if self._limit_reached(ability, revealed_card):
+                            continue
+                        activation = self._try_activate(
+                            ability, revealed_card, row, slot_index, state,
+                            triggering_card=revealed_by,
+                        )
+                        if activation is not None:
+                            activations.append(activation)
+                            if emit is not None:
+                                emit(activation)
                         continue
                     if any(
                         effect.type in {
@@ -1080,6 +1121,13 @@ class AbilityManager:
                     if already_pending:
                         continue
                     if not self._has_effect_targets(ability, revealed_card, state):
+                        if all(
+                            effect.type == "heal_friendly_base_points"
+                            for effect in ability.effects
+                        ):
+                            # A heal with nobody wounded is a quiet no-op; it
+                            # should not show a failed-target message.
+                            continue
                         self._report_failure_once(
                             ability, revealed_card, emit_failure, row,
                             slot_index, "no_valid_targets",
@@ -1514,7 +1562,20 @@ class AbilityManager:
     def _has_effect_targets(self, ability: AbilityDefinition, owner_card: Any, state: Any) -> bool:
         """Do not activate an ability when one of its board effects has no recipient."""
         for effect in ability.effects:
-            if effect.type == "add_current_points_to_friendly_type":
+            if effect.type == "heal_friendly_base_points":
+                if not any(
+                    target is not None
+                    and target.id != owner_card.id
+                    and target.owner_id == owner_card.owner_id
+                    and not getattr(target, "eliminated", False)
+                    and sum(
+                        max(0, int(amount))
+                        for amount in dict(target.get("base_point_reductions") or {}).values()
+                    ) > 0
+                    for row in state.rows for target in row.slots
+                ):
+                    return False
+            elif effect.type == "add_current_points_to_friendly_type":
                 if not any(
                     target is not None
                     and target.id != owner_card.id
@@ -1527,7 +1588,7 @@ class AbilityManager:
                     return False
             elif effect.type in {
                 "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-                "revive_target", "reduce_target_base_points", "move_character",
+                "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
             }:
                 owner_row = next((
                     row for row in state.rows
@@ -1557,6 +1618,14 @@ class AbilityManager:
                                 and passive_protection_blocks(target, owner_card, self.definitions)):
                             continue
                         target_definition = self.definitions.get(target.definition_id)
+                        if (ability.target_character_set is not None
+                                and getattr(target_definition, "character_set", "")
+                                != ability.target_character_set):
+                            continue
+                        if effect.type == "heal_target_base_points" and ability.require_base_point_reduction:
+                            reductions = dict(target.get("base_point_reductions") or {})
+                            if sum(max(0, int(amount)) for amount in reductions.values()) <= 0:
+                                continue
                         base = self._base_points(target)
                         if ability.max_base_points is not None and base > ability.max_base_points:
                             continue
@@ -1594,10 +1663,46 @@ class AbilityManager:
         owner_row: Any,
         owner_index: int,
         state: Any,
+        triggering_card: Any = None,
     ) -> AbilityActivation | None:
         """Check every condition; if satisfied, apply effects once and record it."""
         if self._is_ability_suppressed(owner_card):
             return None
+        if not self._ability_position_is_eligible(ability, owner_index):
+            return None
+        if any(effect.type == "eliminate_revealing_opponent" for effect in ability.effects):
+            if (
+                triggering_card is None
+                or triggering_card.owner_id == owner_card.owner_id
+                or getattr(triggering_card, "eliminated", False)
+                or bool(triggering_card.get("immune_to_elimination", False))
+                or self._base_points(triggering_card) > self._base_points(owner_card)
+                or passive_protection_blocks(triggering_card, owner_card, self.definitions)
+                or owner_index + 1 >= len(owner_row.slots)
+                or owner_row.slots[owner_index + 1] is None
+                or owner_row.slots[owner_index + 1].id != triggering_card.id
+            ):
+                return None
+            definition = self.definitions[owner_card.definition_id]
+            base_points = self._base_points(owner_card)
+            current_points = self._current_points(owner_card, base_points)
+            activated = list(owner_card.get("activated_abilities") or [])
+            if ability.id not in activated:
+                activated.append(ability.id)
+            owner_card.activated_abilities = activated
+            return AbilityActivation(
+                ability=ability,
+                owner_card_id=owner_card.id,
+                target_card_id=triggering_card.id,
+                row_id=owner_row.id,
+                slot_index=owner_index,
+                definition_id=owner_card.definition_id,
+                owner_name=str(definition.name),
+                delta=0,
+                base_points=base_points,
+                current_points=current_points,
+                is_elimination=True,
+            )
         if not self._has_effect_targets(ability, owner_card, state):
             return None
         for condition in ability.conditions:
@@ -1655,7 +1760,7 @@ class AbilityManager:
         definition = self.definitions[owner_card.definition_id]
         target_effects = {
             "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
-            "revive_target", "reduce_target_base_points", "move_character",
+            "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
         }
         # reduce_target_base_points with same_row+opposing is auto-processing,
         # not player-targeted
@@ -1704,6 +1809,21 @@ class AbilityManager:
                 # can be removed later (for example when a Dynamic Duo partner
                 # is eliminated) without ever touching the immutable base.
                 bonuses[ability.id] = effect.amount
+            elif effect.type == "heal_friendly_base_points":
+                for row in state.rows:
+                    for target in row.slots:
+                        if (target is None or target.id == owner_card.id
+                                or target.owner_id != owner_card.owner_id
+                                or getattr(target, "eliminated", False)):
+                            continue
+                        restored = self.restore_base_point_reductions(target)
+                        if restored <= 0:
+                            continue
+                        affected_card_ids.append(target.id)
+                if affected_card_ids:
+                    # Preserve current bonuses and recheck conditional bonuses
+                    # after every friendly base value has been restored.
+                    self.recalculate_continuous_bonuses(state)
             elif effect.type == "add_current_points_to_friendly_type":
                 for row in state.rows:
                     for target in row.slots:
@@ -1818,6 +1938,13 @@ class AbilityManager:
         )
 
     @staticmethod
+    def _ability_position_is_eligible(ability: AbilityDefinition, slot_index: int) -> bool:
+        """Check position-based restrictions against the card's current row slot."""
+        if ability.id == "tobi_reverse_fate":
+            return 0 <= slot_index < 4
+        return True
+
+    @staticmethod
     def _is_passive_rule_modifier(ability: AbilityDefinition) -> bool:
         """Whether an ability only declares a persistent rule modifier."""
         return bool(ability.effects) and all(
@@ -1886,6 +2013,17 @@ class AbilityManager:
         applied = bonuses if bonuses is not None else dict(card.get("applied_bonuses") or {})
         reductions = dict(card.get("bonus_point_reductions") or {})
         return max(0, self._base_points(card) + sum(applied.values()) - sum(reductions.values()))
+
+    def restore_base_point_reductions(self, card: Any) -> int:
+        """Restore one card's recorded base reductions without changing its bonuses."""
+        reductions = dict(card.get("base_point_reductions") or {})
+        restored = sum(max(0, int(amount)) for amount in reductions.values())
+        if restored <= 0:
+            return 0
+        card.base_points = self._base_points(card) + restored
+        card.base_point_reductions = {}
+        card.current_points = self._calculated_points(card)
+        return restored
 
     def reduce_base_points(self, card: Any, reduction_id: str, amount: int) -> bool:
         """Permanently reduce this card instance's base, once per activation."""

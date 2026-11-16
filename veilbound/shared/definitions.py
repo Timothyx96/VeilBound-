@@ -59,6 +59,7 @@ def load_card_definitions(path: Path | None = None) -> dict[str, CardDefinition]
             # Pass the parsed abilities (possibly empty) so every CardDefinition
             # now carries a list of abilities.
             abilities=ability_defs if ability_defs else None,
+            character_set=str(raw.get("character_set", "")).strip(),
         )
         if not definition.name or not definition.image:
             raise ValueError(f"Character {definition.id} needs a name and image path")

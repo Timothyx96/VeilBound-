@@ -69,6 +69,8 @@ class AudioManager:
         self.character_reveal_sounds: dict[str, pygame.mixer.Sound | None] = {}
         self.luffy_haki_sounds: tuple[tuple[pygame.mixer.Sound | None, float], ...] = ()
         self.luffy_laugh_sound: pygame.mixer.Sound | None = None
+        self.sogeking_tension_sound: pygame.mixer.Sound | None = None
+        self.sogeking_impact_sound: pygame.mixer.Sound | None = None
         self.all_might_reveal_sound: pygame.mixer.Sound | None = None
         self.sfx_volume = 0.8
         # Music state: the current track, the track to restore after the
@@ -103,6 +105,14 @@ class AudioManager:
             (self._synthesize_haki_layer("impact", 0.58, 1701), 0.95),
             (self._synthesize_haki_layer("burst", 0.48, 1702), 0.72),
             (self._synthesize_haki_layer("rumble", 1.12, 1703), 0.42),
+        )
+        # A light, native two-stage cue supports the locally rendered Sogeking
+        # sequence without relying on an unrelated character SFX asset.
+        self.sogeking_tension_sound = self._synthesize_tone(
+            (98, 147, 196), 1.45, arpeggio=True,
+        )
+        self.sogeking_impact_sound = self._synthesize_tone(
+            (294, 392, 587), 0.34, arpeggio=True,
         )
         self.luffy_laugh_sound = self._amplify_sound(
             self._load_sound("assets/sounds/Abillity_Sfx/Ability_Resolution/Luffy_laugh.mp3"),
@@ -322,6 +332,14 @@ class AudioManager:
                 self._play_once(("next_row", str(event.data.get("row_id", ""))), self.next_row_sound)
             elif event.kind == "row_scored":
                 self._play_once(("counter_sfx", str(event.data.get("row_id", ""))), self.counter_sound)
+            elif event.kind == "sogeking_cinematic_started":
+                cinematic_id = str(event.data.get("cinematic_id", ""))
+                if cinematic_id:
+                    self._play_once(
+                        ("sogeking_tension", cinematic_id),
+                        self.sogeking_tension_sound,
+                        volume_multiplier=0.38,
+                    )
             elif event.kind == "crazy_slots_spin_started":
                 spin_id = str(event.data.get("spin_id", ""))
                 if spin_id:
@@ -358,6 +376,14 @@ class AudioManager:
                         else 1.0
                     ),
                 )
+
+    def play_sogeking_impact(self, cinematic_id: str) -> None:
+        """Play the golden-blue impact cue once during the finishing move."""
+        if cinematic_id:
+            self._play_once(
+                ("sogeking_impact", cinematic_id), self.sogeking_impact_sound,
+                volume_multiplier=0.52,
+            )
 
     def play_crazy_slots_tick(self, spin_id: str, digit: int, speed: float) -> None:
         """Play one throttled reel tick, lowering its pitch as the reel slows."""
