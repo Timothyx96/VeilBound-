@@ -32,6 +32,7 @@ LUFFY = "onepiece_01"   # 10 / GOAT
 ZENO = "dragonball_09"
 NICO_ROBIN = "onepiece_05"
 NAMI = "onepiece_09"
+KEIGO = "mha_08"
 CHOPPER = "onepiece_10"
 KURAPIKA = "hxh_08"   # 6 / Fighter
 GON = "hxh_01"
@@ -128,6 +129,12 @@ def _arm_kurapika_selection(engine, kurapika, row):
 def _arm_nami_selection(engine, nami, row):
     event_start = len(engine.state.events)
     engine._reveal_card(row, 0, nami)
+    return engine._begin_pending_elimination(event_start)
+
+
+def _arm_keigo_selection(engine, keigo, row):
+    event_start = len(engine.state.events)
+    engine._reveal_card(row, 0, keigo)
     return engine._begin_pending_elimination(event_start)
 
 
@@ -827,6 +834,90 @@ def test_nami_cannot_select_or_resolve_a_card_without_bonus_points():
         and event.data.get("ability_id") == "nami_cat_burglar_steal_bonus"
         for event in result.events
     )
+
+
+def test_keigo_removes_at_most_three_bonus_points_across_sources_without_touching_base():
+    for available in (1, 2, 3, 5, 8, 12):
+        engine = scripted_engine(capacity=3)
+        keigo = card(engine, KEIGO, engine.state.players[0].id)
+        target = card(engine, GO, engine.state.players[1].id)
+        target.revealed = True
+        first_source = available // 3
+        original_bonuses = {
+            "bonus_source_a": first_source,
+            "bonus_source_b": available - first_source - (available - first_source) // 2,
+            "bonus_source_c": (available - first_source) // 2,
+        }
+        original_bonuses = {key: value for key, value in original_bonuses.items() if value}
+        target.applied_bonuses = original_bonuses.copy()
+        target.current_points += available
+        row = engine.state.rows[0]
+        row.slots[:] = [keigo, target, None]
+        base_points = target.base_points
+        keigo_base = keigo.base_points
+
+        assert _arm_keigo_selection(engine, keigo, row)
+        pending = engine.state.pending_elimination
+        assert pending["effect_type"] == "remove_target_bonus"
+        assert pending["effect_amount"] == 3
+        assert engine.select_elimination_target(row.id, 1).accepted
+
+        expected_removed = min(available, 3)
+        assert target.current_points == base_points + available - expected_removed
+        assert keigo.current_points == keigo_base
+        assert keigo.applied_bonuses == {}
+        assert target.applied_bonuses == original_bonuses
+        assert sum(target.bonus_point_reductions.values()) == expected_removed
+        assert target.base_points == base_points
+        assert target.current_points >= base_points
+        assert engine.abilities._base_points(target) == base_points
+        assert engine.abilities._base_points(keigo) == keigo_base
+
+        removal_events = [event for event in engine.state.events if event.kind == "bonus_points_removed"]
+        assert removal_events[-1].data["amount"] == expected_removed
+        resolved = [event for event in engine.state.events if event.kind == "ability_resolved"]
+        assert resolved[-1].data["floating_text"] == f"-{expected_removed} Bonus"
+        scores = calculate_row_scores(row, tuple(player.id for player in engine.state.players), engine.cards)
+        assert scores[target.owner_id] == target.current_points
+        target_view = engine.view_for(target.owner_id)["rows"][0]["slots"][1]["card"]
+        assert target_view["current_points"] == target.current_points
+        assert target_view["base_points"] == base_points
+        keigo_view = engine.view_for(keigo.owner_id)["rows"][0]["slots"][0]["card"]
+        assert keigo_view["current_points"] == keigo_base
+        assert not engine.select_elimination_target(row.id, 1).accepted
+        assert sum(
+            event.kind == "ability_resolved"
+            and event.data.get("ability_id") == "keigo_zero_gravity"
+            for event in engine.state.events
+        ) == 1
+
+
+def test_keigo_capped_removal_preserves_continuous_bonus_and_does_not_touch_base():
+    engine = scripted_engine(capacity=4)
+    keigo = card(engine, KEIGO, engine.state.players[0].id)
+    target = card(engine, GO, engine.state.players[1].id)
+    hinata = card(engine, "naruto_10", target.owner_id)
+    target.revealed = hinata.revealed = True
+    row = engine.state.rows[0]
+    row.slots[:] = [keigo, target, hinata, None]
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    target.applied_bonuses["independent_bonus"] = 2
+    target.current_points = engine.abilities._calculated_points(target)
+    assert target.current_points == target.base_points + 5
+
+    assert _arm_keigo_selection(engine, keigo, row)
+    assert engine.select_elimination_target(row.id, 1).accepted
+    assert target.current_points == target.base_points + 2
+    assert target.suppressed_bonuses == []
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert target.current_points == target.base_points + 2
+
+    # Once that source expires, its stored reduction cannot consume the
+    # independent bonus or lower the target's base points.
+    row.slots[2] = None
+    engine.abilities.recalculate_continuous_bonuses(engine.state)
+    assert target.current_points == target.base_points + 2
+    assert target.base_points == engine.cards[GO].base_points
 
 
 def test_nami_bonus_steal_is_authoritative_for_multiplayer():

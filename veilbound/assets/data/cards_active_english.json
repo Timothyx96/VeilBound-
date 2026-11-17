@@ -654,14 +654,14 @@
       "base_points": 5,
       "type": "Regular",
       "effect_name": "Zero Gravity",
-      "effect_text": "Remove up to 3 bonus points from one opposing card. Base points remain unchanged.",
+      "effect_text": "Remove up to 3 bonus points from one opposing card. Keigo does not gain those points; base points remain unchanged.",
       "image": "assets/art/characters/My Hero Academia/Ochaco_Uraraka.jpg",
       "full_card_art": "assets/art/card front/MHA/Keigo.png",
       "abilities": [
         {
           "id": "keigo_zero_gravity",
           "name": "Zero Gravity",
-          "description": "Remove up to 3 bonus points from one opposing character in the same row. Base points remain unchanged.",
+          "description": "Remove up to 3 bonus points from one opposing character in the same row. Keigo does not gain those points; base points remain unchanged.",
           "trigger": "on_reveal",
           "conditions": [],
           "effects": [
@@ -672,7 +672,7 @@
           ],
           "activation_limit": "once_per_card_per_match",
           "presentation": {
-            "floating_text": "-3 Bonus",
+            "floating_text": "BONUS REMOVED",
             "animation": "elimination"
           },
           "target_scope": "same_row",

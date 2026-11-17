@@ -1174,19 +1174,40 @@ class GameEngine:
         elif effect_type == "remove_target_bonus":
             base_points = self.abilities._base_points(target_card)
             previous_points = int(target_card.current_points)
-            # A continuous bonus already active on the target must stay
-            # suppressed through scoring, until its own condition ceases.
-            suppressed = set(target_card.get("suppressed_bonuses") or [])
-            applied = dict(target_card.get("applied_bonuses") or {})
-            continuous_ids = {
-                ability.id
-                for ability in (getattr(target_definition, "abilities", None) or [])
-                if ability.activation_limit == "continuous"
-            }
-            suppressed.update(continuous_ids.intersection(applied))
-            target_card.suppressed_bonuses = sorted(suppressed)
-            target_card.applied_bonuses = {}
-            target_card.current_points = base_points
+            limit = max(0, int(pending.get("effect_amount", 0)))
+            if limit:
+                removed = self.abilities.remove_bonus_points(
+                    target_card,
+                    str(pending.get("ability_id", "")),
+                    attacker_card.id,
+                    limit,
+                )
+                if removed <= 0:
+                    return ActionResult(False, "That card no longer has removable bonus points.")
+                if str(pending.get("ability_id", "")) == "keigo_zero_gravity":
+                    pending["floating_text"] = f"-{removed} Bonus"
+            else:
+                # Unlimited removers (such as Itachi) keep suppressing active
+                # continuous bonuses until their conditions cease, as before.
+                suppressed = set(target_card.get("suppressed_bonuses") or [])
+                applied = dict(target_card.get("applied_bonuses") or {})
+                continuous_ids = {
+                    ability.id
+                    for ability in (getattr(target_definition, "abilities", None) or [])
+                    if ability.activation_limit == "continuous"
+                }
+                suppressed.update(continuous_ids.intersection(applied))
+                target_card.suppressed_bonuses = sorted(suppressed)
+                target_card.applied_bonuses = {}
+                # A full wipe supersedes any earlier Keigo source-scoped
+                # reductions, so they cannot affect a later re-earned bonus.
+                bonus_reductions = dict(target_card.get("bonus_point_reductions") or {})
+                target_card.bonus_point_reductions = {
+                    key: value for key, value in bonus_reductions.items()
+                    if not str(key).startswith("source:")
+                }
+                target_card.current_points = base_points
+                removed = max(0, previous_points - int(target_card.current_points))
             self._emit(
                 "bonus_points_removed",
                 f"{target_name}'s bonus points were removed by {pending.get('attacker_name', 'Unknown character')}.",
@@ -1197,8 +1218,9 @@ class GameEngine:
                     "target_name": target_name,
                     "row_id": target_row_id,
                     "slot_index": target_slot_index,
+                    "amount": removed,
                     "previous_points": previous_points,
-                    "current_points": base_points,
+                    "current_points": int(target_card.current_points),
                 },
             )
         elif effect_type == "reduce_target_base_points":

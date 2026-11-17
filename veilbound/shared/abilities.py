@@ -368,6 +368,14 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
             amount = item.get("amount")
             if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
                 raise AbilityValidationError(f"{where}: 'amount' must be a positive integer.")
+        elif effect_type == "remove_target_bonus":
+            # A positive amount caps removal; zero keeps the legacy remove-all
+            # behavior used by effects that omit an amount.
+            amount = item.get("amount", 0)
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
+                raise AbilityValidationError(
+                    f"{where}: 'amount' must be a non-negative integer when provided."
+                )
         elif effect_type == "add_current_points":
             amount = item.get("amount")
             if isinstance(amount, bool) or not isinstance(amount, int) or amount == 0:
@@ -2068,7 +2076,53 @@ class AbilityManager:
         """Build a total from the card instance's base and its ability bonuses."""
         applied = bonuses if bonuses is not None else dict(card.get("applied_bonuses") or {})
         reductions = dict(card.get("bonus_point_reductions") or {})
-        return max(0, self._base_points(card) + sum(applied.values()) - sum(reductions.values()))
+        reduction_total = 0
+        source_reductions: dict[str, int] = {}
+        for key, raw_amount in reductions.items():
+            amount = max(0, int(raw_amount))
+            parts = str(key).split(":", 3)
+            if len(parts) == 4 and parts[0] == "source":
+                source_reductions[parts[3]] = source_reductions.get(parts[3], 0) + amount
+            else:
+                reduction_total += amount
+        for source, amount in source_reductions.items():
+            # Keep a capped removal attached to the bonus contribution it
+            # removed, so it cannot lower base points or consume a later source.
+            reduction_total += min(amount, max(0, int(applied.get(source, 0))))
+        return max(0, self._base_points(card) + sum(applied.values()) - reduction_total)
+
+    def remove_bonus_points(
+        self, target: Any, ability_id: str, source_id: str, maximum: int,
+    ) -> int:
+        """Remove up to ``maximum`` active bonus points, never base points."""
+        maximum = max(0, int(maximum))
+        previous_points = int(target.current_points)
+        available = max(0, previous_points - self._base_points(target))
+        removed = min(maximum, available)
+        if removed <= 0:
+            return 0
+
+        applied = dict(target.get("applied_bonuses") or {})
+        reductions = dict(target.get("bonus_point_reductions") or {})
+        remaining = removed
+        for bonus_source, raw_value in applied.items():
+            value = max(0, int(raw_value))
+            if value <= 0:
+                continue
+            reduction_key = f"source:{ability_id}:{source_id}:{bonus_source}"
+            already_removed = max(0, int(reductions.get(reduction_key, 0)))
+            take = min(max(0, value - already_removed), remaining)
+            if take:
+                reductions[reduction_key] = already_removed + take
+                remaining -= take
+            if remaining <= 0:
+                break
+        if remaining:
+            return 0
+
+        target.bonus_point_reductions = reductions
+        target.current_points = self._calculated_points(target, applied)
+        return max(0, previous_points - int(target.current_points))
 
     def restore_base_point_reductions(self, card: Any) -> int:
         """Restore one card's recorded base reductions without changing its bonuses."""
