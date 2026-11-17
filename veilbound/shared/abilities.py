@@ -50,6 +50,7 @@ SUPPORTED_EFFECT_TYPES = frozenset({
     "add_current_points_per_friendly_type",
     "add_current_points_per_friendly_character",
     "add_current_points_per_opposing_excess_over_friendly",
+    "add_current_points_per_absolute_row_count_difference",
     "reverse_row_winner",
     "automatic_win_if_opposing_row_has_no_goat",
     "usopp_sogeking_flag_shot",
@@ -78,6 +79,7 @@ SUPPORTED_EFFECT_TYPES = frozenset({
     "reduce_target_base_points",
     "reduce_next_card_points",
     "move_character",
+    "kamui_exchange_rows",
 })
 SUPPORTED_ACTIVATION_LIMITS = frozenset({"once_per_card_per_match", "continuous"})
 SUPPORTED_ANIMATIONS = frozenset({"points_gain", "elimination"})
@@ -186,6 +188,7 @@ class AbilityActivation:
             effect.type in {
                 "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
                 "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
+                "kamui_exchange_rows",
             }
             for effect in self.ability.effects
         ) and not any(
@@ -419,6 +422,10 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
             amount = item.get("amount")
             if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
                 raise AbilityValidationError(f"{where}: 'amount' must be a positive integer.")
+        elif effect_type == "add_current_points_per_absolute_row_count_difference":
+            amount = item.get("amount")
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+                raise AbilityValidationError(f"{where}: 'amount' must be a positive integer.")
         elif effect_type == "suppress_next_opposing_ability":
             amount = 0
             preserve_bonus_points = item.get("preserve_bonus_points", False)
@@ -527,6 +534,7 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
         "add_current_points_per_opposing_character",
         "add_current_points_per_friendly_character",
         "add_current_points_per_opposing_excess_over_friendly",
+        "add_current_points_per_absolute_row_count_difference",
     } for effect in effects):
         if activation_limit != "continuous":
             raise AbilityValidationError(
@@ -567,6 +575,7 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
         effect.type in {
             "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
             "revive_target", "revive_all_targets", "heal_target_base_points", "reduce_target_base_points", "move_character",
+            "kamui_exchange_rows",
         }
         for effect in effects
     )
@@ -1099,6 +1108,7 @@ class AbilityManager:
                             "add_current_points_per_opposing_character",
                             "add_current_points_per_friendly_character",
                             "add_current_points_per_opposing_excess_over_friendly",
+                            "add_current_points_per_absolute_row_count_difference",
                         }
                         for effect in ability.effects
                     ) or (
@@ -1333,6 +1343,7 @@ class AbilityManager:
                         or effect.type == "add_current_points_per_opposing_character"
                         or effect.type == "add_current_points_per_friendly_character"
                         or effect.type == "add_current_points_per_opposing_excess_over_friendly"
+                        or effect.type == "add_current_points_per_absolute_row_count_difference"
                     ), None)
                     if point_effect is None:
                         continue
@@ -1426,6 +1437,20 @@ class AbilityManager:
                             and not getattr(candidate, "eliminated", False)
                         )
                         amount *= max(0, opposing_count - allied_count)
+                    elif point_effect.type == "add_current_points_per_absolute_row_count_difference":
+                        own_count = sum(
+                            1 for candidate in owner_row.slots
+                            if candidate is not None
+                            and candidate.owner_id == slot.owner_id
+                            and not getattr(candidate, "eliminated", False)
+                        )
+                        opposing_count = sum(
+                            1 for candidate in owner_row.slots
+                            if candidate is not None
+                            and candidate.owner_id != slot.owner_id
+                            and not getattr(candidate, "eliminated", False)
+                        )
+                        amount *= abs(own_count - opposing_count)
                     conditions_ok = conditions_ok and amount != 0
                     applied_bonuses = dict(slot.get("applied_bonuses") or {})
                     suppressed_bonuses = set(slot.get("suppressed_bonuses") or [])
@@ -1675,6 +1700,15 @@ class AbilityManager:
                     )
                 ):
                     return False
+            elif effect.type == "kamui_exchange_rows":
+                eligible_rows = [row for row in state.rows if not row.scored]
+                if not any(
+                    first.point_value != second.point_value
+                    and abs(int(first.point_value) - int(second.point_value)) <= 3
+                    for index, first in enumerate(eligible_rows)
+                    for second in eligible_rows[index + 1:]
+                ):
+                    return False
         return True
 
     def _try_activate(
@@ -1782,6 +1816,7 @@ class AbilityManager:
         target_effects = {
             "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
             "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
+            "kamui_exchange_rows",
         }
         # reduce_target_base_points with same_row+opposing is auto-processing,
         # not player-targeted

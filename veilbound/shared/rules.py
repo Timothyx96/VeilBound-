@@ -382,7 +382,8 @@ class GameEngine:
             return
         for dabi_index, dabi in enumerate(row.slots[:slot_index]):
             if (dabi is None or dabi.definition_id != "mha_03" or not dabi.revealed
-                    or getattr(dabi, "eliminated", False) or dabi.owner_id == placed_card.owner_id):
+                    or getattr(dabi, "eliminated", False) or dabi.owner_id == placed_card.owner_id
+                    or self.abilities.row_abilities_disabled_for_card(row, dabi, self.state)):
                 continue
             ability = next((
                 item for item in (self.cards[dabi.definition_id].abilities or [])
@@ -745,7 +746,7 @@ class GameEngine:
                 },
             )
             return False
-        self._award_trunks_saiyan_resolve(row, placed_card)
+        self._award_trunks_saiyan_resolve(placed_card)
         self.abilities.recalculate_after_elimination(self.state, placed_card)
         source_name = self.cards[zeno.definition_id].name
         target_name = self.cards[placed_card.definition_id].name
@@ -816,8 +817,35 @@ class GameEngine:
             if effect.type in {
                 "eliminate_target", "remove_target_bonus", "steal_target_bonus", "copy_target_bonus",
                 "revive_target", "heal_target_base_points", "reduce_target_base_points", "move_character",
+                "kamui_exchange_rows",
             }
         )
+        if effect_type == "kamui_exchange_rows":
+            valid_first_rows = self._kamui_first_rows()
+            if len(valid_first_rows) < 2:
+                return False
+            state.pending_elimination = {
+                "attacker_card_id": owner_card.id,
+                "attacker_owner_id": owner_card.owner_id,
+                "attacker_name": str(definition.name),
+                "ability_id": ability.id,
+                "ability_name": ability.name,
+                "effect_amount": 0,
+                "floating_text": str(target_activation.data.get("floating_text", "")),
+                "effect_type": effect_type,
+                "sound": ability.presentation.sound,
+                "definition_id": owner_card.definition_id,
+                "row_id": str(target_activation.data.get("row_id", "")),
+                "slot_index": int(target_activation.data.get("slot_index", 0)),
+                "stage": "kamui_first_row",
+                "first_row_id": None,
+                "valid_targets": [
+                    {"target_kind": "row", "row_id": row.id}
+                    for row in valid_first_rows
+                ],
+                "selection_ready": False,
+            }
+            return True
         targeting = EliminationTargeting(
             target_scope=ability.target_scope,
             target_side=ability.target_side,
@@ -917,6 +945,8 @@ class GameEngine:
             return ActionResult(False, "No ability target is awaiting selection.")
         if not pending.get("selection_ready", True):
             return ActionResult(False, "Wait for the ability activation to finish.")
+        if pending.get("effect_type") == "kamui_exchange_rows":
+            return self._select_kamui_row(target_row_id, target_slot_index)
         if (pending.get("effect_type") == "move_character"
                 and pending.get("stage") == "destination_row"):
             return self._select_move_destination(target_row_id, target_slot_index)
@@ -1206,7 +1236,7 @@ class GameEngine:
                 state, target_card, attacker_card, by_ability=True,
             ):
                 return ActionResult(False, "That character cannot be eliminated by this ability.")
-            self._award_trunks_saiyan_resolve(row, target_card)
+            self._award_trunks_saiyan_resolve(target_card)
             self.abilities.recalculate_after_elimination(state, target_card)
             self._emit(
                 "elimination",
@@ -1263,6 +1293,111 @@ class GameEngine:
             self._begin_pending_elimination(revival_reveal_start)
         # Resume queued row checks after the chosen effect resolves, then use
         # the same completion test as every other reveal continuation.
+        self._resume_reveal_after_target_selection()
+        return ActionResult(True, events=tuple(state.events[event_start:]))
+
+    def _kamui_eligible_rows(self, first_row_id: str | None = None) -> list[BattleRow]:
+        """Rows Kamui may choose without changing any row or card structure."""
+        eligible = [row for row in self.state.rows if not row.scored]
+        if first_row_id is None:
+            return eligible
+        first = next((row for row in eligible if row.id == first_row_id), None)
+        if first is None:
+            return []
+        return [
+            row for row in eligible
+            if row.id != first.id
+            and row.point_value != first.point_value
+            and abs(int(row.point_value) - int(first.point_value)) <= 3
+        ]
+
+    def _kamui_first_rows(self) -> list[BattleRow]:
+        rows = self._kamui_eligible_rows()
+        return [
+            row for row in rows
+            if self._kamui_eligible_rows(row.id)
+        ]
+
+    def _select_kamui_row(
+        self, row_id: str, slot_index: int,
+    ) -> ActionResult:
+        """Select two eligible rows and exchange only their point values."""
+        state = self.state
+        pending = state.get("pending_elimination") or {}
+        if slot_index != -1:
+            return ActionResult(False, "Choose one of the highlighted rows.")
+        owner_card_id = str(pending.get("attacker_card_id", ""))
+        owner_location = next((
+            (row, card) for row in state.rows for card in row.slots
+            if card is not None and card.id == owner_card_id
+        ), None)
+        if owner_location is None:
+            state.pending_elimination = None
+            return ActionResult(False, "Kakashi is no longer available to resolve Kamui.")
+        owner_row, owner = owner_location
+        if (owner.eliminated or not owner.revealed or owner.get("ability_suppressed", False)
+                or self.abilities.row_abilities_disabled_for_card(owner_row, owner, state)):
+            state.pending_elimination = None
+            return ActionResult(False, "Kakashi's ability is no longer active.")
+
+        event_start = len(state.events)
+        stage = str(pending.get("stage", "kamui_first_row"))
+        if stage == "kamui_first_row":
+            if row_id not in {row.id for row in self._kamui_first_rows()}:
+                return ActionResult(False, "Choose a valid first row for Kamui.")
+            pending["first_row_id"] = row_id
+            pending["stage"] = "kamui_second_row"
+            pending["valid_targets"] = [
+                {"target_kind": "row", "row_id": row.id}
+                for row in self._kamui_eligible_rows(row_id)
+            ]
+            return ActionResult(True)
+        if stage != "kamui_second_row":
+            return ActionResult(False, "Kamui is not waiting for a row choice.")
+
+        first_row_id = str(pending.get("first_row_id", ""))
+        first = next((row for row in self._kamui_eligible_rows()
+                      if row.id == first_row_id), None)
+        second = next((row for row in self._kamui_eligible_rows(first_row_id)
+                       if row.id == row_id), None)
+        if first is None or second is None:
+            pending["valid_targets"] = [
+                {"target_kind": "row", "row_id": row.id}
+                for row in self._kamui_eligible_rows(first_row_id)
+            ]
+            return ActionResult(False, "Those rows cannot exchange values. Choose a highlighted row pair.")
+
+        first_value = int(first.point_value)
+        second_value = int(second.point_value)
+        first.point_value, second.point_value = second_value, first_value
+        state.pending_elimination = None
+        self._emit(
+            "kamui_rows_exchanged",
+            f"Kamui exchanged the values of Row {first.number} and Row {second.number}.",
+            {
+                "ability_id": str(pending.get("ability_id", "kakashi_kamui_exchange_rows")),
+                "owner_card_id": owner.id,
+                "row_id": owner_row.id,
+                "slot_index": owner_row.slots.index(owner),
+                "row_a_id": first.id,
+                "row_b_id": second.id,
+                "row_a_old_value": first_value,
+                "row_b_old_value": second_value,
+                "row_a_new_value": second_value,
+                "row_b_new_value": first_value,
+                "resolution_id": f"kamui:{owner.id}:{len(state.events)}",
+            },
+        )
+        self._emit_ability_resolved(
+            ability_id=str(pending.get("ability_id", "kakashi_kamui_exchange_rows")),
+            ability_name=str(pending.get("ability_name", "Kamui")),
+            owner_card_id=owner.id,
+            definition_id=owner.definition_id,
+            row_id=owner_row.id,
+            slot_index=owner_row.slots.index(owner),
+            sound=pending.get("sound"),
+            floating_text=str(pending.get("floating_text", "ROWS EXCHANGED")),
+        )
         self._resume_reveal_after_target_selection()
         return ActionResult(True, events=tuple(state.events[event_start:]))
 
@@ -1586,7 +1721,7 @@ class GameEngine:
         character_name = str(getattr(definition, "name", "Unknown character"))
         if not self.elimination.eliminate_zero_base_point_card(self.state, card):
             return False
-        self._award_trunks_saiyan_resolve(row, card)
+        self._award_trunks_saiyan_resolve(card)
         self.abilities.recalculate_after_elimination(self.state, card)
         self._emit(
             "death",
@@ -1614,38 +1749,43 @@ class GameEngine:
                         card, ability_id,
                     )
 
-    def _award_trunks_saiyan_resolve(self, row, eliminated_card: CardInstance) -> None:
-        """Grant +5 per same-row friendly elimination to each active Trunks."""
-        for trunks in row.slots:
-            if (trunks is None or trunks.id == eliminated_card.id
-                    or trunks.definition_id != "dragonball_06"
-                    or trunks.owner_id != eliminated_card.owner_id
-                    or trunks.eliminated or not trunks.revealed
-                    or trunks.get("ability_suppressed", False)
-                    or row.get("abilities_disabled", False)):
-                continue
-            ability = next((
-                item for item in (self.cards[trunks.definition_id].abilities or [])
-                if item.id == "dragonball_06_saiyan_resolve"
-            ), None)
-            if ability is None:
-                continue
-            key = f"{ability.id}:{trunks.id}:{eliminated_card.id}"
-            bonuses = dict(trunks.get("applied_bonuses") or {})
-            if key in bonuses:
-                continue
-            bonuses[key] = ability.effects[0].amount
-            trunks.applied_bonuses = bonuses
-            trunks.current_points = self.abilities._calculated_points(trunks, bonuses)
-            self._emit(
-                "bonus_points_gained",
-                f"Future Trunks gains +{ability.effects[0].amount} from an ally's elimination.",
-                {"row_id": row.id, "slot_index": row.slots.index(trunks),
-                 "target_card_id": trunks.id, "ability_id": ability.id,
-                 "resolution_id": f"saiyan_resolve:{trunks.id}:{eliminated_card.id}",
-                 "floating_text": f"+{ability.effects[0].amount}",
-                 "current_points": int(trunks.current_points)},
-            )
+    def _award_trunks_saiyan_resolve(self, eliminated_card: CardInstance) -> None:
+        """Grant +4 to each active friendly Trunks for this actual elimination."""
+        for trunks_row in self.state.rows:
+            for trunks in trunks_row.slots:
+                if (trunks is None or trunks.id == eliminated_card.id
+                        or trunks.definition_id != "dragonball_06"
+                        or trunks.owner_id != eliminated_card.owner_id
+                        or trunks.eliminated or not trunks.revealed
+                        or trunks.get("ability_suppressed", False)
+                        or self.abilities.row_abilities_disabled_for_card(
+                            trunks_row, trunks, self.state,
+                        )):
+                    continue
+                ability = next((
+                    item for item in (self.cards[trunks.definition_id].abilities or [])
+                    if item.id == "dragonball_06_saiyan_resolve"
+                ), None)
+                if ability is None or not ability.effects:
+                    continue
+                death_number = int(eliminated_card.get("elimination_count", 1))
+                key = f"{ability.id}:{trunks.id}:{eliminated_card.id}:{death_number}"
+                bonuses = dict(trunks.get("applied_bonuses") or {})
+                if key in bonuses:
+                    continue
+                amount = int(ability.effects[0].amount)
+                bonuses[key] = amount
+                trunks.applied_bonuses = bonuses
+                trunks.current_points = self.abilities._calculated_points(trunks, bonuses)
+                self._emit(
+                    "bonus_points_gained",
+                    f"Future Trunks gains +{amount} from an ally's elimination.",
+                    {"row_id": trunks_row.id, "slot_index": trunks_row.slots.index(trunks),
+                     "target_card_id": trunks.id, "ability_id": ability.id,
+                     "resolution_id": f"saiyan_resolve:{trunks.id}:{eliminated_card.id}:{death_number}",
+                     "floating_text": f"+{amount}",
+                     "current_points": int(trunks.current_points)},
+                )
 
     def fail_elimination(self) -> ActionResult:
         """Call when an elimination ability has no valid targets.
@@ -1695,8 +1835,8 @@ class GameEngine:
             return ActionResult(False, "Finish Crazy Slots before scoring the row.")
         if state.get("pending_auto_revivals"):
             return ActionResult(False, "Wait for automatic revival abilities to finish.")
-        if state.get("pending_sogeking_cinematic"):
-            return ActionResult(False, "Wait for Sogeking's cutscene to finish before scoring.")
+        if state.get("pending_sogeking_shot"):
+            return ActionResult(False, "Wait for Sogeking's flag shot to finish before scoring.")
         if not all(
             row.is_full and all(_card_resolved_for_reveal(card) for card in row.slots)
             for row in state.rows
@@ -1709,19 +1849,20 @@ class GameEngine:
         synergy = self._usopp_sogeking_for_scoring(row, scores)
         if synergy is not None:
             event_start = len(state.events)
-            cinematic_id = f"{state.round_number}:{row.id}:{synergy['usopp'].id}"
-            state.pending_sogeking_cinematic = {
-                "cinematic_id": cinematic_id,
+            shot_id = f"{state.round_number}:{row.id}:{synergy['usopp'].id}"
+            state.pending_sogeking_shot = {
+                "shot_id": shot_id,
                 "row_id": row.id,
                 "row_number": row.number,
                 "team_player_id": synergy["player_id"],
                 "usopp_card_id": synergy["usopp"].id,
                 "bonus_points": synergy["bonus"],
+                "sound": synergy["sound"],
             }
             self._emit(
-                "sogeking_cinematic_started",
+                "sogeking_shot_started",
                 "Usopp prepares the Sogeking flag shot!",
-                dict(state.pending_sogeking_cinematic),
+                dict(state.pending_sogeking_shot),
             )
             return ActionResult(True, events=tuple(state.events[event_start:]))
         winner_id = determine_row_winner(row, scores, state.players, self.cards)
@@ -1805,24 +1946,25 @@ class GameEngine:
             "player_id": usopp.owner_id,
             "usopp": usopp,
             "bonus": bonus,
+            "sound": ability.presentation.sound,
         }
 
-    def complete_sogeking_cinematic(self, cinematic_id: str) -> ActionResult:
-        """Apply Usopp's row-only +6 after all synchronized presentation finishes."""
+    def complete_sogeking_shot(self, shot_id: str) -> ActionResult:
+        """Apply Usopp's row bonus after the synchronized slingshot animation."""
         state = self.state
-        pending = state.get("pending_sogeking_cinematic") or {}
-        if not pending or str(pending.get("cinematic_id", "")) != str(cinematic_id):
-            return ActionResult(False, "There is no matching Sogeking cutscene to complete.")
+        pending = state.get("pending_sogeking_shot") or {}
+        if not pending or str(pending.get("shot_id", "")) != str(shot_id):
+            return ActionResult(False, "There is no matching Sogeking flag shot to complete.")
         row = next((row for row in state.rows if row.id == str(pending.get("row_id", ""))), None)
         if row is None or row.scored or row is not state.current_row:
-            state.pending_sogeking_cinematic = None
+            state.pending_sogeking_shot = None
             return ActionResult(False, "The Sogeking row is no longer available to score.")
         event_start = len(state.events)
         bonus_points = int(pending.get("bonus_points", 0))
         team_player_id = str(pending.get("team_player_id", ""))
         bonuses = dict(row.get("sogeking_bonus_points") or {})
         if team_player_id in bonuses or bonus_points != 6:
-            state.pending_sogeking_cinematic = None
+            state.pending_sogeking_shot = None
             return ActionResult(False, "Sogeking's row bonus was already applied or is invalid.")
         usopp = next((
             card for card in row.slots
@@ -1832,7 +1974,7 @@ class GameEngine:
             and not getattr(card, "eliminated", False)
         ), None)
         if usopp is None:
-            state.pending_sogeking_cinematic = None
+            state.pending_sogeking_shot = None
             return ActionResult(False, "Usopp is no longer eligible to complete his ability.")
         bonuses[team_player_id] = bonus_points
         row.sogeking_bonus_points = bonuses
@@ -1841,10 +1983,10 @@ class GameEngine:
             if SOGEKING_ABILITY_ID not in ability_ids:
                 ability_ids.append(SOGEKING_ABILITY_ID)
             setattr(usopp, field_name, ability_ids)
-        state.pending_sogeking_cinematic = None
+        state.pending_sogeking_shot = None
         self._emit(
-            "sogeking_cinematic_completed",
-            "Sogeking shoots down the flag! +6 row score.",
+            "sogeking_shot_completed",
+            f"Sogeking shoots down the flag! +{bonus_points} row score.",
             {
                 **dict(pending),
                 "usopp_card_id": str(pending.get("usopp_card_id", "")),
@@ -1988,8 +2130,8 @@ class GameEngine:
             # JSON-safe pause payload; None while no elimination awaits input.
             "pending_elimination": dict(self.state.get("pending_elimination") or {}) or None,
             "pending_crazy_slots": pending_crazy_view,
-            "pending_sogeking_cinematic": (
-                dict(self.state.get("pending_sogeking_cinematic") or {}) or None
+            "pending_sogeking_shot": (
+                dict(self.state.get("pending_sogeking_shot") or {}) or None
             ),
             "crazy_slots_results": list(self.state.get("crazy_slots_results") or []),
         }
@@ -2268,7 +2410,7 @@ class GameEngine:
                     target_name = str(getattr(
                         self.cards.get(target_card.definition_id), "name", "Unknown character",
                     ))
-                    self._award_trunks_saiyan_resolve(target_row, target_card)
+                    self._award_trunks_saiyan_resolve(target_card)
                     self.abilities.recalculate_after_elimination(self.state, target_card)
                     self._emit(
                         "elimination",

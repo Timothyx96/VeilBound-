@@ -47,7 +47,7 @@ class Room:
         self.reveal_acks: set[str] = set()
         self.reveal_sequence = 0
         self.player_two_joined = False
-        self.sogeking_acks: set[str] = set()
+        self.sogeking_shot_acks: set[str] = set()
 
     @property
     def ready(self) -> bool:
@@ -91,8 +91,8 @@ class Room:
             await self._spin_crazy_slots(peer)
         elif message_type == "crazy_slots_complete":
             await self._complete_crazy_slots(peer)
-        elif message_type == "sogeking_complete":
-            await self._complete_sogeking_cinematic(peer, message)
+        elif message_type == "sogeking_shot_complete":
+            await self._complete_sogeking_shot(peer, message)
         elif message_type in {"score", "advance_row", "continue_round", "restart"}:
             await self._progress(peer, message_type)
         else:
@@ -155,16 +155,16 @@ class Room:
         if result.accepted:
             await self._publish_result(result)
 
-    async def _complete_sogeking_cinematic(self, peer: Peer, message: dict) -> None:
-        pending = self.engine.state.get("pending_sogeking_cinematic") or {}
-        cinematic_id = str(message.get("cinematic_id", ""))
-        if not pending or cinematic_id != str(pending.get("cinematic_id", "")):
+    async def _complete_sogeking_shot(self, peer: Peer, message: dict) -> None:
+        pending = self.engine.state.get("pending_sogeking_shot") or {}
+        shot_id = str(message.get("shot_id", ""))
+        if not pending or shot_id != str(pending.get("shot_id", "")):
             return
-        self.sogeking_acks.add(peer.player_id)
-        if self.sogeking_acks != set(self.peers):
+        self.sogeking_shot_acks.add(peer.player_id)
+        if self.sogeking_shot_acks != set(self.peers):
             return
-        self.sogeking_acks.clear()
-        result = self.engine.complete_sogeking_cinematic(cinematic_id)
+        self.sogeking_shot_acks.clear()
+        result = self.engine.complete_sogeking_shot(shot_id)
         if result.accepted:
             await self._publish_result(result)
 
@@ -279,8 +279,8 @@ class Room:
         outgoing = []
         for event in result.events:
             data = dict(event.data)
-            if event.kind == "sogeking_cinematic_started":
-                self.sogeking_acks.clear()
+            if event.kind == "sogeking_shot_started":
+                self.sogeking_shot_acks.clear()
             if event.kind == "crazy_slots_spin_started":
                 pending = self.engine.state.get("pending_crazy_slots") or {}
                 started_at = float(pending.get("spin_started_at", 0.0) or 0.0)

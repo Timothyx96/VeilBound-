@@ -150,7 +150,7 @@ class RemoteGameEngine:
         self._events: list[GameEvent] = []
         self._current_reveal_id: str | None = None
         self._sent_requests: set[tuple[str, str]] = set()
-        self._sogeking_completion_sent: str | None = None
+        self._sogeking_shot_completion_sent: str | None = None
         self.network_notice: str | None = None
         self._last_progress_state: tuple[int, str, int, int] | None = None
 
@@ -166,8 +166,8 @@ class RemoteGameEngine:
                 self.player_id = message.get("player_id", self.player_id)
             elif kind == "update":
                 self.state = _state_from_view(message["view"])
-                if not self.state.get("pending_sogeking_cinematic"):
-                    self._sogeking_completion_sent = None
+                if not self.state.get("pending_sogeking_shot"):
+                    self._sogeking_shot_completion_sent = None
                 progress_state = (
                     self.state.round_number, self.state.phase.value,
                     self.state.row_index, self.state.turn_number,
@@ -262,15 +262,15 @@ class RemoteGameEngine:
             self.connection.send({"type": "crazy_slots_complete"})
         return ActionResult(True)
 
-    def complete_sogeking_cinematic(self, cinematic_id: str) -> ActionResult:
-        """Acknowledge completion of the synchronized Luffy/Usopp scene."""
-        pending = (self.state.get("pending_sogeking_cinematic") or {}) if self.state else {}
-        if self.remote_locked or str(pending.get("cinematic_id", "")) != str(cinematic_id):
-            return ActionResult(False, "There is no Sogeking cutscene awaiting completion.")
-        if self._sogeking_completion_sent != str(cinematic_id):
-            self._sogeking_completion_sent = str(cinematic_id)
+    def complete_sogeking_shot(self, shot_id: str) -> ActionResult:
+        """Acknowledge the synchronized slingshot animation once it finishes."""
+        pending = (self.state.get("pending_sogeking_shot") or {}) if self.state else {}
+        if self.remote_locked or str(pending.get("shot_id", "")) != str(shot_id):
+            return ActionResult(False, "There is no Sogeking flag shot awaiting completion.")
+        if self._sogeking_shot_completion_sent != str(shot_id):
+            self._sogeking_shot_completion_sent = str(shot_id)
             self.connection.send({
-                "type": "sogeking_complete", "cinematic_id": str(cinematic_id),
+                "type": "sogeking_shot_complete", "shot_id": str(shot_id),
             })
         return ActionResult(True)
 
@@ -382,8 +382,8 @@ def _state_from_view(view: dict) -> GameState:
     # submit elimination target selections.
     state.pending_elimination = dict(view.get("pending_elimination") or {}) or None
     state.pending_crazy_slots = dict(view.get("pending_crazy_slots") or {}) or None
-    state.pending_sogeking_cinematic = (
-        dict(view.get("pending_sogeking_cinematic") or {}) or None
+    state.pending_sogeking_shot = (
+        dict(view.get("pending_sogeking_shot") or {}) or None
     )
     state.crazy_slots_results = list(view.get("crazy_slots_results") or [])
     return state

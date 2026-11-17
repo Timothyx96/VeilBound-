@@ -115,7 +115,8 @@
         "activation_limit": "once_per_card_per_match",
         "presentation": {
           "floating_text": "SHARINGAN RETRIBUTION",
-          "animation": "elimination"
+          "animation": "elimination",
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Sasuke_sfx.mp3"
         }
       }
       ],
@@ -152,7 +153,8 @@
           "activation_limit": "once_per_card_per_match",
           "presentation": {
             "floating_text": "TSUKUYOMI",
-            "animation": "points_gain"
+            "animation": "points_gain",
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Itachi_sfx.mp3"
           }
         }
       ]
@@ -224,26 +226,23 @@
       "name": "Kakashi Hatake",
       "base_points": 7,
       "type": "Fighter",
-      "effect_name": "Sharingan Copy",
-      "effect_text": "Copies the bonus points of one opposing character in the same row. Kakashi gains the same number of bonus points.",
+      "effect_name": "Kamui",
+      "effect_text": "Choose two unscored rows with different point values no more than 3 apart. Exchange the point values of those rows.",
       "ability": {
-        "id": "kakashi_sharingan_copy",
-        "name": "Sharingan Copy",
-        "description": "Copies the bonus points of one opposing character in the same row. Kakashi gains the same number of bonus points.",
+        "id": "kakashi_kamui_exchange_rows",
+        "name": "Kamui",
+        "description": "Choose two unscored rows with different point values no more than 3 apart. Exchange the point values of those rows.",
         "trigger": "on_reveal",
         "effects": [
           {
-            "type": "copy_target_bonus"
+            "type": "kamui_exchange_rows"
           }
         ],
-        "targeting": {
-          "target_scope": "same_row",
-          "target_side": "opposing"
-        },
         "activation_limit": "once_per_card_per_match",
         "presentation": {
-          "floating_text": "Copied bonus",
-          "animation": "points_gain"
+          "floating_text": "SPACE-TIME EXCHANGE",
+          "animation": "points_gain",
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Kakashi_Sfx.mp3"
         }
       },
       "image": "assets/art/characters/Naruto/Kakashi Hatake.png",
@@ -595,17 +594,17 @@
       "base_points": 8,
       "type": "Fighter",
       "effect_name": "Thermal Equilibrium",
-      "effect_text": "Shoto gains +2 bonus points for every opposing character exceeding his allied characters in the same row.",
+      "effect_text": "Shoto gains +2 bonus points for every card of difference between the two players in his row, regardless of who has more.",
       "abilities": [
         {
           "id": "mha_06_thermal_equilibrium",
           "name": "Thermal Equilibrium",
-          "description": "Shoto gains +2 bonus points for every opposing character exceeding his allied characters in the same row. Shoto counts as allied.",
+          "description": "Shoto gains +2 bonus points for every card of difference between the two players in his row, regardless of who has more.",
           "trigger": "on_reveal",
           "conditions": [],
           "effects": [
             {
-              "type": "add_current_points_per_opposing_excess_over_friendly",
+              "type": "add_current_points_per_absolute_row_count_difference",
               "amount": 2
             }
           ],
@@ -1382,7 +1381,7 @@
         {
           "id": "usopp_sogeking_shoot_down_flag",
           "name": "Sogeking! Shoot Down the Flag!",
-          "description": "Immediately before row scoring, if your team is losing and +6 makes it the outright winner, Usopp plays the Sogeking cutscene and gains +6 row score. All Might in the row prevents this effect.",
+          "description": "Immediately before row scoring, if your team is losing and +6 makes it the outright winner, Usopp fires a Sogeking flag shot and gains +6 row score. All Might in the row prevents this effect.",
           "trigger": "on_row_scoring",
           "conditions": [],
           "effects": [
@@ -1394,7 +1393,8 @@
           "activation_limit": "once_per_card_per_match",
           "presentation": {
             "floating_text": "+6 ROW SCORE",
-            "animation": "points_gain"
+            "animation": "points_gain",
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Usopp_Sfx.mp3"
           }
         }
       ],
@@ -1587,7 +1587,8 @@
         "activation_limit": "once_per_card_per_match",
         "presentation": {
           "floating_text": "GOLDEN TYRANT",
-          "animation": "elimination"
+          "animation": "elimination",
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Freeza_sfx.mp3"
         }
       }
     },
@@ -1629,19 +1630,19 @@
       "base_points": 5,
       "type": "Trickster",
       "effect_name": "Saiyan Resolve",
-      "effect_text": "Gains +5 points if another friendly card in his row is eliminated.",
+      "effect_text": "Gains +4 points whenever another friendly card is eliminated anywhere on the board.",
       "image": "assets/art/characters/Dragon Ball/Future_Trunks.jpg",
       "full_card_art": "assets/art/card front/Dragon_Ball/Trunks.png",
       "abilities": [
         {
           "id": "dragonball_06_saiyan_resolve",
           "name": "Saiyan Resolve",
-          "description": "Gains +5 points if another friendly card in his row is eliminated.",
+          "description": "Gains +4 points whenever another friendly card is eliminated anywhere on the board.",
           "trigger": "on_reveal",
           "conditions": [],
-          "effects": [{"type": "gain_points_on_friendly_elimination", "amount": 5}],
+          "effects": [{"type": "gain_points_on_friendly_elimination", "amount": 4}],
           "activation_limit": "continuous",
-          "presentation": {"floating_text": "+5", "animation": "points_gain"}
+          "presentation": {"floating_text": "+4", "animation": "points_gain"}
         }
       ]
     },

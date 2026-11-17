@@ -155,6 +155,7 @@ class EliminationManager:
         return True
 
     def _mark_eliminated(self, state, target_card) -> None:
+        target_card.elimination_count = int(target_card.get("elimination_count", 0)) + 1
         target_card.eliminated = True
         target_card.current_points = 0
         row = self._find_card_row(state, target_card.id)

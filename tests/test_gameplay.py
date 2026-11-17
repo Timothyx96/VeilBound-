@@ -480,13 +480,13 @@ def test_usopp_sogeking_activates_without_luffy_and_adds_row_score_once():
     started = engine.score_current_row()
 
     assert started.accepted
-    assert started.events[0].kind == "sogeking_cinematic_started"
-    pending = engine.state.pending_sogeking_cinematic
+    assert started.events[0].kind == "sogeking_shot_started"
+    pending = engine.state.pending_sogeking_shot
     assert "luffy_card_id" not in pending
     assert pending["usopp_card_id"] == usopp.id
     assert pending["bonus_points"] == 6
 
-    completed = engine.complete_sogeking_cinematic(pending["cinematic_id"])
+    completed = engine.complete_sogeking_shot(pending["shot_id"])
 
     assert completed.accepted
     assert row.scored and row.scores == {p1.id: 10, p2.id: 9}
@@ -505,13 +505,13 @@ def test_usopp_sogeking_requires_an_outright_win_and_never_overrides_all_might()
         )
         result = engine.score_current_row()
         assert result.accepted
-        assert not any(event.kind == "sogeking_cinematic_started" for event in result.events)
-        assert engine.state.pending_sogeking_cinematic is None
+        assert not any(event.kind == "sogeking_shot_started" for event in result.events)
+        assert engine.state.pending_sogeking_shot is None
 
     engine, _row, _usopp, _p1, _p2 = _sogeking_scoring_board(4, 9, all_might=True)
     result = engine.score_current_row()
     assert result.accepted
-    assert not any(event.kind == "sogeking_cinematic_started" for event in result.events)
+    assert not any(event.kind == "sogeking_shot_started" for event in result.events)
 
 
 def test_sealed_tobi_does_not_reverse_row_scoring_or_announce_lowest_wins():
@@ -542,6 +542,61 @@ def test_sealed_tobi_does_not_reverse_row_scoring_or_announce_lowest_wins():
     row.abilities_disabled = False
     tobi.ability_suppressed = True
     assert not row_uses_reverse_fate(row, engine.cards)
+
+
+def test_shoto_bonus_uses_absolute_difference_in_both_directions():
+    ability_id = "mha_06_thermal_equilibrium"
+    for own_count, opposing_count, expected_bonus in (
+        (3, 1, 4), (1, 6, 10), (5, 2, 6), (4, 4, 0),
+    ):
+        engine = fixed_engine(capacity=max(own_count, opposing_count))
+        p1, p2 = engine.state.players
+        row = engine.state.rows[0]
+        shoto = engine._new_card("mha_06", p1.id)
+        shoto.revealed = True
+        own_cards = [shoto] + [
+            engine._new_card("onepiece_09", p1.id)
+            for _ in range(own_count - 1)
+        ]
+        opposing_cards = [
+            engine._new_card("onepiece_09", p2.id)
+            for _ in range(opposing_count)
+        ]
+        row.slots[:] = own_cards + opposing_cards
+        for card in row.slots:
+            card.revealed = True
+
+        engine.abilities.recalculate_continuous_bonuses(engine.state)
+
+        assert shoto.current_points == engine.cards["mha_06"].base_points + expected_bonus
+        assert shoto.get("applied_bonuses", {}).get(ability_id, 0) == expected_bonus
+
+
+def test_dabi_blueflame_does_not_reduce_cards_while_shanks_seals_his_row():
+    engine = fixed_engine(capacity=4)
+    p1, p2 = engine.state.players
+    row = engine.state.rows[0]
+    dabi = engine._new_card("mha_03", p1.id)
+    dabi.revealed = True
+    shanks = engine._new_card("onepiece_04", p2.id)
+    shanks.revealed = True
+    shanks.resolved_abilities = ["onepiece_04_conquerors_haki_row_silence"]
+    sealed_target = engine._new_card("naruto_05", p2.id)
+    unsealed_target = engine._new_card("naruto_05", p2.id)
+    row.slots[:] = [dabi, shanks, sealed_target, unsealed_target]
+    row.abilities_disabled = True
+
+    engine._resolve_dabi_blueflame(row, sealed_target, 2)
+    assert sealed_target.base_points == engine.cards["naruto_05"].base_points
+    assert sealed_target.base_point_reductions == {}
+
+    # Shanks' elimination clears the row seal; later opposing placements are
+    # affected by Dabi's original ability again.
+    shanks.eliminated = True
+    row.abilities_disabled = False
+    engine._resolve_dabi_blueflame(row, unsealed_target, 3)
+    assert unsealed_target.base_points == engine.cards["naruto_05"].base_points - 1
+    assert len(unsealed_target.base_point_reductions) == 1
 
 
 def test_cumulative_points_survive_round_reset_and_final_match_result():

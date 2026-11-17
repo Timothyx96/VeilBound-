@@ -11,7 +11,6 @@ from veilbound.client.assets import AssetLoader
 from veilbound.client.ability_panel import AbilityInspectionPanel
 from veilbound.client.layout import CARD_HEIGHT_RATIO, CARD_WIDTH_RATIO, BoardLayout, DEBUG_HOVER_SCALE, DEBUG_HOVER_NEIGHBOR_PUSH, DEBUG_HOVER_SECOND_PUSH
 from veilbound.client.settings import AppSettings, animation_ms_for_preset, load_settings
-from veilbound.client.video_player import VideoPlayer
 from veilbound.client.theme import (
     BG, CREAM, DEBUG, GOLD, P1, P2, P2_CARD_OUTLINE, PANEL, PANEL_LIGHT,
     DUO_ENERGY, DUO_ENERGY_DIM,
@@ -119,10 +118,14 @@ class Renderer:
         self.reverse_fate_animation: dict | None = None
         self.luffy_haki_animations: list[dict] = []
         self._processed_luffy_haki: set[str] = set()
+        self.kamui_animations: list[dict] = []
+        self.kamui_charges: list[dict] = []
+        self._processed_kamui_exchanges: set[str] = set()
         self._scene_surface: pygame.Surface | None = None
-        self.sogeking_cinematic: dict | None = None
-        self.sogeking_video: VideoPlayer | None = None
-        self.sogeking_cinematic_complete = False
+        self.sogeking_shot: dict | None = None
+        self.sogeking_shot_complete = False
+        self._processed_sogeking_shots: set[str] = set()
+        self.row_score_positions: dict[tuple[str, str], tuple[int, int]] = {}
         # Dynamic Duo energy arc animation; one shot per genuine same-player
         # pair activation. Populated by note_events for an ability_activated
         # event and resolved against live state during draw so the arc
@@ -196,7 +199,13 @@ class Renderer:
         self.reverse_fate_animation = None
         self.luffy_haki_animations.clear()
         self._processed_luffy_haki.clear()
-        self._clear_sogeking_cinematic()
+        self.kamui_animations.clear()
+        self.kamui_charges.clear()
+        self._processed_kamui_exchanges.clear()
+        self.sogeking_shot = None
+        self.sogeking_shot_complete = False
+        self._processed_sogeking_shots.clear()
+        self.row_score_positions.clear()
         self.reveal_card = None
         self.reveal_card_visible_after = 0.0
         self.reveal_card_until = 0.0
@@ -278,10 +287,26 @@ class Renderer:
     def note_events(self, events: tuple[GameEvent, ...]) -> None:
         now = time.monotonic()
         for event in events:
-            if event.kind == "sogeking_cinematic_started":
-                self._begin_sogeking_cinematic(event.data, now)
-            elif event.kind == "sogeking_cinematic_completed":
-                self._clear_sogeking_cinematic()
+            if event.kind == "sogeking_shot_started":
+                self._begin_sogeking_shot(event.data, now)
+            elif event.kind == "sogeking_shot_completed":
+                if (self.sogeking_shot is not None
+                        and str(event.data.get("shot_id", ""))
+                        == str(self.sogeking_shot.get("shot_id", ""))):
+                    self.sogeking_shot = None
+                    self.sogeking_shot_complete = False
+            elif event.kind == "kamui_rows_exchanged":
+                resolution_id = str(event.data.get("resolution_id", ""))
+                if resolution_id and resolution_id in self._processed_kamui_exchanges:
+                    continue
+                if resolution_id:
+                    self._processed_kamui_exchanges.add(resolution_id)
+                owner_id = str(event.data.get("owner_card_id", ""))
+                self.kamui_charges = [
+                    charge for charge in self.kamui_charges
+                    if str(charge.get("owner_card_id", "")) != owner_id
+                ]
+                self.kamui_animations.append({**dict(event.data), "started": now})
             elif event.kind in {"elimination", "death"}:
                 data = event.data
                 eliminated_key = (
@@ -330,6 +355,12 @@ class Renderer:
                 self.elimination_flash_started = None
                 self._elimination_flash_is_selection_target = False
             elif event.kind == "ability_failed":
+                if str(event.data.get("ability_id", "")) == "kakashi_kamui_exchange_rows":
+                    owner_id = str(event.data.get("owner_card_id", ""))
+                    self.kamui_charges = [
+                        charge for charge in self.kamui_charges
+                        if str(charge.get("owner_card_id", "")) != owner_id
+                    ]
                 self.elimination_failed_message = event.message
                 self.elimination_failed_at = now
                 self.elimination_targets = []
@@ -451,6 +482,18 @@ class Renderer:
                 self.score_animation_row_id = event.data["row_id"]
                 self.score_animation_started = time.monotonic()
             elif event.kind == "ability_activated":
+                if str(event.data.get("ability_id", "")) == "kakashi_kamui_exchange_rows":
+                    owner_id = str(event.data.get("owner_card_id", ""))
+                    if owner_id and not any(
+                        str(charge.get("owner_card_id", "")) == owner_id
+                        for charge in self.kamui_charges
+                    ):
+                        self.kamui_charges.append({
+                            "owner_card_id": owner_id,
+                            "row_id": str(event.data.get("row_id", "")),
+                            "slot_index": int(event.data.get("slot_index", -1)),
+                            "started": now,
+                        })
                 if str(event.data.get("ability_id", "")) == "whis_celestial_restoration":
                     healed_card_ids = tuple(
                         str(card_id) for card_id in event.data.get("affected_card_ids", ())
@@ -750,14 +793,17 @@ class Renderer:
     def draw(self, screen, state: GameState, cards: dict[str, CardDefinition], legal_slots: list[tuple[str, int]], drag_id: str | None = None, mouse_pos: tuple[int, int] | None = None, fps: float = 0.0):
         display_surface = screen
         draw_now = time.monotonic()
-        self._sync_sogeking_cinematic(state, draw_now)
-        sogeking_active = self.sogeking_cinematic is not None
+        self._sync_sogeking_shot(state, draw_now)
+        self.kamui_animations = [
+            animation for animation in self.kamui_animations
+            if draw_now - animation["started"] < 2.05
+        ]
         self.luffy_haki_animations = [
             animation for animation in self.luffy_haki_animations
             if draw_now - animation["started"] < 1.55
         ]
-        shaking = bool(self.luffy_haki_animations)
-        if shaking or sogeking_active:
+        shaking = bool(self.luffy_haki_animations or self.kamui_animations)
+        if shaking:
             size = display_surface.get_size()
             if self._scene_surface is None or self._scene_surface.get_size() != size:
                 self._scene_surface = pygame.Surface(size)
@@ -781,12 +827,14 @@ class Renderer:
         self._draw_background(screen)
         layout = self.layout(state, screen.get_size())
         now = time.monotonic()
+        self.row_score_positions.clear()
         self._expire_elimination_flash(state, now)
         self._resolve_duo_animation(state, cards)
         self._draw_header(screen, state)
         if DEBUG:
             self._draw_fps(screen, fps)
         self._draw_rows(screen, state, cards, layout, set(legal_slots), drag_id, mouse_pos)
+        self._draw_sogeking_shot(screen, state, layout, now)
         self._draw_trunks_bonus_animations(screen, layout, now)
         self._draw_ability_suppression_animation(screen, state, layout, now)
         self._draw_reverse_fate_animation(screen, state, cards, layout, now)
@@ -820,6 +868,8 @@ class Renderer:
         self._draw_selection_highlights(screen, state, cards, layout, now, mouse_pos)
         self._draw_invalid_selection_targets(screen, state, layout)
         self._draw_selected_target_visual(screen, state, layout, now)
+        self._draw_kamui_selection_instruction(screen, state, layout)
+        self._draw_kamui_effect(screen, state, layout, now)
         self._draw_luffy_haki_effect(screen, layout, now)
         if self._selection_overlay_effect_type == "eliminate_target" and (
             active_selection or self._selection_overlay_strength > 0.001
@@ -830,11 +880,11 @@ class Renderer:
                 screen, layout, self._selection_overlay_strength
             )
         self._draw_crazy_slots_screen(screen, state, now, mouse_pos)
-        if sogeking_active:
-            self._draw_sogeking_cinematic(display_surface, screen, state, cards, layout, now)
-        elif shaking:
+        if shaking:
             display_surface.fill(BG)
-            offset = self._luffy_haki_camera_offset(now, screen.get_size())
+            luffy_offset = self._luffy_haki_camera_offset(now, screen.get_size())
+            kamui_offset = self._kamui_camera_offset(now, screen.get_size())
+            offset = (luffy_offset[0] + kamui_offset[0], luffy_offset[1] + kamui_offset[1])
             display_surface.blit(screen, offset)
         return layout
 
@@ -1323,6 +1373,11 @@ class Renderer:
             "bright": (165, 220, 255),
             "target_kinds": ("character", "row"),
         },
+        "space_time": {
+            "color": (112, 73, 215),
+            "bright": (223, 202, 255),
+            "target_kinds": ("row",),
+        },
     }
     SELECTION_EFFECT_CATEGORIES = {
         "eliminate_target": "elimination",
@@ -1337,6 +1392,7 @@ class Renderer:
         "move_character_target": "character_movement",
         "move_character_destination": "character_movement",
         "select_destination_row": "character_movement",
+        "kamui_exchange_rows": "space_time",
     }
 
     def _active_target_selection(self, state: GameState) -> dict | None:
@@ -1666,6 +1722,28 @@ class Renderer:
         )
         screen.blit(panel_surface, panel.topleft)
         label.set_alpha(round(255 * strength))
+        screen.blit(label, label.get_rect(center=panel.center))
+
+    def _draw_kamui_selection_instruction(
+        self, screen, state: GameState, layout: BoardLayout,
+    ) -> None:
+        pending = self._active_target_selection(state)
+        if not pending or pending.get("effect_type") != "kamui_exchange_rows":
+            return
+        first_selected = pending.get("stage") == "kamui_second_row"
+        text = (
+            "Choose a second row with a different value (difference up to 3)"
+            if first_selected else "Choose the first row for Kamui"
+        )
+        first_row_top = min(rect.top for rect in layout.row_rects.values())
+        font = get_font("label_small", 20)
+        label = font.render(text, True, (237, 225, 255))
+        panel = pygame.Rect(0, 0, label.get_width() + 32, label.get_height() + 16)
+        panel.center = (screen.get_width() // 2, max(86, first_row_top - 23))
+        glass = pygame.Surface(panel.size, pygame.SRCALPHA)
+        pygame.draw.rect(glass, (20, 12, 43, 228), glass.get_rect(), border_radius=11)
+        pygame.draw.rect(glass, (152, 111, 242, 235), glass.get_rect(), width=2, border_radius=11)
+        screen.blit(glass, panel.topleft)
         screen.blit(label, label.get_rect(center=panel.center))
 
     def _draw_selection_highlights(
@@ -2541,253 +2619,318 @@ class Renderer:
             "branches": branches,
         }
 
-    @property
-    def sogeking_cinematic_pending(self) -> bool:
-        return self.sogeking_cinematic is not None
-
-    @property
-    def sogeking_cinematic_stage(self) -> str | None:
-        return self.sogeking_cinematic.get("stage") if self.sogeking_cinematic else None
-
-    def _begin_sogeking_cinematic(self, data: dict, started: float) -> None:
-        cinematic_id = str(data.get("cinematic_id", ""))
-        if not cinematic_id:
+    def _begin_sogeking_shot(self, data: dict, started: float) -> None:
+        shot_id = str(data.get("shot_id", ""))
+        if not shot_id or shot_id in self._processed_sogeking_shots:
             return
-        if (self.sogeking_cinematic is not None
-                and self.sogeking_cinematic.get("cinematic_id") == cinematic_id):
-            return
-        self._clear_sogeking_cinematic()
-        self.sogeking_cinematic = {
-            "cinematic_id": cinematic_id,
+        self._processed_sogeking_shots.add(shot_id)
+        self.sogeking_shot = {
+            "shot_id": shot_id,
             "row_id": str(data.get("row_id", "")),
             "usopp_card_id": str(data.get("usopp_card_id", "")),
+            "team_player_id": str(data.get("team_player_id", "")),
+            "bonus_points": max(0, int(data.get("bonus_points", 0))),
             "started": started,
-            "stage": "tension",
-            "impact_started": 0.0,
         }
-        try:
-            self.sogeking_video = VideoPlayer(
-                self.assets.resolve("assets/Cut_Scenes/Luffy_Usopp_CutScene.mp4"),
-            )
-        except (OSError, ValueError) as exc:
-            self.sogeking_video = None
-            self.notice = f"Sogeking cutscene unavailable: {exc}"
-            self.notice_until = started + 5.0
-        self.sogeking_cinematic_complete = False
+        self.sogeking_shot_complete = False
 
-    def _clear_sogeking_cinematic(self) -> None:
-        if self.sogeking_video is not None:
-            self.sogeking_video.close()
-        self.sogeking_video = None
-        self.sogeking_cinematic = None
-        self.sogeking_cinematic_complete = False
-
-    def _sync_sogeking_cinematic(self, state: GameState, now: float) -> None:
-        pending = state.get("pending_sogeking_cinematic") or None
+    def _sync_sogeking_shot(self, state: GameState, now: float) -> None:
+        pending = state.get("pending_sogeking_shot") or None
         if pending:
-            if (self.sogeking_cinematic is None
-                    or self.sogeking_cinematic.get("cinematic_id")
-                    != str(pending.get("cinematic_id", ""))):
-                self._begin_sogeking_cinematic(pending, now)
-        elif self.sogeking_cinematic is not None:
-            self._clear_sogeking_cinematic()
-            return
-        cinematic = self.sogeking_cinematic
-        if cinematic is None:
-            return
-        elapsed = max(0.0, now - cinematic["started"])
-        if cinematic["stage"] == "tension" and elapsed >= 2.35:
-            cinematic["stage"] = "footage"
-            if self.sogeking_video is not None:
-                self.sogeking_video.start(now)
-        if cinematic["stage"] == "footage":
-            if self.sogeking_video is None:
-                cinematic["stage"] = "impact"
-                cinematic["impact_started"] = now
-            else:
-                self.sogeking_video.update(now)
-                if self.sogeking_video.finished:
-                    cinematic["stage"] = "impact"
-                    cinematic["impact_started"] = now
-        elif (cinematic["stage"] == "impact"
-              and now - cinematic["impact_started"] >= 2.5):
-            self.sogeking_cinematic_complete = True
+            shot_id = str(pending.get("shot_id", ""))
+            if (shot_id and self.sogeking_shot is None
+                    and shot_id not in self._processed_sogeking_shots):
+                self._begin_sogeking_shot(pending, now)
+        if self.sogeking_shot is not None:
+            self.sogeking_shot_complete = (
+                now - float(self.sogeking_shot.get("started", now)) >= 1.58
+            )
 
-    def _draw_sogeking_cinematic(
-        self, display, scene, state, cards, layout, now: float,
-    ) -> None:
-        cinematic = self.sogeking_cinematic
-        if cinematic is None:
+    def _draw_sogeking_shot(self, screen, state: GameState, layout, now: float) -> None:
+        shot = self.sogeking_shot
+        if shot is None:
             return
-        stage = cinematic["stage"]
-        if stage == "footage":
-            if self.sogeking_video is not None:
-                self.sogeking_video.draw(display)
-            else:
-                display.fill((5, 7, 19))
-            # Fade smoothly from Usopp's spotlight into the first video frame.
-            transition = min(1.0, max(0.0, (now - cinematic["started"] - 2.35) / 0.35))
-            if transition < 1.0:
-                veil = pygame.Surface(display.get_size(), pygame.SRCALPHA)
-                veil.fill((0, 0, 8, round(255 * (1.0 - transition))))
-                display.blit(veil, (0, 0))
-            return
-
-        width, height = display.get_size()
-        row = next((item for item in state.rows if item.id == cinematic["row_id"]), None)
+        row = next((item for item in state.rows if item.id == shot["row_id"]), None)
         if row is None:
-            display.blit(scene, (0, 0))
             return
-        actors: dict[str, tuple[int, pygame.Rect]] = {}
-        opposing_rects: list[pygame.Rect] = []
+        source = None
         for slot_index, card in enumerate(row.slots):
-            if card is None:
-                continue
-            slot_rect = layout.slot_rects.get((row.id, slot_index))
-            if slot_rect is None:
-                continue
-            card_rect = self._portrait_card_rect(slot_rect)
-            if card.id == cinematic["usopp_card_id"]:
-                actors["usopp"] = (slot_index, card_rect)
-        actor_owner = next((
-            card.owner_id for card in row.slots
-            if card is not None and card.id == cinematic["usopp_card_id"]
-        ), None)
-        for slot_index, card in enumerate(row.slots):
-            if card is None or card.owner_id == actor_owner:
-                continue
-            slot_rect = layout.slot_rects.get((row.id, slot_index))
-            if slot_rect is not None:
-                opposing_rects.append(self._portrait_card_rect(slot_rect))
-
-        elapsed = max(0.0, now - cinematic["started"])
-        zoom = 1.0
-        focus_x, focus_y = width * 0.5, height * 0.5
-        if stage == "tension":
-            progress = min(1.0, elapsed / 2.35)
-            ease = progress * progress * (3.0 - 2.0 * progress)
-            zoom = 1.0 + 0.12 * ease
-            if actors:
-                focus_x = sum(rect.centerx for _, rect in actors.values()) / len(actors)
-                focus_y = sum(rect.centery for _, rect in actors.values()) / len(actors)
-        offset_x = round(width * 0.5 - focus_x * zoom)
-        offset_y = round(height * 0.5 - focus_y * zoom)
-        impact_elapsed = max(0.0, now - cinematic.get("impact_started", now))
-        if stage == "impact":
-            fade = max(0.0, 1.0 - impact_elapsed / 2.5)
-            amplitude = 13.0 * fade * min(1.0, impact_elapsed / 0.12)
-            offset_x = round(math.sin(impact_elapsed * 71.0) * amplitude)
-            offset_y = round(math.cos(impact_elapsed * 83.0) * amplitude * 0.62)
-
-        scaled_scene = scene if zoom == 1.0 else pygame.transform.smoothscale(
-            scene, (max(1, round(width * zoom)), max(1, round(height * zoom))),
-        )
-        display.fill((3, 4, 13))
-        display.blit(scaled_scene, (offset_x, offset_y))
-        if stage == "impact" and impact_elapsed < 0.24:
-            transition = max(0.0, 1.0 - impact_elapsed / 0.24)
-            veil = pygame.Surface((width, height), pygame.SRCALPHA)
-            veil.fill((232, 240, 255, round(150 * transition)))
-            display.blit(veil, (0, 0))
-
-        def transformed(rect: pygame.Rect) -> pygame.Rect:
-            return pygame.Rect(
-                round(rect.x * zoom + offset_x), round(rect.y * zoom + offset_y),
-                max(1, round(rect.width * zoom)), max(1, round(rect.height * zoom)),
-            )
-
-        if stage == "tension":
-            dim_alpha = round(24 + 218 * min(1.0, elapsed / 2.35))
-            dim = pygame.Surface((width, height), pygame.SRCALPHA)
-            dim.fill((0, 0, 8, dim_alpha))
-            display.blit(dim, (0, 0))
-            glow_layer = pygame.Surface((width, height), pygame.SRCALPHA)
-            for _actor_name, (_slot, source_rect) in actors.items():
-                target_rect = transformed(source_rect)
-                pulse = 0.88 + 0.12 * math.sin(now * 3.2)
-                center = target_rect.center
-                glow_color = (92, 180, 255, round(90 * pulse))
-                pygame.draw.ellipse(glow_layer, glow_color, target_rect.inflate(34, 54))
-                pygame.draw.ellipse(glow_layer, (245, 250, 255, 120), target_rect.inflate(12, 18), width=2)
-                pygame.draw.ellipse(glow_layer, (255, 228, 165, 95), target_rect.inflate(25, 34), width=2)
-                # Re-blit each character's actual card above the darkened board.
-                source = scene.subsurface(source_rect).copy()
-                if source.get_size() != target_rect.size:
-                    source = pygame.transform.smoothscale(source, target_rect.size)
-                display.blit(source, target_rect)
-                pygame.draw.ellipse(glow_layer, (255, 246, 216, 170), target_rect.inflate(3, 6), width=2)
-                pygame.draw.line(
-                    glow_layer, (glow_color[0], glow_color[1], glow_color[2], 24),
-                    (center[0], 0), (center[0], center[1]), max(1, target_rect.width // 4),
+            if card is not None and card.id == shot["usopp_card_id"]:
+                slot_rect = layout.slot_rects.get((row.id, slot_index))
+                if slot_rect is not None:
+                    source = self._portrait_card_rect(slot_rect).center
+                break
+        target = self.row_score_positions.get((row.id, shot["team_player_id"]))
+        if source is None or target is None:
+            return
+        elapsed = max(0.0, now - float(shot["started"]))
+        if elapsed >= 1.58:
+            return
+        width, height = screen.get_size()
+        amount = int(shot.get("bonus_points", 0))
+        layer = pygame.Surface((width, height), pygame.SRCALPHA)
+        if elapsed < 0.34:
+            pulse = math.sin(min(1.0, elapsed / 0.34) * math.pi)
+            radius = max(3, round(min(width, height) * 0.007))
+            pygame.draw.circle(layer, (255, 48, 68, round(170 * (1.0 - elapsed / 0.34))), source, radius + 5, width=2)
+            pygame.draw.line(layer, (255, 224, 222, 190), (source[0] - radius, source[1] + 4),
+                             (source[0] + radius, source[1] + 4), 2)
+            pygame.draw.line(layer, (255, 82, 91, 210), (source[0], source[1] + 5),
+                             (source[0] - round(pulse * 7), source[1] + 10), 2)
+        travel_t = min(1.0, max(0.0, (elapsed - 0.18) / 0.48))
+        if elapsed >= 0.18 and travel_t < 1.0:
+            t = 1.0 - (1.0 - travel_t) ** 2
+            dx, dy = target[0] - source[0], target[1] - source[1]
+            control = (source[0] + dx * 0.5, source[1] + dy * 0.5 - min(32, abs(dx) * 0.08))
+            def point_at(u):
+                return (
+                    round((1-u)**2 * source[0] + 2*(1-u)*u * control[0] + u*u * target[0]),
+                    round((1-u)**2 * source[1] + 2*(1-u)*u * control[1] + u*u * target[1]),
                 )
-            display.blit(glow_layer, (0, 0))
-            return
+            head = point_at(t)
+            trail = [point_at(max(0.0, t - (8-index) * 0.035)) for index in range(9)]
+            pygame.draw.lines(layer, (235, 28, 57, 65), False, trail, 9)
+            pygame.draw.lines(layer, (255, 49, 70, 205), False, trail, 3)
+            pygame.draw.circle(layer, (255, 38, 61, 90), head, 10)
+            pygame.draw.circle(layer, (255, 56, 69, 245), head, 5)
+            pygame.draw.circle(layer, (255, 238, 220, 255), head, 2)
+        if elapsed >= 0.64:
+            impact_t = min(1.0, (elapsed - 0.64) / 0.22)
+            impact_alpha = round(210 * (1.0 - impact_t))
+            impact_radius = round(5 + 18 * impact_t)
+            pygame.draw.circle(layer, (255, 61, 75, impact_alpha), target, impact_radius, width=2)
+            pygame.draw.circle(layer, (255, 220, 205, round(impact_alpha * 0.8)), target, max(2, impact_radius // 3))
+            for index in range(5):
+                local = elapsed - (0.66 + index * 0.075)
+                if local < 0 or local >= 0.72:
+                    continue
+                fade = min(1.0, local / 0.08, (0.72 - local) / 0.18)
+                x_offset = (-22, 17, -9, 25, -27)[index]
+                y_offset = round(local * (34 + index * 3) + 5 * math.sin(local * 8 + index))
+                label = render_text(f"+{amount}", "number_row_score", shadow=True)
+                label.set_alpha(max(0, round(255 * fade)))
+                screen.blit(label, label.get_rect(center=(target[0] + x_offset, target[1] + y_offset)))
+        screen.blit(layer, (0, 0))
+        caption_alpha = round(235 * min(1.0, elapsed / 0.12) * min(1.0, (1.58 - elapsed) / 0.25))
+        if caption_alpha > 0:
+            caption = render_text("Sogeking shoots down the flag!", "label_large", shadow=True)
+            row_rect = layout.row_rects.get(row.id)
+            max_width = max(1, min(width - 24, round((row_rect.width if row_rect else width) * 0.9)))
+            if caption.get_width() > max_width:
+                caption = pygame.transform.smoothscale(
+                    caption, (max_width, max(1, round(caption.get_height() * max_width / caption.get_width()))),
+                )
+            caption.set_alpha(caption_alpha)
+            center_x = row_rect.centerx if row_rect else width // 2
+            first_row = min(layout.row_rects.values(), key=lambda rect: rect.top) if layout.row_rects else None
+            top_y = max(8, first_row.top - caption.get_height() - 18) if first_row else 8
+            badge = caption.get_rect(midtop=(center_x, top_y))
+            badge.inflate_ip(18, 8)
+            badge_surface = pygame.Surface(badge.size, pygame.SRCALPHA)
+            pygame.draw.rect(badge_surface, (24, 10, 18, round(caption_alpha * 0.78)), badge_surface.get_rect(), border_radius=7)
+            pygame.draw.rect(badge_surface, (194, 52, 70, round(caption_alpha * 0.82)), badge_surface.get_rect(), 1, border_radius=7)
+            screen.blit(badge_surface, badge.topleft)
+            screen.blit(caption, caption.get_rect(center=badge.center))
 
-        hero_centers = [transformed(rect).center for _, rect in actors.values()]
-        if not hero_centers:
+    def _draw_kamui_effect(self, screen, state: GameState, layout, now: float) -> None:
+        """Render Kakashi's one-shot dimensional row-value exchange."""
+        if not self.kamui_animations and not self.kamui_charges:
             return
-        origin = (
-            sum(point[0] for point in hero_centers) // len(hero_centers),
-            sum(point[1] for point in hero_centers) // len(hero_centers),
-        )
-        targets = [transformed(rect).center for rect in opposing_rects]
-        target = (
-            sum(point[0] for point in targets) // len(targets),
-            sum(point[1] for point in targets) // len(targets),
-        ) if targets else (width - 32 if origin[0] < width // 2 else 32, origin[1])
-        progress = min(1.0, impact_elapsed / 1.35)
-        energy_fade = max(0.0, 1.0 - impact_elapsed / 2.5)
-        curve = -min(height * 0.18, 145) if origin[1] > target[1] else min(height * 0.18, 145)
-        points = []
-        for index in range(25):
-            t = index / 24
-            bend = 2 * t * (1 - t)
-            points.append((
-                round(origin[0] + (target[0] - origin[0]) * t),
-                round(origin[1] + (target[1] - origin[1]) * t + curve * bend),
+        width, height = screen.get_size()
+        effects = pygame.Surface((width, height), pygame.SRCALPHA)
+        for charge in self.kamui_charges:
+            owner_rect = layout.slot_rects.get((
+                str(charge.get("row_id", "")), int(charge.get("slot_index", -1)),
             ))
-        trail_count = max(2, round(progress * len(points)))
-        visible_points = points[:trail_count]
-        energy = pygame.Surface((width, height), pygame.SRCALPHA)
-        if len(visible_points) > 1:
-            pygame.draw.lines(energy, (72, 184, 255, round(160 * energy_fade)), False, visible_points, 18)
-            pygame.draw.lines(energy, (255, 215, 116, round(230 * energy_fade)), False, visible_points, 8)
-            pygame.draw.lines(energy, (255, 250, 220, round(245 * energy_fade)), False, visible_points, 2)
-        for index in range(12):
-            travel = (progress * 1.35 + index / 12) % 1.0
-            if travel > progress:
+            if owner_rect is None:
                 continue
-            sample = points[min(len(points) - 1, round(travel * (len(points) - 1)))]
-            radius = 2 + (index % 3)
-            base_color = (90, 204, 255, 220) if index % 2 else (255, 220, 128, 230)
-            color = (*base_color[:3], round(base_color[3] * energy_fade))
-            pygame.draw.circle(energy, color, sample, radius)
-        display.blit(energy, (0, 0))
+            elapsed = max(0.0, now - float(charge.get("started", now)))
+            pulse = 0.72 + 0.28 * math.sin(elapsed * 5.8)
+            center = owner_rect.center
+            base_radius = round(min(owner_rect.width, owner_rect.height) * 0.54)
+            for ring in range(3):
+                radius = base_radius + ring * 11
+                points = []
+                for step in range(49):
+                    angle = math.tau * step / 48 + elapsed * (1.7 + ring * 0.4)
+                    radial = radius + math.sin(angle * 3 + elapsed * 2) * 3.5
+                    points.append((
+                        round(center[0] + math.cos(angle) * radial),
+                        round(center[1] + math.sin(angle) * radial * 0.64),
+                    ))
+                pygame.draw.lines(
+                    effects, (146, 108, 237, round((84 - ring * 15) * pulse)),
+                    False, points, max(1, 3 - ring),
+                )
+            for particle in range(12):
+                angle = elapsed * (2.1 + particle * 0.025) + particle * math.tau / 12
+                orbit = base_radius + 14 + math.sin(elapsed * 3 + particle) * 5
+                pos = (
+                    round(center[0] + math.cos(angle) * orbit),
+                    round(center[1] + math.sin(angle) * orbit * 0.64),
+                )
+                pygame.draw.circle(effects, (211, 193, 255, round(145 * pulse)), pos, 2)
 
-        if impact_elapsed >= 0.82:
-            flash_progress = min(1.0, (impact_elapsed - 0.82) / 0.42)
-            alpha = round(220 * (1.0 - flash_progress) ** 2)
-            flash = pygame.Surface((width, height), pygame.SRCALPHA)
-            flash.fill((255, 246, 220, alpha))
-            display.blit(flash, (0, 0))
-            burst = pygame.Surface((width, height), pygame.SRCALPHA)
-            burst_radius = max(8, round(min(width, height) * (0.015 + 0.22 * flash_progress)))
-            pygame.draw.circle(burst, (255, 225, 151, alpha), target, burst_radius, width=max(2, burst_radius // 8))
-            pygame.draw.circle(burst, (111, 201, 255, round(alpha * 0.78)), target, round(burst_radius * 0.7), width=max(2, burst_radius // 12))
-            display.blit(burst, (0, 0))
-        banner = render_text("SOGEKING SUCCESSFULLY SHOT THE FLAG!", "title", shadow=True)
-        max_width = max(1, width - 48)
-        if banner.get_width() > max_width:
-            banner = pygame.transform.smoothscale(
-                banner, (max_width, max(1, round(banner.get_height() * max_width / banner.get_width()))),
-            )
-        banner.set_alpha(round(255 * energy_fade))
-        banner_rect = banner.get_rect(centerx=width // 2, top=max(24, round(height * 0.09)))
-        display.blit(banner, banner_rect)
-        bonus = render_text("+6", "number_row_score", shadow=True)
-        bonus.set_alpha(round(255 * energy_fade))
-        bonus_rect = bonus.get_rect(center=(target[0], target[1] - round(impact_elapsed * 32)))
-        display.blit(bonus, bonus_rect)
+        if not self.kamui_animations:
+            screen.blit(effects, (0, 0))
+            return
+        active = []
+        for animation in self.kamui_animations:
+            elapsed = now - float(animation.get("started", now))
+            if elapsed >= 2.05:
+                continue
+            active.append(animation)
+            if elapsed < 0:
+                continue
+            row_a_id = str(animation.get("row_a_id", ""))
+            row_b_id = str(animation.get("row_b_id", ""))
+            row_a = next((row for row in state.rows if row.id == row_a_id), None)
+            row_b = next((row for row in state.rows if row.id == row_b_id), None)
+            rect_a = layout.capacity_boxes.get(row_a_id)
+            rect_b = layout.capacity_boxes.get(row_b_id)
+            if row_a is None or row_b is None or rect_a is None or rect_b is None:
+                continue
+            point_a, point_b = rect_a.center, rect_b.center
+            progress = min(1.0, elapsed / 2.05)
+            fade = min(1.0, max(0.0, (1.0 - progress) / 0.22))
+            darken = max(0.0, 1.0 - elapsed / 0.32)
+            if darken > 0:
+                effects.fill((5, 3, 18, round(84 * darken)))
+
+            value_mask = min(1.0, elapsed / 0.24) * min(1.0, max(0.0, (1.16 - elapsed) / 0.26))
+            if value_mask > 0:
+                for value_rect in (rect_a, rect_b):
+                    pygame.draw.rect(
+                        effects, (9, 6, 23, round(220 * value_mask)),
+                        value_rect.inflate(4, 4), border_radius=10,
+                    )
+                    pygame.draw.rect(
+                        effects, (171, 137, 242, round(192 * value_mask)),
+                        value_rect.inflate(4, 4), width=2, border_radius=10,
+                    )
+
+            # Twin rotating rings pull the two prizes into a shared vortex.
+            ring_progress = min(1.0, max(0.0, elapsed / 1.28))
+            ring_radius = max(18, round(25 + ring_progress * 64))
+            for center, phase in ((point_a, 0.0), (point_b, math.pi)):
+                for ring in range(4):
+                    radius = max(8, ring_radius - ring * 12)
+                    alpha = round((176 - ring * 28) * fade * min(1.0, elapsed / 0.12 + 0.2))
+                    oval = pygame.Rect(0, 0, radius * 2, max(9, round(radius * 0.62)))
+                    oval.center = center
+                    pygame.draw.ellipse(
+                        effects, (119, 75, 222, alpha), oval,
+                        width=max(1, 4 - ring),
+                    )
+                swirl_points = []
+                rotation = elapsed * (5.3 if phase == 0 else -5.3) + phase
+                for step in range(48):
+                    t = step / 47
+                    angle = rotation + t * math.tau * 2.2
+                    radius = 6 + t * ring_radius
+                    swirl_points.append((
+                        round(center[0] + math.cos(angle) * radius),
+                        round(center[1] + math.sin(angle) * radius * 0.58),
+                    ))
+                if len(swirl_points) > 1:
+                    pygame.draw.lines(
+                        effects, (194, 153, 255, round(188 * fade)),
+                        False, swirl_points, 2,
+                    )
+
+            # A bent dimensional corridor links the two row locations.
+            bend = min(115.0, abs(point_b[1] - point_a[1]) * 0.32 + 56.0)
+            control = ((point_a[0] + point_b[0]) / 2, min(point_a[1], point_b[1]) - bend)
+            corridor = []
+            for step in range(49):
+                t = step / 48
+                x = (1 - t) ** 2 * point_a[0] + 2 * (1 - t) * t * control[0] + t ** 2 * point_b[0]
+                y = (1 - t) ** 2 * point_a[1] + 2 * (1 - t) * t * control[1] + t ** 2 * point_b[1]
+                corridor.append((round(x), round(y)))
+            corridor_alpha = round(120 * fade * min(1.0, elapsed / 0.16 + 0.25))
+            pygame.draw.lines(effects, (102, 69, 199, corridor_alpha), False, corridor, 11)
+            pygame.draw.lines(effects, (217, 199, 255, round(corridor_alpha * 0.82)), False, corridor, 2)
+
+            # Broad spatial ripples bend the battlefield around the corridor.
+            if 0.16 <= elapsed <= 1.42:
+                ripple_alpha = round(52 * fade * min(1.0, elapsed / 0.18))
+                ripple_center = ((point_a[0] + point_b[0]) // 2,
+                                 (point_a[1] + point_b[1]) // 2)
+                diagonal = math.hypot(width, height)
+                ripple_radius = round(diagonal * min(1.0, (elapsed - 0.16) / 1.28))
+                for ripple in range(3):
+                    radius = max(1, ripple_radius - ripple * 24)
+                    ripple_rect = pygame.Rect(0, 0, radius * 2, max(20, round(radius * 0.68)))
+                    ripple_rect.center = ripple_center
+                    pygame.draw.ellipse(
+                        effects, (129, 92, 222, max(0, ripple_alpha - ripple * 12)),
+                        ripple_rect, width=2,
+                    )
+
+            # The old prize values travel in opposite directions and become
+            # the new values once the distortion collapses.
+            travel = min(1.0, max(0.0, (elapsed - 0.28) / 0.94))
+            if 0.0 < travel < 1.0:
+                for origin, destination, value, bend_sign in (
+                    (point_a, point_b, animation.get("row_a_old_value", 0), -1),
+                    (point_b, point_a, animation.get("row_b_old_value", 0), 1),
+                ):
+                    curve = ((origin[0] + destination[0]) / 2,
+                             (origin[1] + destination[1]) / 2 + bend * bend_sign)
+                    t = travel
+                    x = (1 - t) ** 2 * origin[0] + 2 * (1 - t) * t * curve[0] + t ** 2 * destination[0]
+                    y = (1 - t) ** 2 * origin[1] + 2 * (1 - t) * t * curve[1] + t ** 2 * destination[1]
+                    font = get_font("number_capacity", max(22, round(min(rect_a.width, rect_a.height) * 0.28)))
+                    glyph = font.render(str(value), True, (247, 239, 255))
+                    glyph.set_alpha(round(255 * fade))
+                    glyph_rect = glyph.get_rect(center=(round(x), round(y)))
+                    halo = pygame.Surface(glyph_rect.size, pygame.SRCALPHA)
+                    pygame.draw.ellipse(halo, (143, 91, 255, round(82 * fade)), halo.get_rect().inflate(20, 16))
+                    effects.blit(halo, halo.get_rect(center=glyph_rect.center))
+                    effects.blit(glyph, glyph_rect)
+
+            # Deterministic particles trace each vortex, avoiding frame-to-frame
+            # flicker while keeping the effect resolution-independent.
+            rng = random.Random(str(animation.get("resolution_id", "kamui")) + str(round(elapsed * 24)))
+            for particle in range(30):
+                center = point_a if particle % 2 == 0 else point_b
+                orbit = 20 + rng.random() * (22 + 56 * ring_progress)
+                angle = elapsed * (2.5 + rng.random() * 3.2) + particle * math.tau / 15
+                px = round(center[0] + math.cos(angle) * orbit)
+                py = round(center[1] + math.sin(angle * 1.17) * orbit * 0.55)
+                alpha = round((90 + rng.randrange(150)) * fade)
+                pygame.draw.circle(effects, (197, 160, 255, alpha), (px, py), 1 + particle % 3)
+
+            # Kakashi's card anchors the initial pull; the impact then flashes
+            # across the full display as the two values finish crossing.
+            if elapsed < 0.55:
+                owner_rect = layout.slot_rects.get((
+                    str(animation.get("row_id", "")), int(animation.get("slot_index", -1)),
+                ))
+                if owner_rect is not None:
+                    radius = round(18 + 58 * min(1.0, elapsed / 0.55))
+                    pygame.draw.circle(effects, (157, 111, 244, round(190 * fade)), owner_rect.center, radius, 2)
+            flash = max(0.0, 1.0 - abs(elapsed - 1.24) / 0.18)
+            if flash > 0:
+                effects.fill((201, 183, 255, round(106 * flash)), special_flags=pygame.BLEND_RGBA_ADD)
+
+        self.kamui_animations = active
+        screen.blit(effects, (0, 0))
+
+    def _kamui_camera_offset(self, now: float, size: tuple[int, int]) -> tuple[int, int]:
+        """Short, eased camera impulse at the instant the values cross."""
+        if not self.kamui_animations:
+            return (0, 0)
+        started = max(float(item["started"]) for item in self.kamui_animations)
+        elapsed = max(0.0, now - started)
+        scale = min(size) / 900.0
+        windup = 3.0 * math.exp(-elapsed * 8.0)
+        impact = 12.5 * math.exp(-((elapsed - 1.22) / 0.12) ** 2)
+        tail = 2.0 * math.exp(-max(0.0, elapsed - 1.38) * 8.0)
+        amplitude = (windup + impact + tail) * scale
+        x = amplitude * (math.sin(now * 78.0 + 0.7) + 0.32 * math.sin(now * 131.0))
+        y = amplitude * (math.cos(now * 86.0 + 0.4) + 0.28 * math.sin(now * 149.0))
+        return round(x), round(y)
 
     def _draw_luffy_haki_effect(self, screen, layout, now: float) -> None:
         if not self.luffy_haki_animations:
@@ -3394,7 +3537,7 @@ class Renderer:
         row_spacing = max(16, round(rect.height * (0.19 if reverse_fate_active else 0.22)))
         for index, player in enumerate(state.players):
             accent = P1 if index == 0 else P2_CARD_OUTLINE
-            self._draw_player_score(
+            self.row_score_positions[(row.id, player.id)] = self._draw_player_score(
                 screen,
                 rect,
                 first_row_y + index * row_spacing,
@@ -3419,6 +3562,7 @@ class Renderer:
             label_surface,
             (square.right + gap + number.get_width() + gap, center_y - label_surface.get_height() // 2),
         )
+        return (square.right + gap + number.get_width() // 2, center_y)
 
     def _draw_placed_card(self, screen, rect, row, slot_index, card, cards, now):
         # An eliminated card stays turned over for the rest of the match: show

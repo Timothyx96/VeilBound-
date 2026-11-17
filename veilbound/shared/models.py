@@ -199,7 +199,7 @@ class GameState(StateRecord):
             pending_auto_revivals=[],
             pending_crazy_slots=None,
             crazy_slots_results=[],
-            pending_sogeking_cinematic=None,
+            pending_sogeking_shot=None,
             viewer_id=viewer_id,
         )
 

@@ -34,7 +34,7 @@ class InputController:
         self._crazy_slots_spin_requested_for: str | None = None
         self._crazy_slots_landing_played_for: str | None = None
         self._crazy_slots_last_tick: tuple[str, int] | None = None
-        self._sogeking_completion_sent: str | None = None
+        self._sogeking_shot_completion_sent: str | None = None
         # Debug Mode scrollbar drag state.
         self._debug_scrollbar_drag: bool = False
         self._debug_scrollbar_grab_offset: float = 0.0
@@ -102,7 +102,7 @@ class InputController:
     def handle(self, event: pygame.event.Event, screen) -> bool | str:
         if event.type == pygame.QUIT:
             return False
-        if self.engine.state.get("pending_sogeking_cinematic"):
+        if self.engine.state.get("pending_sogeking_shot"):
             if event.type == pygame.MOUSEMOTION:
                 self.mouse_pos = event.pos
             return True
@@ -309,27 +309,20 @@ class InputController:
                     return
                 self.animation_stage = None
                 self.animation_deadline = None
-        sogeking = self.engine.state.get("pending_sogeking_cinematic")
-        if sogeking:
-            cinematic_id = str(sogeking.get("cinematic_id", ""))
-            if (cinematic_id and self.renderer.sogeking_cinematic_stage == "footage"
-                    and self.audio is not None):
-                self.audio.start_sogeking_footage_audio(cinematic_id)
-            if (cinematic_id and self.renderer.sogeking_cinematic_complete
-                    and self._sogeking_completion_sent != cinematic_id):
-                self._sogeking_completion_sent = cinematic_id
-                if self.audio is not None:
-                    self.audio.finish_sogeking_cinematic()
-                result = self.engine.complete_sogeking_cinematic(cinematic_id)
+        sogeking_shot = self.engine.state.get("pending_sogeking_shot")
+        if sogeking_shot:
+            shot_id = str(sogeking_shot.get("shot_id", ""))
+            if (shot_id and self.renderer.sogeking_shot_complete
+                    and self._sogeking_shot_completion_sent != shot_id):
+                self._sogeking_shot_completion_sent = shot_id
+                result = self.engine.complete_sogeking_shot(shot_id)
                 if not self.remote:
                     self._apply(result, now)
                     if result.accepted and self.engine.state.phase == GamePhase.ROW_RESULTS:
                         self.animation_stage = "score_count"
                         self.animation_deadline = now + self._seconds("score_count_ms")
             return
-        self._sogeking_completion_sent = None
-        if self.audio is not None and self.audio.sogeking_cinematic_active:
-            self.audio.finish_sogeking_cinematic()
+        self._sogeking_shot_completion_sent = None
         phase = self.engine.state.phase
         if phase == GamePhase.MATCH_RESULTS:
             self.animation_deadline = None
@@ -543,6 +536,28 @@ class InputController:
             self.renderer.notice_until = time.monotonic() + 3
             return
         layout = self.renderer.layout(state, screen.get_size())
+        if pending.get("effect_type") == "kamui_exchange_rows":
+            choosing_first_row = pending.get("stage") == "kamui_first_row"
+            valid_rows = {
+                str(item.get("row_id", ""))
+                for item in (pending.get("valid_targets") or [])
+                if item.get("target_kind") == "row"
+            }
+            selected_row_id = next((
+                row_id for row_id in valid_rows
+                if (rect := layout.row_rects.get(row_id)) is not None
+                and rect.collidepoint(pos)
+            ), None)
+            if selected_row_id is None:
+                self.renderer.notice = "Choose a highlighted row for Kamui."
+                self.renderer.notice_until = time.monotonic() + 2.5
+                return
+            result = self.engine.select_elimination_target(selected_row_id, -1)
+            self._apply(result)
+            if result.accepted and choosing_first_row:
+                self.renderer.notice = "Now choose the second highlighted row to exchange values."
+                self.renderer.notice_until = time.monotonic() + 3
+            return
         if (pending.get("effect_type") == "move_character"
                 and pending.get("stage") == "destination_row"):
             valid_rows = {
