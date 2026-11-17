@@ -2713,7 +2713,7 @@ class Renderer:
         screen.blit(layer, (0, 0))
         caption_alpha = round(235 * min(1.0, elapsed / 0.12) * min(1.0, (1.58 - elapsed) / 0.25))
         if caption_alpha > 0:
-            caption = render_text("Sogeking shoots down the flag!", "label_large", shadow=True)
+            caption = render_text("Sogeking shoots down the flag!", "ui", shadow=True)
             row_rect = layout.row_rects.get(row.id)
             max_width = max(1, min(width - 24, round((row_rect.width if row_rect else width) * 0.9)))
             if caption.get_width() > max_width:
