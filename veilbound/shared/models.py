@@ -144,6 +144,7 @@ class BattleRow(StateRecord):
         movement_blocked_slots: list[int] | None = None,
         abilities_disabled: bool = False,
         sogeking_bonus_points: dict[str, int] | None = None,
+        yata_mirror_seals: dict[str, str] | None = None,
     ):
         super().__init__(
             id=id, number=number, capacity=capacity, point_value=capacity if point_value is None else point_value,
@@ -152,6 +153,7 @@ class BattleRow(StateRecord):
             movement_blocked_slots=list(movement_blocked_slots or []),
             abilities_disabled=bool(abilities_disabled),
             sogeking_bonus_points=dict(sogeking_bonus_points or {}),
+            yata_mirror_seals=dict(yata_mirror_seals or {}),
         )
 
     @property

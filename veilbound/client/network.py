@@ -363,6 +363,7 @@ def _state_from_view(view: dict) -> GameState:
             movement_blocked_slots=list(row_view.get("movement_blocked_slots") or []),
             abilities_disabled=bool(row_view.get("abilities_disabled", False)),
             sogeking_bonus_points=dict(row_view.get("sogeking_bonus_points") or {}),
+            yata_mirror_seals=dict(row_view.get("yata_mirror_seals") or {}),
         )
         rows.append(row)
 

@@ -129,32 +129,46 @@
       "name": "Itachi Uchiha",
       "base_points": 6,
       "type": "Dynamic Duo",
-      "effect_name": "Tsukuyomi",
-      "effect_text": "Select one opposing card in the same row that currently has bonus points. Remove all bonus points from that card, returning its points to its base points.",
+      "effect_name": "Susanoo: Yata Mirror",
+      "effect_text": "Active — On reveal, if another Naruto character is in this row, protect all friendly characters in that row from opposing abilities that move them, eliminate them, remove or drain their bonus points, or reduce their base points until the row is revealed. Passive — Brotherly Bond: Gains +3 bonus points while Sasuke is alive in the same row.",
       "image": "assets/art/characters/Naruto/Itachi Uchiha.jfif",
       "full_card_art": "assets/art/card front/Naruto/Itachi_Uchiha.png",
       "abilities": [
         {
-          "id": "itachi_tsukuyomi_remove_bonus",
-          "name": "Tsukuyomi",
-          "description": "Select one opposing card in the same row that currently has bonus points. Remove all bonus points from that card, returning its points to its base points.",
+          "id": "itachi_susanoo_yata_mirror",
+          "name": "Susanoo: Yata Mirror",
+          "description": "On reveal, if another Naruto character is in this row, protect all friendly characters in that row from opposing abilities that move them, eliminate them, remove or drain their bonus points, or reduce their base points until the row is revealed.",
           "trigger": "on_reveal",
-          "conditions": [],
+          "conditions": [
+            { "type": "same_row_character_set", "character_set": "Naruto" }
+          ],
           "effects": [
             {
-              "type": "remove_target_bonus"
+              "type": "activate_yata_mirror"
             }
           ],
-          "targeting": {
-            "target_scope": "same_row",
-            "target_side": "opposing",
-            "allowed_types": []
-          },
           "activation_limit": "once_per_card_per_match",
           "presentation": {
-            "floating_text": "TSUKUYOMI",
+            "floating_text": "YATA MIRROR - PROTECTED",
             "animation": "points_gain",
             "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Itachi_sfx.mp3"
+          }
+        },
+        {
+          "id": "itachi_brotherly_bond",
+          "name": "Brotherly Bond",
+          "description": "Gain +3 bonus points while Sasuke is alive in the same row.",
+          "trigger": "on_reveal",
+          "conditions": [
+            { "type": "same_row_active_character", "character": "naruto_02", "target_side": "any" }
+          ],
+          "effects": [
+            { "type": "add_current_points", "amount": 3 }
+          ],
+          "activation_limit": "continuous",
+          "presentation": {
+            "floating_text": "+3",
+            "animation": "points_gain"
           }
         }
       ]
@@ -860,11 +874,11 @@
       "base_points": 8,
       "type": "Fighter",
       "effect_name": "Bungee Gum",
-      "effect_text": "Copies the current bonus points of one opposing character in the same row.",
+      "effect_text": "Copies the current bonus points of one opposing character anywhere on the board and transfers them to one revealed friendly character anywhere on the board. The source keeps its bonus points.",
       "ability": {
         "id": "hisoka_bungee_gum_copy_bonus",
         "name": "Bungee Gum",
-        "description": "Copies the current bonus points of one opposing character in the same row. Hisoka gains the copied amount as bonus points; the target keeps its bonus points.",
+        "description": "Copies the current bonus points of one opposing character anywhere on the board, then transfers them to one revealed friendly character anywhere on the board. The source keeps its bonus points.",
         "trigger": "on_reveal",
         "conditions": [],
         "effects": [
@@ -873,13 +887,14 @@
           }
         ],
         "targeting": {
-          "target_scope": "same_row",
+          "target_scope": "any_row",
           "target_side": "opposing"
         },
         "activation_limit": "once_per_card_per_match",
         "presentation": {
           "floating_text": "Copied bonus",
-          "animation": "points_gain"
+          "animation": "points_gain",
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Hisoka_Sfx (2).mp3"
         }
       },
       "image": "assets/art/characters/Hunter x Hunter/Hisoka.jpg",

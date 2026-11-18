@@ -205,13 +205,14 @@ def test_sasuke_revealed_first_gains_bonus_when_itachi_later_revealed_same_row()
 
     reveals = finish_reveals(engine)
     # First final reveal is Itachi (row 1, slot 1): reveal first, then Phase A.
-    assert [event.kind for event in reveals[0].events] == [
-        "card_revealed",
-        "ability_activated",
-        "ability_resolved",
+    granted = [
+        event for event in ability_events(reveals[0])
+        if event.data["ability_id"] == ABILITY_ID
     ]
-    granted = ability_events(reveals[0])
     assert len(granted) == 1
+    assert [event.data["ability_id"] for event in ability_events(reveals[0])] == [
+        ABILITY_ID, "itachi_susanoo_yata_mirror",
+    ]
     data = granted[0].data
     assert data["ability_id"] == ABILITY_ID
     assert data["ability_name"] == "Shared Row Bonus"
@@ -225,7 +226,7 @@ def test_sasuke_revealed_first_gains_bonus_when_itachi_later_revealed_same_row()
     assert data["floating_text"] == "+3"
     assert data["animation"] == "points_gain"
     resolved = [event for event in reveals[0].events if event.kind == "ability_resolved"]
-    assert len(resolved) == 1
+    assert len(resolved) == 2
     assert resolved[0].data["ability_id"] == ABILITY_ID
     assert resolved[0].data["owner_card_id"] == sasuke.id
     assert resolved[0].data["target_card_id"] == sasuke.id
@@ -233,7 +234,7 @@ def test_sasuke_revealed_first_gains_bonus_when_itachi_later_revealed_same_row()
     assert itachi.current_points == 6
     # Exactly one activation across every remaining reveal of the round.
     assert ability_events(reveals[1:]) == []
-    assert len(ability_events(reveals)) == 1
+    assert len(ability_events(reveals)) == 2
 
 
 def test_itachi_revealed_first_grants_bonus_when_sasuke_revealed_after():
@@ -246,8 +247,12 @@ def test_itachi_revealed_first_grants_bonus_when_sasuke_revealed_after():
     place(engine, itachi, 0, 0)
     place(engine, pick_filler(p2), 1, 0)
     placement = place(engine, sasuke, 0, 1)  # reveals Itachi only
-    # Itachi carries no ability, so its reveal awards nothing (rule 7 order).
-    assert ability_events(placement) == []
+    # Sasuke is already placed in the row when Itachi's reveal is checked,
+    # even though Sasuke itself has not flipped yet.
+    assert [event.data["ability_id"] for event in ability_events(placement)] == [
+        "itachi_susanoo_yata_mirror",
+    ]
+    assert engine.state.rows[0].yata_mirror_seals[p1.id] == itachi.id
     place(engine, pick_filler(p2), 1, 1)
     fill_rest(engine)
 
@@ -308,7 +313,7 @@ def test_no_bonus_while_either_character_is_hidden():
     assert not itachi.revealed
     assert engine.abilities.pending_abilities  # waiting, not awarded
 
-    # Case B (fresh match): Itachi revealed first while Sasuke stays hidden.
+    # Case B (fresh match): Itachi reveals with Sasuke placed face down beside him.
     engine = make_engine()
     p1, p2 = engine.state.players
     give(p1, engine, ITACHI, SASUKE, "naruto_01", "naruto_05")
@@ -317,7 +322,10 @@ def test_no_bonus_while_either_character_is_hidden():
     place(engine, itachi, 0, 0)
     place(engine, pick_filler(p2), 1, 0)
     placement = place(engine, sasuke, 0, 1)  # reveals Itachi; Sasuke hidden
-    assert ability_events(placement) == []
+    assert [event.data["ability_id"] for event in ability_events(placement)] == [
+        "itachi_susanoo_yata_mirror",
+    ]
+    assert engine.state.rows[0].yata_mirror_seals[p1.id] == itachi.id
     assert not sasuke.revealed
     assert sasuke.current_points == 7
     # A hidden owner never registers; only revealed owners enter Phase A.
@@ -328,7 +336,9 @@ def test_repeated_evaluation_grants_the_bonus_only_once():
     engine, sasuke, itachi, _ = build_sasuke_first()
     reveals = finish_reveals(engine)
     assert sasuke.current_points == 10
-    assert len(ability_events(reveals)) == 1
+    assert [event.data["ability_id"] for event in ability_events(reveals)] == [
+        ABILITY_ID, "itachi_susanoo_yata_mirror",
+    ]
 
     # Re-run the manager over the finished board many times (rule 9/10).
     row, index = engine.state.rows[0], 1
@@ -344,9 +354,9 @@ def test_repeated_evaluation_grants_the_bonus_only_once():
     assert sasuke.activated_abilities == [ABILITY_ID]
 
 
-def test_reveal_animation_flow_runs_with_a_single_activation():
-    # Same-player synergy: Sasuke + Itachi both belong to player 1 and share
-    # row 0, so exactly one activation flows through the animation pipeline.
+def test_reveal_animation_flow_runs_for_sasuke_and_yata_mirror_activations():
+    # Sasuke's passive and Itachi's Yata Mirror each activate once as their
+    # conditions are met during the reveal sequence.
     engine = make_engine()
     p1, p2 = engine.state.players
     give(p1, engine, SASUKE, ITACHI, "naruto_01", "naruto_05")
@@ -385,8 +395,8 @@ def test_reveal_animation_flow_runs_with_a_single_activation():
     }
     # Every card flipped exactly once through the animation machinery...
     assert kinds.count("card_revealed") == 8
-    # ...while the ability activated exactly once overall (no frame duplicates).
-    assert kinds.count("ability_activated") == 1
+    # ...while both abilities activate once overall (no frame duplicates).
+    assert kinds.count("ability_activated") == 2
 
 
 def test_base_points_remain_unchanged_after_the_bonus():
@@ -435,33 +445,30 @@ def test_two_sasuke_instances_keep_independent_points_and_activations():
     place(engine, pick_filler(p2), 1, 3)
     fill_rest(engine)
     reveals = finish_reveals(engine)
-    # Row-major finals: row-0 Itachi A reveals first -> Sasuke A fires
-    # (same row, same owner p1); then Itachi B -> Sasuke B fires (p2).
-    first_grant = ability_events(reveals[0])
-    assert len(first_grant) == 1
-    assert first_grant[0].data["owner_card_id"] == sasuke_a.id
+    # Each row-0 Itachi reveal activates its own owner's Yata Mirror; Sasuke's
+    # existing shared-row passive remains independent and instance-scoped.
+    first_grant = [
+        event for event in ability_events(reveals)
+        if event.data["ability_id"] == "itachi_susanoo_yata_mirror"
+    ]
+    assert {event.data["owner_card_id"] for event in first_grant} == {itachi_b.id}
+    assert "itachi_susanoo_yata_mirror" in itachi_a.activated_abilities
     assert sasuke_a.current_points == 10
-    assert sasuke_b.current_points == 7  # no shared state between instances
-    assert sasuke_b.activated_abilities == []
-    second_grant = ability_events(reveals[1])
-    assert len(second_grant) == 1
-    assert second_grant[0].data["owner_card_id"] == sasuke_b.id
     assert sasuke_a.current_points == 10
     assert sasuke_b.current_points == 10
     assert sasuke_a.activated_abilities == [ABILITY_ID]
     assert sasuke_b.activated_abilities == [ABILITY_ID]
-    assert ability_events(reveals[2:]) == []
 
 
-def test_itachi_declares_tsukuyomi_bonus_removal_target_ability():
+def test_itachi_declares_yata_mirror_row_protection():
     engine = make_engine()
     ability = engine.cards[ITACHI].ability
     assert ability is not None
-    assert ability.id == "itachi_tsukuyomi_remove_bonus"
+    assert ability.id == "itachi_susanoo_yata_mirror"
     assert ability.trigger == "on_reveal"
-    assert [effect.type for effect in ability.effects] == ["remove_target_bonus"]
-    assert ability.target_scope == "same_row"
-    assert ability.target_side == "opposing"
+    assert [effect.type for effect in ability.effects] == ["activate_yata_mirror"]
+    assert ability.conditions[0].type == "same_row_active_character"
+    assert ability.conditions[0].character == "naruto_02"
 
 
 def test_scoring_uses_sasuke_modified_current_points():
@@ -510,13 +517,15 @@ def test_simultaneous_eligible_abilities_resolve_in_registration_order():
         for event in reveal_itachi.events
         if event.kind in {"card_revealed", "ability_activated"}
     ]
-    assert kinds == ["card_revealed", "ability_activated", "ability_activated"]
+    assert kinds == [
+        "card_revealed", "ability_activated", "ability_activated", "ability_activated",
+    ]
     owners = [
         event.data["owner_card_id"]
         for event in reveal_itachi.events
         if event.kind == "ability_activated"
     ]
-    assert owners == [sasuke_a.id, sasuke_b.id]
+    assert owners == [sasuke_a.id, sasuke_b.id, itachi.id]
     assert sasuke_a.current_points == 10
     assert sasuke_b.current_points == 10
     assert engine.abilities.pending_abilities == ()
@@ -586,13 +595,19 @@ def test_multiplayer_room_resolves_the_bonus_once_and_syncs_both_peers():
     def events_of(writer):
         return [event for msg in writer.updates() for event in msg.get("events", [])]
 
-    # Both clients saw the activation exactly once, with identical payloads.
+    # Both clients saw Sasuke's bonus and Itachi's shield activation once.
     for player_id, writer in writers.items():
         grants = [ev for ev in events_of(writer) if ev["kind"] == "ability_activated"]
-        assert len(grants) == 1, f"{player_id} saw {len(grants)} activations"
-        assert grants[0]["data"]["current_points"] == 10
-        assert grants[0]["data"]["delta"] == 3
-        assert grants[0]["data"]["floating_text"] == "+3"
+        sasuke_grants = [grant for grant in grants if grant["data"]["ability_id"] == ABILITY_ID]
+        yata_grants = [
+            grant for grant in grants
+            if grant["data"]["ability_id"] == "itachi_susanoo_yata_mirror"
+        ]
+        assert len(sasuke_grants) == 1, f"{player_id} saw {len(sasuke_grants)} Sasuke activations"
+        assert len(yata_grants) == 1, f"{player_id} saw {len(yata_grants)} Yata activations"
+        assert sasuke_grants[0]["data"]["current_points"] == 10
+        assert sasuke_grants[0]["data"]["delta"] == 3
+        assert sasuke_grants[0]["data"]["floating_text"] == "+3"
 
         view = writer.updates()[-1]["view"]
         duo = [
@@ -620,6 +635,7 @@ def test_multiplayer_room_resolves_the_bonus_once_and_syncs_both_peers():
     assert sasuke.current_points == 10
     assert sasuke.activated_abilities == [ABILITY_ID]
     assert itachi.current_points == 6
+    assert itachi.activated_abilities == ["itachi_susanoo_yata_mirror"]
 
 
 def build_duo_same_owner(holder, partner):

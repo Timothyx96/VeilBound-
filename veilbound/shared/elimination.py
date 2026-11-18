@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from veilbound.shared.models import BattleRow, CardInstance, GameState
-from veilbound.shared.protection import passive_protection_blocks
+from veilbound.shared.protection import clear_yata_mirror_if_revealed, passive_protection_blocks
 
 
 @dataclass(frozen=True)
@@ -78,7 +78,7 @@ class EliminationManager:
         if targeting.target_side == "friendly" and card.owner_id != attacker_card.owner_id:
             return False
         if (targeting.ability_elimination or targeting.opposing_ability) and self.is_protected_from_opposing_ability(
-            card, attacker_card,
+            card, attacker_card, state,
         ):
             return False
         definition = self.cards.get(card.definition_id)
@@ -123,9 +123,9 @@ class EliminationManager:
                     return row
         return None
 
-    def is_protected_from_opposing_ability(self, target_card, attacker_card) -> bool:
+    def is_protected_from_opposing_ability(self, target_card, attacker_card, state=None) -> bool:
         """Whether an unsuppressed passive ability blocks this opposing source."""
-        return passive_protection_blocks(target_card, attacker_card, self.cards)
+        return passive_protection_blocks(target_card, attacker_card, self.cards, state)
 
     def eliminate_target(
         self, state, target_card, attacker_card, *, by_ability: bool = False,
@@ -134,7 +134,7 @@ class EliminationManager:
                 or bool(target_card.get("immune_to_elimination", False))):
             return False
         if (by_ability and self.is_protected_from_opposing_ability(
-                target_card, attacker_card)):
+                target_card, attacker_card, state)):
             return False
         self._mark_eliminated(state, target_card)
         return True
@@ -167,3 +167,4 @@ class EliminationManager:
                         eliminated.append(index)
                     break
             row.eliminated_slots = eliminated
+            clear_yata_mirror_if_revealed(row)

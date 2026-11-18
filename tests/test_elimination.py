@@ -108,12 +108,6 @@ def targets_of(manager, state, attacker, targeting):
     ]
 
 
-def _arm_itachi_bonus_selection(engine, itachi, row):
-    event_start = len(engine.state.events)
-    engine._reveal_card(row, 0, itachi)
-    return engine._begin_pending_elimination(event_start)
-
-
 def _arm_nico_robin_selection(engine, robin, row):
     event_start = len(engine.state.events)
     engine._reveal_card(row, 0, robin)
@@ -368,189 +362,96 @@ def test_cancelling_pending_elimination_emits_no_successful_resolution():
     assert not any(event.kind == "ability_resolved" for event in cancelled.events)
 
 
-def _itachi_bonus_target_fixture():
-    engine = scripted_engine(capacity=4)
+def test_yata_mirror_protects_friendly_row_until_reveal_and_syncs():
+    engine = scripted_engine(capacity=5)
     p1, p2 = engine.state.players
     itachi = card(engine, ITACHI, p1.id)
-    target = card(engine, GO, p2.id)
-    target.revealed = True
-    target.applied_bonuses = {"bonus_a": 3, "bonus_b": 2}
-    target.current_points = engine.cards[GO].base_points + 5
-    unboosted = card(engine, HISOKA, p2.id)
-    unboosted.revealed = True
-    friendly = card(engine, GO, p1.id)
-    friendly.revealed = True
-    friendly.applied_bonuses = {"friendly_bonus": 4}
-    friendly.current_points += 4
-    hidden = card(engine, HISOKA, p2.id)
-    hidden.current_points += 4
-    eliminated = card(engine, GO, p2.id)
-    eliminated.revealed = True
-    eliminated.eliminated = True
-    eliminated.current_points = 0
-    other_row_target = card(engine, HISOKA, p2.id)
-    other_row_target.revealed = True
-    other_row_target.current_points += 4
-
-    first_row = engine.state.rows[0]
-    first_row.slots[:] = [itachi, target, unboosted, friendly]
-    second_row = engine.state.rows[1]
-    second_row.slots[0] = hidden
-    second_row.slots[1] = eliminated
-    second_row.slots[2] = other_row_target
-    return engine, itachi, target, unboosted, friendly, hidden, eliminated, other_row_target
-
-
-def test_itachi_tsukuyomi_removes_all_bonus_points_without_eliminating_target():
-    (engine, itachi, target, _unboosted, _friendly, _hidden, _eliminated,
-     _other_row_target) = _itachi_bonus_target_fixture()
+    sasuke = card(engine, SASUKE, p1.id)  # face down still satisfies presence
+    ally = card(engine, GO, p1.id)
+    attacker = card(engine, KILLUA, p2.id)
+    hidden = card(engine, next(
+        definition_id for definition_id, definition in engine.cards.items()
+        if not definition.abilities and definition_id not in {ITACHI, SASUKE}
+    ), p2.id)
+    ally.revealed = True
+    attacker.revealed = True
     row = engine.state.rows[0]
-    assert _arm_itachi_bonus_selection(engine, itachi, row)
-    pending = engine.state.pending_elimination
-    assert pending["effect_type"] == "remove_target_bonus"
-    assert pending["floating_text"] == "TSUKUYOMI"
-    assert pending["valid_targets"] == [{"row_id": row.id, "slot_index": 1, "card_id": target.id}]
+    row.slots[:] = [itachi, sasuke, ally, attacker, hidden]
 
-    result = engine.select_elimination_target(row.id, 1)
+    engine._reveal_card(row, 0, itachi)
 
-    assert result.accepted
-    assert target.current_points == engine.cards[GO].base_points
-    assert target.applied_bonuses == {}
-    assert target.revealed and not target.eliminated
-    assert row.eliminated_slots == []
-    assert not any(event.kind == "elimination" for event in result.events)
-    resolved = [event for event in result.events if event.kind == "ability_resolved"]
-    assert len(resolved) == 1
-    assert resolved[0].data["floating_text"] == "TSUKUYOMI"
-    assert not engine.select_elimination_target(row.id, 1).accepted
-    assert sum(event.kind == "ability_resolved" for event in engine.state.events) == 1
-    scores = calculate_row_scores(row, tuple(player.id for player in engine.state.players), engine.cards)
-    assert scores[target.owner_id] == (
-        engine.cards[GO].base_points + engine.cards[HISOKA].base_points
+    assert row.yata_mirror_seals == {p1.id: itachi.id}
+    assert 'itachi_susanoo_yata_mirror' in itachi.activated_abilities
+    from veilbound.shared.protection import passive_protection_blocks
+    assert passive_protection_blocks(ally, attacker, engine.cards, engine.state)
+    same_row_targets = engine.elimination.get_valid_targets(
+        engine.state, attacker,
+        EliminationTargeting(
+            target_scope='same_row', target_side='opposing', ability_elimination=True,
+        ),
     )
-    assert "itachi_tsukuyomi_remove_bonus" in itachi.activated_abilities
+    assert same_row_targets == []
+
+    other_row_ally = card(engine, GO, p1.id)
+    other_row_ally.revealed = True
+    engine.state.rows[1].slots[0] = other_row_ally
+    assert not passive_protection_blocks(other_row_ally, attacker, engine.cards, engine.state)
+    any_row_targets = engine.elimination.get_valid_targets(
+        engine.state, attacker,
+        EliminationTargeting(
+            target_scope='any_row', target_side='opposing', ability_elimination=True,
+        ),
+    )
+    assert [(target_row.id, index, target.id) for target_row, index, target in any_row_targets] == [
+        (engine.state.rows[1].id, 0, other_row_ally.id),
+    ]
+
+    # The activation is latched: Sasuke's later elimination does not end it.
+    engine.elimination._mark_eliminated(engine.state, sasuke)
+    assert row.yata_mirror_seals
+    assert engine.elimination.get_valid_targets(
+        engine.state, attacker,
+        EliminationTargeting(
+            target_scope='same_row', target_side='opposing', ability_elimination=True,
+        ),
+    ) == []
+
+    view = engine.view_for(p1.id)
+    assert view['rows'][0]['yata_mirror_seals'][p1.id] == itachi.id
+    projected = _state_from_view(view)
+    assert projected.rows[0].yata_mirror_seals[p1.id] == itachi.id
+
+    engine._reveal_card(row, 4, hidden)
+    assert row.yata_mirror_seals == {}
+    now_valid = engine.elimination.get_valid_targets(
+        engine.state, attacker,
+        EliminationTargeting(
+            target_scope='same_row', target_side='opposing', ability_elimination=True,
+        ),
+    )
+    assert {target.id for _, _, target in now_valid} == {itachi.id, ally.id}
 
 
-def test_itachi_revalidates_friendly_other_row_unboosted_hidden_and_eliminated_targets():
-    (engine, itachi, target, unboosted, friendly, hidden, eliminated,
-     other_row_target) = _itachi_bonus_target_fixture()
-    first_row = engine.state.rows[0]
-    assert _arm_itachi_bonus_selection(engine, itachi, first_row)
-
-    for row, slot_index in (
-        (first_row, 2),  # opposing, but no bonus
-        (first_row, 3),  # friendly, despite having a bonus
-        (engine.state.rows[1], 0),  # unrevealed
-        (engine.state.rows[1], 1),  # eliminated
-        (engine.state.rows[1], 2),  # other row
-    ):
-        result = engine.select_elimination_target(row.id, slot_index)
-        assert not result.accepted
-    assert unboosted.current_points == engine.cards[HISOKA].base_points
-    assert friendly.current_points > engine.cards[GO].base_points
-    assert hidden.current_points > engine.cards[HISOKA].base_points
-    assert eliminated.eliminated and eliminated.current_points == 0
-    assert other_row_target.current_points > engine.cards[HISOKA].base_points
-    assert target.current_points > engine.cards[GO].base_points
-    assert engine.state.pending_elimination is not None
-
-    assert engine.select_elimination_target(first_row.id, 1).accepted
-
-
-def test_itachi_skips_selection_when_no_bonus_target_exists():
+def test_yata_mirror_does_not_activate_without_living_sasuke_in_row():
     engine = scripted_engine(capacity=3)
     p1, p2 = engine.state.players
     itachi = card(engine, ITACHI, p1.id)
-    opponent = card(engine, GO, p2.id)
+    ally = card(engine, GO, p1.id)
+    opponent = card(engine, KILLUA, p2.id)
+    ally.revealed = True
     opponent.revealed = True
     row = engine.state.rows[0]
-    row.slots[0] = itachi
-    row.slots[1] = opponent
+    row.slots[:] = [itachi, ally, opponent]
 
-    assert not _arm_itachi_bonus_selection(engine, itachi, row)
+    engine._reveal_card(row, 0, itachi)
 
-    assert engine.state.pending_elimination is None
-    assert opponent.current_points == engine.cards[GO].base_points
-    assert not any(event.kind == "ability_resolved" for event in engine.state.events)
-    assert not any(event.kind == "elimination_failed" for event in engine.state.events)
-    failed = [event for event in engine.state.events if event.kind == "ability_failed"]
-    assert len(failed) == 1
-    assert failed[0].message == "Itachi Uchiha's Tsukuyomi failed"
-    # The normal placement flow remains available when no target exists.
-    give(p1, engine, GO)
-    result = engine.play_card(p1.id, p1.hand[0].id, engine.state.rows[1].id, 0)
-    assert result.accepted
-
-
-def test_itachi_cancelled_target_selection_reports_ability_failure():
-    (engine, itachi, _target, _unboosted, _friendly, _hidden, _eliminated,
-     _other_row_target) = _itachi_bonus_target_fixture()
-    row = engine.state.rows[0]
-    assert _arm_itachi_bonus_selection(engine, itachi, row)
-
-    result = engine.fail_elimination()
-
-    assert result.accepted
-    failed = [event for event in result.events if event.kind == "ability_failed"]
-    assert len(failed) == 1
-    assert failed[0].message == "Itachi Uchiha's Tsukuyomi failed"
-    assert failed[0].data["ability_id"] == "itachi_tsukuyomi_remove_bonus"
-    assert not any(event.kind == "ability_resolved" for event in result.events)
-
-
-def test_itachi_bonus_removal_suppresses_active_continuous_bonus_until_its_condition_ends():
-    engine = scripted_engine(capacity=4)
-    p1, p2 = engine.state.players
-    itachi = card(engine, ITACHI, p1.id)
-    naruto = card(engine, "naruto_01", p2.id)
-    hinata = card(engine, "naruto_10", p2.id)
-    naruto.revealed = True
-    hinata.revealed = True
-    row = engine.state.rows[0]
-    row.slots[:] = [itachi, naruto, hinata, None]
-    engine.abilities.recalculate_continuous_bonuses(engine.state)
-    assert naruto.current_points == engine.cards[naruto.definition_id].base_points + 3
-    assert _arm_itachi_bonus_selection(engine, itachi, row)
-
-    assert engine.select_elimination_target(row.id, 1).accepted
-    engine.abilities.recalculate_continuous_bonuses(engine.state)
-
-    assert naruto.current_points == engine.cards[naruto.definition_id].base_points
-    assert naruto.applied_bonuses == {}
-    assert "naruto_hinata_bond_of_love" in naruto.suppressed_bonuses
-
-
-def test_itachi_bonus_removal_synchronizes_to_both_multiplayer_views_and_owner_selects():
-    (engine, itachi, target, _unboosted, _friendly, _hidden, _eliminated,
-     _other_row_target) = _itachi_bonus_target_fixture()
-    row = engine.state.rows[0]
-    assert _arm_itachi_bonus_selection(engine, itachi, row)
-    room = Room("TSUKUYOMI")
-    room.engine = engine
-    writer1, writer2 = FakeWriter(), FakeWriter()
-    room.peers["player-1"].writer = writer1
-    room.peers["player-2"].writer = writer2
-
-    async def choose():
-        await room.handle(room.peers["player-2"], {
-            "type": "select_elimination", "row_id": row.id, "slot_index": 1,
-        })
-        assert engine.state.pending_elimination is not None
-        await room.handle(room.peers["player-1"], {
-            "type": "select_elimination", "row_id": row.id, "slot_index": 1,
-        })
-
-    asyncio.run(choose())
-
-    assert writer2.errors()
-    assert engine.state.pending_elimination is None
-    for player_id in ("player-1", "player-2"):
-        view = engine.view_for(player_id)
-        card_view = view["rows"][0]["slots"][1]["card"]
-        assert card_view["current_points"] == engine.cards[GO].base_points
-        projected = _state_from_view(view)
-        assert projected.rows[0].slots[1].current_points == engine.cards[GO].base_points
-    assert target.revealed and not target.eliminated
+    assert row.yata_mirror_seals == {}
+    assert 'itachi_susanoo_yata_mirror' not in itachi.activated_abilities
+    assert not any(
+        event.kind == 'ability_activated'
+        and event.data.get('ability_id') == 'itachi_susanoo_yata_mirror'
+        for event in engine.state.events
+    )
 
 
 def _nico_robin_board(target_base: int, target_bonus: int = 0):

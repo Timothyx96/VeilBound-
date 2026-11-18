@@ -600,7 +600,11 @@ class InputController:
             elif pending.get("effect_type") == "remove_target_bonus":
                 self.renderer.notice = "Click a highlighted card to remove its bonus points."
             elif pending.get("effect_type") == "copy_target_bonus":
-                self.renderer.notice = "Click a highlighted card to copy its bonus points."
+                if pending.get("stage") == "copy_transfer_target":
+                    amount = max(0, int(pending.get("copied_bonus", 0)))
+                    self.renderer.notice = f"Choose any highlighted character to receive +{amount} bonus points."
+                else:
+                    self.renderer.notice = "Choose an opposing character with bonus points to copy."
             elif pending.get("effect_type") == "eliminate_target":
                 self.renderer.notice = "Click a highlighted card to eliminate it."
             elif pending.get("effect_type") == "move_character":
@@ -621,6 +625,12 @@ class InputController:
             self.animation_deadline = time.monotonic() + self._seconds("delay_between_reveals_ms")
         if (result.accepted and pending.get("effect_type") == "move_character"):
             self.renderer.notice = "Now choose a highlighted row for the selected character."
+            self.renderer.notice_until = time.monotonic() + 3
+        if (result.accepted and pending.get("effect_type") == "copy_target_bonus"
+                and self.engine.state.get("pending_elimination")
+                and self.engine.state.pending_elimination.get("stage") == "copy_transfer_target"):
+            amount = max(0, int(self.engine.state.pending_elimination.get("copied_bonus", 0)))
+            self.renderer.notice = f"Now choose any character to receive +{amount} bonus points."
             self.renderer.notice_until = time.monotonic() + 3
 
     def _seconds(self, setting: str) -> float:
@@ -671,6 +681,13 @@ class InputController:
     def _apply(self, result, now: float | None = None) -> None:
         if result.accepted:
             self.renderer.note_events(result.events)
+            for event in result.events:
+                if (event.kind == "target_selection_updated"
+                        and str(event.data.get("ability_id", "")) == "hisoka_bungee_gum_copy_bonus"
+                        and str(event.data.get("stage", "")) == "copy_transfer_target"):
+                    amount = max(0, int(event.data.get("amount", 0)))
+                    self.renderer.notice = f"Now choose any character to receive +{amount} bonus points."
+                    self.renderer.notice_until = time.monotonic() + 3
             if self.audio is not None:
                 self.audio.on_events(result.events)
             if any(event.kind == "card_revealed" for event in result.events):

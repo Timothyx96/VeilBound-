@@ -13,6 +13,7 @@ from .models import (
     ActionResult, BattleRow, CardInstance, GameEvent, GamePhase, GameState,
     PlayerState,
 )
+from .protection import clear_yata_mirror_if_revealed
 
 
 ROW_COUNT = 4
@@ -395,7 +396,7 @@ class GameEngine:
                            if effect.type == "reduce_target_base_points"), 0)
             reduction_id = f"{ability.id}:{dabi.id}:{placed_card.id}"
             if (amount > 0 and not self.elimination.is_protected_from_opposing_ability(
-                    placed_card, dabi)):
+                    placed_card, dabi, self.state)):
                 if self.abilities.reduce_base_points(placed_card, reduction_id, amount):
                     self._eliminate_if_base_is_zero(
                         placed_card, ability.id,
@@ -870,7 +871,10 @@ class GameEngine:
                 "remove_target_bonus", "steal_target_bonus", "reduce_target_base_points", "move_character",
             },
         )
-        valid_targets = self.elimination.get_valid_targets(state, owner_card, targeting)
+        if ability.id == "hisoka_bungee_gum_copy_bonus":
+            valid_targets = self._hisoka_copy_source_targets(owner_card)
+        else:
+            valid_targets = self.elimination.get_valid_targets(state, owner_card, targeting)
         if not valid_targets and effect_type != "eliminate_target":
             # A non-elimination target effect with no eligible card does not pause the
             # reveal flow or emit a successful-resolution event.
@@ -921,6 +925,8 @@ class GameEngine:
                 for r, i, c in valid_targets
             ],
         }
+        if effect_type == "copy_target_bonus" and ability.id == "hisoka_bungee_gum_copy_bonus":
+            state.pending_elimination["stage"] = "copy_source"
         state.pending_elimination["selection_ready"] = False
         if effect_type == "move_character":
             state.pending_elimination["stage"] = "target_character"
@@ -984,6 +990,12 @@ class GameEngine:
                     or owner_row.id != str(pending.get("row_id", ""))):
                 return self._fail_pending_move("ability_owner_moved")
 
+        effect_type = str(pending.get("effect_type", "eliminate_target"))
+        hisoka_copy = (
+            effect_type == "copy_target_bonus"
+            and str(pending.get("ability_id", "")) == "hisoka_bungee_gum_copy_bonus"
+        )
+        hisoka_transfer_stage = hisoka_copy and pending.get("stage") == "copy_transfer_target"
         targeting = EliminationTargeting(
             target_scope=str(pending["targeting"].get("target_scope", "any_row")),
             target_side=str(pending["targeting"].get("target_side", "opposing")),
@@ -1000,7 +1012,12 @@ class GameEngine:
                 pending["targeting"].get("require_base_point_reduction", False)
             ),
         )
-        valid_targets = self.elimination.get_valid_targets(state, attacker_card, targeting)
+        if hisoka_transfer_stage:
+            valid_targets = self._hisoka_transfer_targets(attacker_card)
+        elif hisoka_copy:
+            valid_targets = self._hisoka_copy_source_targets(attacker_card)
+        else:
+            valid_targets = self.elimination.get_valid_targets(state, attacker_card, targeting)
         valid_keys = {(r.id, i) for r, i, _ in valid_targets}
         if (target_row_id, target_slot_index) not in valid_keys:
             if moving_character:
@@ -1011,12 +1028,40 @@ class GameEngine:
             return ActionResult(False, "That card is no longer a valid ability target.")
 
         event_start = len(state.events)
-        effect_type = str(pending.get("effect_type", "eliminate_target"))
         followup_event_start: int | None = None
         revived_unrevealed_card = False
         target_definition = self.cards.get(target_card.definition_id)
         target_name = str(getattr(target_definition, "name", "Unknown character"))
-        copied_bonus = 0
+        copied_bonus = max(0, int(pending.get("copied_bonus", 0))) if hisoka_transfer_stage else 0
+        if hisoka_copy and not hisoka_transfer_stage:
+            base_points = self.abilities._base_points(target_card)
+            copied_bonus = int(target_card.current_points) - base_points
+            if copied_bonus <= 0:
+                return ActionResult(False, "That opposing character no longer has bonus points to copy.")
+            recipients = self._hisoka_transfer_targets(attacker_card)
+            if not recipients:
+                return ActionResult(False, "There is no eligible character to receive the copied bonus.")
+            pending["stage"] = "copy_transfer_target"
+            pending["selected_source_card_id"] = target_card.id
+            pending["selected_source_row_id"] = row.id
+            pending["selected_source_slot_index"] = target_slot_index
+            pending["copied_bonus"] = copied_bonus
+            pending["valid_targets"] = [
+                {"row_id": recipient_row.id, "slot_index": recipient_index,
+                 "card_id": recipient.id}
+                for recipient_row, recipient_index, recipient in recipients
+            ]
+            self._emit(
+                "target_selection_updated",
+                "Choose a revealed friendly character to receive the copied bonus points.",
+                {
+                    "ability_id": str(pending.get("ability_id", "")),
+                    "stage": "copy_transfer_target",
+                    "source_card_id": target_card.id,
+                    "amount": copied_bonus,
+                },
+            )
+            return ActionResult(True, events=tuple(state.events[event_start:]))
         if effect_type == "move_character":
             destinations = self._move_destination_targets(row.id)
             if not destinations:
@@ -1147,7 +1192,7 @@ class GameEngine:
                     "target_current_points": int(target_card.current_points),
                 },
             )
-        elif effect_type == "copy_target_bonus":
+        elif effect_type == "copy_target_bonus" and not hisoka_copy:
             base_points = self.abilities._base_points(target_card)
             copied_bonus = int(target_card.current_points) - base_points
             if copied_bonus <= 0:
@@ -1168,6 +1213,60 @@ class GameEngine:
                     "slot_index": target_slot_index,
                     "amount": copied_bonus,
                     "current_points": int(attacker_card.current_points),
+                    "target_current_points": int(target_card.current_points),
+                },
+            )
+        elif effect_type == "copy_target_bonus":
+            if copied_bonus <= 0:
+                return ActionResult(False, "There are no copied bonus points to transfer.")
+            source_card_id = str(pending.get("selected_source_card_id", ""))
+            source_location = next((
+                (source_row, source_index, source_card)
+                for source_row in state.rows
+                for source_index, source_card in enumerate(source_row.slots)
+                if source_card is not None and source_card.id == source_card_id
+            ), None)
+            if (source_location is None or source_location[2].eliminated
+                    or source_location[2].owner_id == attacker_card.owner_id):
+                return ActionResult(False, "The opposing bonus source is no longer available.")
+            previous_target_points = int(target_card.current_points)
+            previous_attacker_points = int(attacker_card.current_points)
+            transfer_key = f"{pending.get('ability_id', '')}:{attacker_card.id}"
+            target_bonuses = dict(target_card.get("applied_bonuses") or {})
+            if transfer_key in target_bonuses:
+                return ActionResult(False, "Hisoka's copied bonus was already transferred to that character.")
+            target_bonuses[transfer_key] = copied_bonus
+            target_card.applied_bonuses = target_bonuses
+            target_card.current_points = self.abilities._calculated_points(target_card, target_bonuses)
+            owner_location = next((
+                (owner_row, owner_index)
+                for owner_row in state.rows
+                for owner_index, owner_slot in enumerate(owner_row.slots)
+                if owner_slot is not None and owner_slot.id == attacker_card.id
+            ), None)
+            source_row, source_index, source_card = source_location
+            self._emit(
+                "bonus_points_copied",
+                f"{pending.get('attacker_name', 'Unknown character')} copied {copied_bonus} bonus points from {getattr(self.cards.get(source_card.definition_id), 'name', 'Unknown character')} and transferred them to {target_name}.",
+                {
+                    "ability_id": str(pending.get("ability_id", "")),
+                    "attacker_card_id": attacker_card.id,
+                    "attacker_name": str(pending.get("attacker_name", "Unknown character")),
+                    "target_card_id": target_card.id,
+                    "target_name": target_name,
+                    "row_id": target_row_id,
+                    "slot_index": target_slot_index,
+                    "source_card_id": source_card.id,
+                    "source_name": str(getattr(self.cards.get(source_card.definition_id), "name", "Unknown character")),
+                    "source_row_id": source_row.id,
+                    "source_slot_index": source_index,
+                    "owner_row_id": owner_location[0].id if owner_location else "",
+                    "owner_slot_index": owner_location[1] if owner_location else -1,
+                    "amount": copied_bonus,
+                    "attacker_previous_points": previous_attacker_points,
+                    "attacker_current_points": int(attacker_card.current_points),
+                    "previous_points": previous_target_points,
+                    "current_points": int(target_card.current_points),
                     "target_current_points": int(target_card.current_points),
                 },
             )
@@ -1426,6 +1525,31 @@ class GameEngine:
     def select_destination_row(self, row_id: str) -> ActionResult:
         """Resolve the destination stage of a character-movement ability."""
         return self.select_elimination_target(row_id, -1)
+
+    def _hisoka_copy_source_targets(self, hisoka_card: CardInstance):
+        """List live opposing cards whose active totals include bonus points."""
+        targets = []
+        for row in self.state.rows:
+            for slot_index, card in enumerate(row.slots):
+                if card is None or card.eliminated or card.owner_id == hisoka_card.owner_id:
+                    continue
+                current = getattr(card, "current_points", None)
+                base = self.abilities._base_points(card)
+                if (isinstance(current, bool) or not isinstance(current, (int, float))
+                        or int(current) <= base):
+                    continue
+                targets.append((row, slot_index, card))
+        return targets
+
+    def _hisoka_transfer_targets(self, hisoka_card: CardInstance):
+        """Only revealed, living friendly characters can receive Bungee Gum."""
+        return [
+            (row, slot_index, card)
+            for row in self.state.rows
+            for slot_index, card in enumerate(row.slots)
+            if (card is not None and not card.eliminated and card.revealed
+                and card.owner_id == hisoka_card.owner_id)
+        ]
 
     def _move_destination_targets(self, source_row_id: str) -> list[dict[str, str]]:
         """Return unscored rows other than the source with an open slot."""
@@ -2128,6 +2252,7 @@ class GameEngine:
                 "scored": row.scored,
                 "awarded_points": row.awarded_points,
                 "sogeking_bonus_points": dict(row.get("sogeking_bonus_points") or {}),
+                "yata_mirror_seals": dict(row.get("yata_mirror_seals") or {}),
                 "eliminated_slots": list(row.get("eliminated_slots") or []),
                 "movement_blocked_slots": [
                     index for index in row.get("movement_blocked_slots", [])
@@ -2246,6 +2371,7 @@ class GameEngine:
             "effect_text": definition.effect_text,
         })
         self._resolve_reveal_triggers(card, row, slot_index, revealed_by=revealed_by)
+        clear_yata_mirror_if_revealed(row)
 
     def _resolve_reveal_triggers(
         self, card: CardInstance, row: BattleRow, slot_index: int,

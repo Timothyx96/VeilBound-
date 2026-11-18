@@ -139,11 +139,13 @@ def test_gon_activation_keeps_ability_text_and_updates_card_art():
     assert Renderer._activated_transformation_art(definition, card) == transformed_art
 
 
-def test_targeted_ability_text_waits_for_success_and_is_once_per_resolution():
+def test_yata_mirror_activation_uses_unique_visual_without_generic_points_text():
     renderer = Renderer.__new__(Renderer)
     renderer.floating_texts = []
     renderer.floating_texts_started = {}
     renderer._processed_ability_resolution_ids = set()
+    renderer.yata_mirror_animations = []
+    renderer._processed_yata_mirror = set()
     renderer.duo_queue = []
     renderer.duo_animation = None
     renderer.reveal_card = None
@@ -152,34 +154,19 @@ def test_targeted_ability_text_waits_for_success_and_is_once_per_resolution():
     renderer.elimination_flash_card = None
     renderer.elimination_flash_started = None
 
-    activation = GameEvent("ability_activated", "Tsukuyomi begins", {
-        "ability_id": "itachi_tsukuyomi_remove_bonus",
+    activation = GameEvent("ability_activated", "Susanoo: Yata Mirror activates", {
+        "ability_id": "itachi_susanoo_yata_mirror",
         "owner_card_id": "itachi-card",
         "row_id": "row-1",
         "slot_index": 0,
-        "floating_text": "TSUKUYOMI",
-        "requires_target_selection": True,
+        "floating_text": "YATA MIRROR - PROTECTED",
+        "requires_target_selection": False,
     })
-    failed = GameEvent("elimination_failed", "No valid target", {})
-    ability_failed = GameEvent("ability_failed", "Itachi Uchiha's Tsukuyomi failed", {
-        "ability_id": "itachi_tsukuyomi_remove_bonus",
-        "owner_card_id": "itachi-card",
-    })
-    renderer.note_events((activation, failed, ability_failed))
-    assert renderer.floating_texts == []
-    assert renderer.elimination_failed_message == "Itachi Uchiha's Tsukuyomi failed"
+    renderer.note_events((activation, activation))
 
-    resolved = GameEvent("ability_resolved", "Tsukuyomi resolved", {
-        "ability_id": "itachi_tsukuyomi_remove_bonus",
-        "owner_card_id": "itachi-card",
-        "row_id": "row-1",
-        "slot_index": 0,
-        "resolution_id": "resolution-42",
-        "floating_text": "TSUKUYOMI",
-    })
-    renderer.note_events((resolved, resolved))
-    assert len(renderer.floating_texts) == 1
-    assert renderer.floating_texts[0]["text"] == "TSUKUYOMI"
+    assert len(renderer.yata_mirror_animations) == 1
+    assert renderer.floating_texts == []
+    assert renderer.yata_mirror_animations[0]["row_id"] == "row-1"
 
 
 def test_final_reveals_wait_for_each_flip_and_finish_before_scoring():

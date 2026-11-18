@@ -43,7 +43,8 @@ SUPPORTED_TRIGGERS = frozenset({
 SUPPORTED_CONDITION_TYPES = frozenset({
     "character_revealed", "same_row", "same_row_any", "last_placed_in_row",
     "no_other_friendly_in_row", "same_row_type", "adjacent_character",
-    "opposing_card_higher_base_points",
+    "opposing_card_higher_base_points", "same_row_active_character",
+    "same_row_character_set",
 })
 SUPPORTED_EFFECT_TYPES = frozenset({
     "add_current_points",
@@ -80,6 +81,7 @@ SUPPORTED_EFFECT_TYPES = frozenset({
     "reduce_next_card_points",
     "move_character",
     "kamui_exchange_rows",
+    "activate_yata_mirror",
 })
 SUPPORTED_ACTIVATION_LIMITS = frozenset({"once_per_card_per_match", "continuous"})
 SUPPORTED_ANIMATIONS = frozenset({"points_gain", "elimination"})
@@ -102,6 +104,7 @@ class Condition:
     characters: tuple[str, ...] = ()
     target_type: str | None = None
     target_side: str | None = None
+    character_set: str | None = None
 
 
 @dataclass(frozen=True)
@@ -332,6 +335,33 @@ def parse_ability(raw: Any, *, context: str) -> AbilityDefinition:
             conditions.append(Condition(
                 type=str(condition_type),
                 target_type=target_type.strip(),
+                target_side=target_side,
+            ))
+        elif condition_type == "same_row_character_set":
+            character_set = item.get("character_set")
+            if not isinstance(character_set, str) or not character_set.strip():
+                raise AbilityValidationError(
+                    f"{where}: 'character_set' must be a non-empty character-set name."
+                )
+            if any(key in item for key in ("character", "characters", "target_type")):
+                raise AbilityValidationError(
+                    f"{where}: 'same_row_character_set' only takes 'character_set'."
+                )
+            conditions.append(Condition(
+                type=str(condition_type), character_set=character_set.strip(),
+            ))
+        elif condition_type == "same_row_active_character":
+            if not isinstance(character, str) or not character.strip():
+                raise AbilityValidationError(
+                    f"{where}: 'character' must be a non-empty roster id or exact character name."
+                )
+            target_side = item.get("target_side", "friendly")
+            if target_side not in {"friendly", "any"}:
+                raise AbilityValidationError(
+                    f"{where}: 'target_side' must be 'friendly' or 'any'."
+                )
+            conditions.append(Condition(
+                type=str(condition_type), character=character.strip(),
                 target_side=target_side,
             ))
         else:
@@ -706,7 +736,7 @@ def validate_ability_references(definitions: Mapping[str, Any]) -> None:
             for condition in ability.conditions:
                 if condition.type in {
                     "last_placed_in_row", "no_other_friendly_in_row", "same_row_type",
-                    "opposing_card_higher_base_points",
+                    "opposing_card_higher_base_points", "same_row_character_set",
                 }:
                     continue
                 references = condition.characters if condition.type == "same_row_any" else (condition.character,)
@@ -912,7 +942,7 @@ class AbilityManager:
                     emit(activation)
             elif (placed_card.owner_id != owner_card.owner_id
                     and any(effect.type == "suppress_next_opposing_ability" for effect in ability.effects)):
-                if passive_protection_blocks(placed_card, owner_card, self.definitions):
+                if passive_protection_blocks(placed_card, owner_card, self.definitions, state):
                     # Broad immunity also prevents the suppression itself.
                     continue
                 suppression_effect = next(
@@ -1123,6 +1153,7 @@ class AbilityManager:
                         ability.activation_limit == "continuous"
                         and any(condition.type in {
                             "adjacent_character", "opposing_card_higher_base_points",
+                            "same_row_active_character",
                         } for condition in ability.conditions)
                     ):
                         # The contribution is a live count, maintained by the
@@ -1130,6 +1161,15 @@ class AbilityManager:
                         # reveal activation.
                         continue
                     if self._limit_reached(ability, revealed_card):
+                        continue
+                    if any(
+                        condition.type in {"same_row_active_character", "same_row_character_set"}
+                        and not self._condition_holds(condition, revealed_card, row, state)
+                        for condition in ability.conditions
+                    ):
+                        # Yata Mirror's Naruto-set check is an activation-time
+                        # gate, not a deferred synergy. Without a living Naruto
+                        # character in the row now, Itachi's reveal is consumed.
                         continue
                     if (
                         ability.id == "gon_jajanken_rock_ultimate_transformation"
@@ -1589,7 +1629,31 @@ class AbilityManager:
                 and slot.revealed
                 and not getattr(slot, "eliminated", False)
                 and slot.definition_id == partner_id
+                and (
+                    condition.target_side == "any"
+                    or slot.owner_id == owner_card.owner_id
+                )
+                for slot in owner_row.slots
+            )
+        if condition.type == "same_row_active_character":
+            # Presence is enough for the passive row synergy; Sasuke may still
+            # be face down, but an eliminated copy no longer qualifies.
+            return any(
+                slot is not None
+                and slot.id != owner_card.id
+                and not getattr(slot, "eliminated", False)
+                and slot.definition_id == partner_id
                 and slot.owner_id == owner_card.owner_id
+                for slot in owner_row.slots
+            )
+        if condition.type == "same_row_character_set":
+            return any(
+                slot is not None
+                and slot.id != owner_card.id
+                and not getattr(slot, "eliminated", False)
+                and getattr(
+                    self.definitions.get(slot.definition_id), "character_set", ""
+                ) == condition.character_set
                 for slot in owner_row.slots
             )
         return False  # unreachable: parsing rejects unknown types
@@ -1600,6 +1664,15 @@ class AbilityManager:
 
     def _has_effect_targets(self, ability: AbilityDefinition, owner_card: Any, state: Any) -> bool:
         """Do not activate an ability when one of its board effects has no recipient."""
+        if (ability.id == "hisoka_bungee_gum_copy_bonus"
+                and not any(
+                    target is not None
+                    and target.owner_id == owner_card.owner_id
+                    and target.revealed
+                    and not getattr(target, "eliminated", False)
+                    for row in state.rows for target in row.slots
+                )):
+            return False
         for effect in ability.effects:
             if effect.type == "heal_friendly_base_points":
                 if not any(
@@ -1645,7 +1718,8 @@ class AbilityManager:
                         needs_eliminated = effect.type in {"revive_target", "revive_all_targets"}
                         if eliminated != needs_eliminated:
                             continue
-                        if not needs_eliminated and not getattr(target, "revealed", False):
+                        if (not needs_eliminated and not getattr(target, "revealed", False)
+                                and ability.id != "hisoka_bungee_gum_copy_bonus"):
                             continue
                         if ability.target_side == "opposing" and target.owner_id == owner_card.owner_id:
                             continue
@@ -1669,7 +1743,7 @@ class AbilityManager:
                                 "eliminate_target", "remove_target_bonus", "steal_target_bonus",
                                 "reduce_target_base_points", "move_character",
                             }
-                                and passive_protection_blocks(target, owner_card, self.definitions)):
+                                and passive_protection_blocks(target, owner_card, self.definitions, state)):
                             continue
                         target_definition = self.definitions.get(target.definition_id)
                         if (ability.target_character_set is not None
@@ -1740,7 +1814,7 @@ class AbilityManager:
                 or getattr(triggering_card, "eliminated", False)
                 or bool(triggering_card.get("immune_to_elimination", False))
                 or self._base_points(triggering_card) > self._base_points(owner_card)
-                or passive_protection_blocks(triggering_card, owner_card, self.definitions)
+                or passive_protection_blocks(triggering_card, owner_card, self.definitions, state)
                 or owner_index + 1 >= len(owner_row.slots)
                 or owner_row.slots[owner_index + 1] is None
                 or owner_row.slots[owner_index + 1].id != triggering_card.id
@@ -1913,7 +1987,7 @@ class AbilityManager:
                     target = owner_row.slots[next_index]
                     if (target is not None and target.owner_id != owner_card.owner_id
                             and not getattr(target, "eliminated", False)
-                            and not passive_protection_blocks(target, owner_card, self.definitions)):
+                            and not passive_protection_blocks(target, owner_card, self.definitions, state)):
                         remaining = min(effect.amount, max(0, int(target.current_points)))
                         target_bonuses = dict(target.get("applied_bonuses") or {})
                         target.applied_bonuses = target_bonuses
@@ -1952,7 +2026,7 @@ class AbilityManager:
                             continue
                         if target.owner_id == owner_card.owner_id:
                             continue  # Skip friendly characters
-                        if passive_protection_blocks(target, owner_card, self.definitions):
+                        if passive_protection_blocks(target, owner_card, self.definitions, state):
                             continue
                         # Apply the base point reduction to this target
                         if not self.reduce_base_points(target, reduction_id, effect.amount):
@@ -1976,6 +2050,10 @@ class AbilityManager:
             elif effect.type == "grant_status":
                 if effect.status == "immune_to_elimination":
                     owner_card.immune_to_elimination = True
+            elif effect.type == "activate_yata_mirror":
+                active_seals = dict(owner_row.get("yata_mirror_seals") or {})
+                active_seals[str(owner_card.owner_id)] = str(owner_card.id)
+                owner_row.yata_mirror_seals = active_seals
             # Target effects are not applied here: target selection
             # happens in the client layer via the pending-elimination state.
         owner_card.applied_bonuses = bonuses

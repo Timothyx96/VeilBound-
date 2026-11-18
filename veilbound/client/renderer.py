@@ -118,6 +118,8 @@ class Renderer:
         self.reverse_fate_animation: dict | None = None
         self.luffy_haki_animations: list[dict] = []
         self._processed_luffy_haki: set[str] = set()
+        self.yata_mirror_animations: list[dict] = []
+        self._processed_yata_mirror: set[str] = set()
         self.kamui_animations: list[dict] = []
         self.kamui_charges: list[dict] = []
         self._processed_kamui_exchanges: set[str] = set()
@@ -126,6 +128,8 @@ class Renderer:
         self.sogeking_shot_complete = False
         self._processed_sogeking_shots: set[str] = set()
         self.sogeking_dialogue_duration = 0.0
+        self.hisoka_bungee_animations: list[dict] = []
+        self._processed_hisoka_bungee: set[str] = set()
         self.row_score_positions: dict[tuple[str, str], tuple[int, int]] = {}
         # Dynamic Duo energy arc animation; one shot per genuine same-player
         # pair activation. Populated by note_events for an ability_activated
@@ -200,12 +204,16 @@ class Renderer:
         self.reverse_fate_animation = None
         self.luffy_haki_animations.clear()
         self._processed_luffy_haki.clear()
+        self.yata_mirror_animations.clear()
+        self._processed_yata_mirror.clear()
         self.kamui_animations.clear()
         self.kamui_charges.clear()
         self._processed_kamui_exchanges.clear()
         self.sogeking_shot = None
         self.sogeking_shot_complete = False
         self._processed_sogeking_shots.clear()
+        self.hisoka_bungee_animations.clear()
+        self._processed_hisoka_bungee.clear()
         self.row_score_positions.clear()
         self.reveal_card = None
         self.reveal_card_visible_after = 0.0
@@ -470,6 +478,22 @@ class Renderer:
                 "bonus_points_stolen", "bonus_points_copied",
                 "bonus_points_removed", "base_points_reduced",
             }:
+                if (event.kind == "bonus_points_copied"
+                        and str(event.data.get("ability_id", "")) == "hisoka_bungee_gum_copy_bonus"):
+                    animation_id = str(event.data.get("resolution_id", ""))
+                    if not animation_id:
+                        animation_id = ":".join((
+                            str(event.data.get("attacker_card_id", "")),
+                            str(event.data.get("source_card_id", "")),
+                            str(event.data.get("target_card_id", "")),
+                        ))
+                    if animation_id and animation_id not in self._processed_hisoka_bungee:
+                        self._processed_hisoka_bungee.add(animation_id)
+                        self.hisoka_bungee_animations.append({
+                            **dict(event.data),
+                            "animation_id": animation_id,
+                            "started": now,
+                        })
                 effect_type = {
                     "bonus_points_stolen": "steal_target_bonus",
                     "bonus_points_copied": "copy_target_bonus",
@@ -483,6 +507,16 @@ class Renderer:
                 self.score_animation_row_id = event.data["row_id"]
                 self.score_animation_started = time.monotonic()
             elif event.kind == "ability_activated":
+                if str(event.data.get("ability_id", "")) == "itachi_susanoo_yata_mirror":
+                    activation_id = str(event.data.get("owner_card_id", ""))
+                    if activation_id and activation_id not in self._processed_yata_mirror:
+                        self._processed_yata_mirror.add(activation_id)
+                        self.yata_mirror_animations.append({
+                            "owner_card_id": activation_id,
+                            "row_id": str(event.data.get("row_id", "")),
+                            "slot_index": int(event.data.get("slot_index", -1)),
+                            "started": now,
+                        })
                 if str(event.data.get("ability_id", "")) == "kakashi_kamui_exchange_rows":
                     owner_id = str(event.data.get("owner_card_id", ""))
                     if owner_id and not any(
@@ -538,7 +572,7 @@ class Renderer:
                         owner_id = str(event.data.get("owner_card_id", ""))
                         if owner_id:
                             self._endeavor_reveal_texts[owner_id] = dict(event.data)
-                    else:
+                    elif str(event.data.get("ability_id", "")) != "itachi_susanoo_yata_mirror":
                         self._queue_ability_floating_text(event.data, now)
                     transformed_art = event.data.get("transformed_card_art")
                     if (isinstance(transformed_art, str) and self.reveal_card is not None
@@ -803,7 +837,14 @@ class Renderer:
             animation for animation in self.luffy_haki_animations
             if draw_now - animation["started"] < 1.55
         ]
-        shaking = bool(self.luffy_haki_animations or self.kamui_animations)
+        self.hisoka_bungee_animations = [
+            animation for animation in self.hisoka_bungee_animations
+            if draw_now - animation["started"] < 2.15
+        ]
+        shaking = bool(
+            self.luffy_haki_animations or self.kamui_animations
+            or self.hisoka_bungee_animations
+        )
         if shaking:
             size = display_surface.get_size()
             if self._scene_surface is None or self._scene_surface.get_size() != size:
@@ -871,7 +912,9 @@ class Renderer:
         self._draw_selected_target_visual(screen, state, layout, now)
         self._draw_kamui_selection_instruction(screen, state, layout)
         self._draw_kamui_effect(screen, state, layout, now)
+        self._draw_yata_mirror_effect(screen, state, layout, now)
         self._draw_luffy_haki_effect(screen, layout, now)
+        self._draw_hisoka_bungee_effect(screen, state, layout, now)
         if self._selection_overlay_effect_type == "eliminate_target" and (
             active_selection or self._selection_overlay_strength > 0.001
         ):
@@ -885,7 +928,11 @@ class Renderer:
             display_surface.fill(BG)
             luffy_offset = self._luffy_haki_camera_offset(now, screen.get_size())
             kamui_offset = self._kamui_camera_offset(now, screen.get_size())
-            offset = (luffy_offset[0] + kamui_offset[0], luffy_offset[1] + kamui_offset[1])
+            hisoka_offset = self._hisoka_bungee_camera_offset(now)
+            offset = (
+                luffy_offset[0] + kamui_offset[0] + hisoka_offset[0],
+                luffy_offset[1] + kamui_offset[1] + hisoka_offset[1],
+            )
             display_surface.blit(screen, offset)
         return layout
 
@@ -1416,6 +1463,8 @@ class Renderer:
 
     def _selection_colors(self, effect_type: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
         """Get the normal and peak colors for this target-selection category."""
+        if effect_type == "copy_target_bonus":
+            return (244, 63, 163), (255, 185, 232)
         palette = self._selection_palette(effect_type)
         return palette["color"], palette["bright"]
 
@@ -1790,6 +1839,28 @@ class Renderer:
                     screen, rect, effect_type, now, hovered=hovered,
                     target_kind=target_kind, phase_seed=phase_seed,
                 )
+            if (effect_type == "copy_target_bonus"
+                    and pending.get("stage") == "copy_transfer_target"):
+                try:
+                    source_key = (
+                        str(pending.get("selected_source_row_id", "")),
+                        int(pending.get("selected_source_slot_index", -1)),
+                    )
+                except (TypeError, ValueError):
+                    source_key = ("", -1)
+                source_slot = layout.slot_rects.get(source_key)
+                if source_slot is not None:
+                    source_rect = self._portrait_card_rect(source_slot)
+                    pulse = 0.5 + 0.5 * math.sin(now * 4.0)
+                    outline = (255, 153, 218)
+                    pygame.draw.rect(
+                        screen, outline, source_rect.inflate(8, 8),
+                        width=3, border_radius=SLOT_RADIUS + 4,
+                    )
+                    label = render_text("BONUS SOURCE", "ui", shadow=True)
+                    label.set_alpha(round(190 + pulse * 65))
+                    badge = label.get_rect(midbottom=(source_rect.centerx, source_rect.top - 5))
+                    screen.blit(label, badge)
             return
         if state.get("pending_elimination"):
             # Do not show stale/local fallback targets while another viewer
@@ -2785,6 +2856,117 @@ class Renderer:
             screen.blit(line, line.get_rect(midtop=(center_x, line_y)))
             line_y += line.get_height() + gap
 
+    def _draw_hisoka_bungee_effect(self, screen, state: GameState, layout, now: float) -> None:
+        """Render the copy-and-transfer path as a short elastic pink gum line."""
+        if not self.hisoka_bungee_animations:
+            return
+        width, height = screen.get_size()
+        layer = pygame.Surface((width, height), pygame.SRCALPHA)
+
+        def card_center(card_id: str):
+            for row in state.rows:
+                for slot_index, card in enumerate(row.slots):
+                    if card is None or card.id != card_id:
+                        continue
+                    slot_rect = layout.slot_rects.get((row.id, slot_index))
+                    if slot_rect is not None:
+                        return self._portrait_card_rect(slot_rect).center
+            return None
+
+        def gum_line(start, end, progress: float, alpha: int, elapsed: float) -> None:
+            if progress <= 0 or alpha <= 0:
+                return
+            dx, dy = end[0] - start[0], end[1] - start[1]
+            distance = max(1.0, math.hypot(dx, dy))
+            perpendicular = (-dy / distance, dx / distance)
+            steps = max(2, round(28 * min(1.0, progress)))
+            points = []
+            for index in range(steps + 1):
+                amount = progress * index / steps
+                wobble = math.sin(amount * math.pi * 3.0 + elapsed * 13.0) * 5.0 * math.sin(math.pi * amount)
+                points.append((
+                    round(start[0] + dx * amount + perpendicular[0] * wobble),
+                    round(start[1] + dy * amount + perpendicular[1] * wobble),
+                ))
+            pygame.draw.lines(layer, (255, 42, 154, round(alpha * 0.32)), False, points, 9)
+            pygame.draw.lines(layer, (255, 66, 179, alpha), False, points, 4)
+            pygame.draw.lines(layer, (255, 228, 247, round(alpha * 0.88)), False, points, 1)
+
+        active = []
+        for animation in self.hisoka_bungee_animations:
+            elapsed = now - float(animation.get("started", now))
+            duration = 2.1
+            if elapsed >= duration:
+                continue
+            owner = card_center(str(animation.get("attacker_card_id", "")))
+            source = card_center(str(animation.get("source_card_id", "")))
+            recipient = card_center(str(animation.get("target_card_id", "")))
+            if owner is None or source is None or recipient is None:
+                continue
+            active.append(animation)
+            progress = min(1.0, max(0.0, elapsed / duration))
+            amount = max(0, int(animation.get("amount", 0)))
+            if progress < 0.22:
+                travel = progress / 0.22
+                gum_line(owner, source, travel, 240, elapsed)
+                head = (
+                    round(owner[0] + (source[0] - owner[0]) * travel),
+                    round(owner[1] + (source[1] - owner[1]) * travel),
+                )
+                pygame.draw.circle(layer, (255, 83, 190, 105), head, 9)
+                pygame.draw.circle(layer, (255, 235, 250, 245), head, 3)
+            elif progress < 0.47:
+                gum_line(owner, source, 1.0, 225, elapsed)
+                pulse = 0.5 + 0.5 * math.sin(elapsed * 17.0)
+                pygame.draw.circle(layer, (255, 62, 171, round(95 + pulse * 75)), source, round(7 + pulse * 5))
+                pygame.draw.circle(layer, (255, 232, 248, 235), source, 3)
+                extract = (progress - 0.22) / 0.25
+                label = render_text(f"+{amount}", "number_card", shadow=True)
+                label.set_alpha(round(220 * pulse))
+                screen.blit(label, label.get_rect(center=(source[0], source[1] - 18 - round(extract * 8))))
+            elif progress < 0.79:
+                travel = (progress - 0.47) / 0.32
+                gum_line(source, recipient, travel, 240, elapsed)
+                head = (
+                    round(source[0] + (recipient[0] - source[0]) * travel),
+                    round(source[1] + (recipient[1] - source[1]) * travel),
+                )
+                pygame.draw.circle(layer, (255, 72, 185, 110), head, 10)
+                pygame.draw.circle(layer, (255, 238, 250, 250), head, 3)
+            elif progress < 0.88:
+                gum_line(source, recipient, 1.0, 230, elapsed)
+                impact = (progress - 0.79) / 0.09
+                pulse = round(225 * (1.0 - impact))
+                radius = round(5 + impact * 15)
+                pygame.draw.circle(layer, (255, 77, 185, pulse), recipient, radius, width=3)
+                pygame.draw.circle(layer, (255, 226, 246, round(pulse * 0.8)), recipient, max(2, radius // 3))
+            else:
+                retract = max(0.0, 1.0 - (progress - 0.88) / 0.12)
+                gum_line(owner, recipient, retract, round(230 * retract), elapsed)
+
+            if progress >= 0.82:
+                fade = min(1.0, (1.0 - progress) / 0.18)
+                label = render_text(f"+{amount}", "number_row_score", shadow=True)
+                label.set_alpha(round(255 * max(0.0, fade)))
+                float_y = round((progress - 0.82) * 50)
+                screen.blit(label, label.get_rect(center=(recipient[0], recipient[1] - 28 - float_y)))
+
+        self.hisoka_bungee_animations = active
+        screen.blit(layer, (0, 0))
+
+    def _hisoka_bungee_camera_offset(self, now: float) -> tuple[int, int]:
+        """Add a very small scene shake on the transfer impact frame."""
+        for animation in self.hisoka_bungee_animations:
+            impact_elapsed = now - float(animation.get("started", now)) - 1.70
+            strength = max(0.0, 1.0 - abs(impact_elapsed) / 0.18)
+            if strength <= 0:
+                continue
+            return (
+                round(math.sin(impact_elapsed * 82.0) * 3.0 * strength),
+                round(math.cos(impact_elapsed * 71.0) * 2.0 * strength),
+            )
+        return (0, 0)
+
     def _draw_kamui_effect(self, screen, state: GameState, layout, now: float) -> None:
         """Render Kakashi's one-shot dimensional row-value exchange."""
         if not self.kamui_animations and not self.kamui_charges:
@@ -3680,6 +3862,8 @@ class Renderer:
                 self._draw_immunity_shield(screen, rect)
             if row.get("abilities_disabled", False):
                 self._draw_suppression_marker(screen, rect, now, "shanks_red")
+            if self._yata_mirror_protects_card(row, card):
+                self._draw_yata_mirror_shield(screen, rect)
             return
         # Persistent per-instance point indicator: the cached face underneath
         # uses roster art, while this overlay shows the live total and any
@@ -3716,6 +3900,36 @@ class Renderer:
             self._draw_immunity_shield(screen, rect)
         if row.get("abilities_disabled", False):
             self._draw_suppression_marker(screen, rect, now, "shanks_red")
+        if self._yata_mirror_protects_card(row, card):
+            self._draw_yata_mirror_shield(screen, rect)
+
+    @staticmethod
+    def _yata_mirror_protects_card(row, card) -> bool:
+        seals = dict(row.get("yata_mirror_seals") or {})
+        return bool(
+            str(card.owner_id) in seals
+            and not getattr(card, "eliminated", False)
+        )
+
+    @staticmethod
+    def _draw_yata_mirror_shield(screen, rect: pygame.Rect) -> None:
+        """Persistent red-orange shield crest while Yata Mirror protects a card."""
+        center = (rect.left + 14, rect.bottom - 14)
+        outer = [
+            (center[0], center[1] - 11), (center[0] + 9, center[1] - 7),
+            (center[0] + 7, center[1] + 3), (center[0], center[1] + 11),
+            (center[0] - 7, center[1] + 3), (center[0] - 9, center[1] - 7),
+        ]
+        pygame.draw.circle(screen, (25, 9, 14), center, 12)
+        pygame.draw.polygon(screen, (255, 105, 54), outer)
+        inner = [
+            (center[0], center[1] - 7), (center[0] + 5, center[1] - 4),
+            (center[0] + 4, center[1] + 2), (center[0], center[1] + 7),
+            (center[0] - 4, center[1] + 2), (center[0] - 5, center[1] - 4),
+        ]
+        pygame.draw.polygon(screen, (150, 29, 39), inner)
+        pygame.draw.line(screen, (255, 230, 191), (center[0], center[1] - 4),
+                         (center[0], center[1] + 4), 2)
 
     @staticmethod
     def _draw_immunity_shield(screen, rect: pygame.Rect) -> None:
@@ -3735,6 +3949,73 @@ class Renderer:
         ]
         pygame.draw.polygon(screen, (67, 153, 225), inner)
         pygame.draw.line(screen, (222, 244, 255), (center[0], center[1] - 4), (center[0], center[1] + 4), 2)
+
+    def _draw_yata_mirror_effect(self, screen, state, layout, now: float) -> None:
+        """Brief Susanoo flare at activation; persistent seals are state-rendered."""
+        if not self.yata_mirror_animations:
+            return
+        effects = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        active = []
+        for animation in self.yata_mirror_animations:
+            elapsed = now - float(animation.get("started", now))
+            if elapsed >= 1.25:
+                continue
+            active.append(animation)
+            if elapsed < 0:
+                continue
+            row_id = str(animation.get("row_id", ""))
+            row_rect = layout.row_rects.get(row_id)
+            row = next((item for item in state.rows if item.id == row_id), None)
+            if row_rect is None or row is None:
+                continue
+            progress = min(1.0, elapsed / 1.25)
+            fade = max(0.0, 1.0 - progress)
+            pulse = 0.72 + 0.28 * math.sin(elapsed * 15.0)
+            border_alpha = round(170 * fade * pulse)
+            halo = row_rect.inflate(10 + round(10 * progress), 8 + round(8 * progress))
+            pygame.draw.rect(effects, (255, 92, 50, round(22 * fade)), halo, border_radius=14)
+            pygame.draw.rect(
+                effects, (255, 157, 79, border_alpha), halo,
+                width=max(2, round(3 * fade)), border_radius=14,
+            )
+            source_card = next((
+                candidate for candidate in row.slots
+                if candidate is not None
+                and candidate.id == str(animation.get("owner_card_id", ""))
+            ), None)
+            protected_owner = str(getattr(source_card, "owner_id", ""))
+            for slot_index, card in enumerate(row.slots):
+                if (card is None or getattr(card, "eliminated", False)
+                        or card.owner_id != protected_owner):
+                    continue
+                card_rect = layout.slot_rects.get((row_id, slot_index))
+                if card_rect is None:
+                    continue
+                center = card_rect.center
+                radius = max(12, round(min(card_rect.width, card_rect.height) * (0.48 + 0.20 * progress)))
+                pygame.draw.arc(
+                    effects, (255, 126, 67, border_alpha),
+                    pygame.Rect(center[0] - radius, center[1] - radius,
+                                radius * 2, radius * 2),
+                    elapsed * 3.0, elapsed * 3.0 + 4.5, 2,
+                )
+                pygame.draw.arc(
+                    effects, (255, 218, 165, round(border_alpha * 0.72)),
+                    pygame.Rect(center[0] - radius + 4, center[1] - radius + 4,
+                                (radius - 4) * 2, (radius - 4) * 2),
+                    -elapsed * 2.2, -elapsed * 2.2 + 3.2, 1,
+                )
+            caption_font = get_font("label_small")
+            caption = caption_font.render("Yata Mirror – Protected", True, (255, 226, 190))
+            caption.set_alpha(round(255 * fade))
+            plate = pygame.Rect(0, 0, caption.get_width() + 24, caption.get_height() + 10)
+            plate.centerx = row_rect.centerx
+            plate.bottom = max(caption.get_height() + 10, row_rect.top - 4)
+            pygame.draw.rect(effects, (39, 12, 19, round(205 * fade)), plate, border_radius=10)
+            pygame.draw.rect(effects, (238, 111, 63, round(200 * fade)), plate, 1, border_radius=10)
+            effects.blit(caption, caption.get_rect(center=plate.center))
+        self.yata_mirror_animations = active
+        screen.blit(effects, (0, 0))
 
     @staticmethod
     def _format_points(active_points: int, base_points: int) -> str:
