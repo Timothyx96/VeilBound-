@@ -67,6 +67,8 @@ class AudioManager:
         self._crazy_slots_last_tick: tuple[str, float] | None = None
         self.ability_sounds: dict[str, pygame.mixer.Sound | None] = {}
         self.character_reveal_sounds: dict[str, pygame.mixer.Sound | None] = {}
+        self.sogeking_dialogue_sound: pygame.mixer.Sound | None = None
+        self.sogeking_dialogue_duration = 0.0
         self.luffy_haki_sounds: tuple[tuple[pygame.mixer.Sound | None, float], ...] = ()
         self.luffy_laugh_sound: pygame.mixer.Sound | None = None
         self.all_might_reveal_sound: pygame.mixer.Sound | None = None
@@ -96,6 +98,11 @@ class AudioManager:
         if not self.mixer_ready:
             return
 
+        self.sogeking_dialogue_sound = self._load_sound(
+            "assets/sounds/Abillity_Sfx/Ability_Resolution/Sogeking_Dialogue.mp3"
+        )
+        if self.sogeking_dialogue_sound is not None:
+            self.sogeking_dialogue_duration = self.sogeking_dialogue_sound.get_length()
         # Purpose-built native PCM layers: there is no Conqueror's Haki asset
         # in the project. The only Luffy file is a laugh, so it is not reused
         # as a misleading combat impact.
@@ -112,6 +119,9 @@ class AudioManager:
             "assets/sounds/Abillity_Sfx/Ability_Resolution/Allmight_sfx.mp3"
         )
         self.character_reveal_sounds = {
+            "roronoa zoro": self._load_sound(
+                "assets/sounds/Abillity_Sfx/Ability_Resolution/Zoro_Reveal.mp3"
+            ),
             "nico robin": self._load_sound(
                 "assets/sounds/Abillity_Sfx/Ability_Resolution/Robin_Reveal.mp3"
             ),
@@ -313,7 +323,11 @@ class AudioManager:
                 character_name = str(event.data.get("name", "")).strip().casefold()
                 character_sound = self.character_reveal_sounds.get(character_name)
                 if event_id and character_sound is not None:
-                    self._play_once(("character_reveal", event_id), character_sound)
+                    self._play_once(
+                        ("character_reveal", event_id),
+                        character_sound,
+                        volume_multiplier=0.6 if character_name == "roronoa zoro" else 1.0,
+                    )
                 self._play_reveal_once(event_id)
             elif event.kind == "placement":
                 event_id = f"{event.data.get('row_id', '')}:{event.data.get('slot_index', '')}"
@@ -332,10 +346,7 @@ class AudioManager:
                 if shot_id and isinstance(sound_path, str) and sound_path.strip():
                     if sound_path not in self.ability_sounds:
                         self.ability_sounds[sound_path] = self._load_sound(sound_path)
-                    self._play_once(
-                        ("sogeking_slingshot", shot_id),
-                        self.ability_sounds[sound_path],
-                    )
+                    self._play_sogeking_sequence(shot_id, self.ability_sounds[sound_path])
             elif (event.kind == "ability_activated"
                     and str(event.data.get("ability_id", "")) == "luffy_warrior_of_liberation_eliminate"):
                 owner_id = str(event.data.get("owner_card_id", ""))
@@ -364,7 +375,12 @@ class AudioManager:
                     ("ability_sfx", resolution_id),
                     self.ability_sounds[sound_path],
                     volume_multiplier=(
-                        0.5 if sound_path.replace("\\", "/").casefold().endswith("/roronoa_zoro.mp3")
+                        0.5 if sound_path.replace("\\", "/").casefold().endswith((
+                            "/roronoa_zoro.mp3", "/zoro_slash.mp3", "/sasuke_sfx_new.mp3",
+                        ))
+                        else 0.6 if sound_path.replace("\\", "/").casefold().endswith(
+                            "/itachi_sfx.mp3"
+                        )
                         else 1.0
                     ),
                 )
@@ -395,6 +411,34 @@ class AudioManager:
     def play_crazy_slots_landing(self, spin_id: str) -> None:
         if spin_id:
             self._play_once(("crazy_slots_chime", spin_id), self.crazy_slots_chime_sound)
+
+    def _play_sogeking_sequence(
+        self, shot_id: str, shot_sound: pygame.mixer.Sound | None,
+    ) -> None:
+        key = ("sogeking_dialogue", shot_id)
+        if key in self.played_events:
+            return
+        self.played_events.add(key)
+        if not self.mixer_ready or self.sfx_volume <= 0:
+            return
+        dialogue = self.sogeking_dialogue_sound
+        if dialogue is None or shot_sound is None:
+            first = dialogue if dialogue is not None else shot_sound
+            self._play(first, self.sfx_volume)
+            if dialogue is not None and shot_sound is not None:
+                self._play_once(("sogeking_slingshot", shot_id), shot_sound)
+            return
+        try:
+            channel = pygame.mixer.find_channel(force=True)
+            if channel is None:
+                self._play(dialogue, self.sfx_volume)
+                return
+            dialogue.set_volume(self.sfx_volume)
+            shot_sound.set_volume(self.sfx_volume)
+            channel.play(dialogue)
+            channel.queue(shot_sound)
+        except pygame.error:
+            self._play(dialogue, self.sfx_volume)
 
     def _play_luffy_haki_once(self, owner_card_id: str) -> None:
         key = ("luffy_haki_reveal", owner_card_id)

@@ -6,12 +6,12 @@
       "name": "Naruto Uzumaki",
       "base_points": 10,
       "type": "GOAT",
-      "effect_name": "Six Paths: Rasen-Shuriken",
+      "effect_name": "Rasengan",
       "effect_text": "Gains +3 points if Hinata is in the same row. Also eliminates one opposing Fighter card in any row.",
       "abilities": [
         {
           "id": "naruto_rasenshuriken_eliminate",
-          "name": "Six Paths: Rasen-Shuriken",
+          "name": "Rasengan",
           "description": "Eliminates one opposing Fighter card in any row.",
           "trigger": "on_reveal",
           "conditions": [],
@@ -29,9 +29,9 @@
           },
           "activation_limit": "once_per_card_per_match",
           "presentation": {
-            "floating_text": "RASEN-SHURIKEN",
+            "floating_text": "RASENGAN",
             "animation": "elimination",
-            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Naruto_Elimination.mp3"
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Naruto.mp3"
           }
         },
         {
@@ -116,7 +116,7 @@
         "presentation": {
           "floating_text": "SHARINGAN RETRIBUTION",
           "animation": "elimination",
-          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Sasuke_sfx.mp3"
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Sasuke_sfx_new.mp3"
         }
       }
       ],
@@ -1183,7 +1183,7 @@
         "presentation": {
           "floating_text": "ONI GIRI",
           "animation": "elimination",
-          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Roronoa_zoro.mp3"
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Zoro_Slash.mp3"
         }
       }
     },
@@ -1394,7 +1394,7 @@
           "presentation": {
             "floating_text": "+6 ROW SCORE",
             "animation": "points_gain",
-            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Usopp_Sfx.mp3"
+            "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Usopp_Shoots_Flag.mp3"
           }
         }
       ],
@@ -1588,7 +1588,7 @@
         "presentation": {
           "floating_text": "GOLDEN TYRANT",
           "animation": "elimination",
-          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Freeza_sfx.mp3"
+          "sound": "assets/sounds/Abillity_Sfx/Ability_Resolution/Freeza_sfx_new.mp3"
         }
       }
     },

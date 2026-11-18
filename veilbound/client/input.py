@@ -23,6 +23,9 @@ class InputController:
         self.engine = engine
         self.renderer = renderer
         self.audio = audio
+        self.renderer.sogeking_dialogue_duration = (
+            max(0.0, float(audio.sogeking_dialogue_duration)) if audio is not None else 0.0
+        )
         self.drag_id: str | None = None
         self.hover_index: int | None = None
         self.mouse_pos: tuple[int, int] | None = None

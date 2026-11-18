@@ -125,6 +125,7 @@ class Renderer:
         self.sogeking_shot: dict | None = None
         self.sogeking_shot_complete = False
         self._processed_sogeking_shots: set[str] = set()
+        self.sogeking_dialogue_duration = 0.0
         self.row_score_positions: dict[tuple[str, str], tuple[int, int]] = {}
         # Dynamic Duo energy arc animation; one shot per genuine same-player
         # pair activation. Populated by note_events for an ability_activated
@@ -2631,6 +2632,8 @@ class Renderer:
             "team_player_id": str(data.get("team_player_id", "")),
             "bonus_points": max(0, int(data.get("bonus_points", 0))),
             "started": started,
+            "dialogue_duration": max(0.0, float(self.sogeking_dialogue_duration)),
+            "animation_started": started + max(0.0, float(self.sogeking_dialogue_duration)),
         }
         self.sogeking_shot_complete = False
 
@@ -2643,7 +2646,7 @@ class Renderer:
                 self._begin_sogeking_shot(pending, now)
         if self.sogeking_shot is not None:
             self.sogeking_shot_complete = (
-                now - float(self.sogeking_shot.get("started", now)) >= 1.58
+                now - float(self.sogeking_shot.get("animation_started", now)) >= 1.58 * 3
             )
 
     def _draw_sogeking_shot(self, screen, state: GameState, layout, now: float) -> None:
@@ -2663,7 +2666,11 @@ class Renderer:
         target = self.row_score_positions.get((row.id, shot["team_player_id"]))
         if source is None or target is None:
             return
-        elapsed = max(0.0, now - float(shot["started"]))
+        animation_started = float(shot.get("animation_started", now))
+        if now < animation_started:
+            self._draw_sogeking_dialogue(screen, layout, row, shot, now)
+            return
+        elapsed = max(0.0, now - animation_started) / 3.0
         if elapsed >= 1.58:
             return
         width, height = screen.get_size()
@@ -2731,6 +2738,52 @@ class Renderer:
             pygame.draw.rect(badge_surface, (194, 52, 70, round(caption_alpha * 0.82)), badge_surface.get_rect(), 1, border_radius=7)
             screen.blit(badge_surface, badge.topleft)
             screen.blit(caption, caption.get_rect(center=badge.center))
+
+    def _draw_sogeking_dialogue(self, screen, layout, row, shot: dict, now: float) -> None:
+        """Show the Sogeking call-and-response while its dialogue clip plays."""
+        duration = max(0.05, float(shot.get("dialogue_duration", 0.0)))
+        elapsed = max(0.0, now - float(shot.get("started", now)))
+        alpha = round(
+            245
+            * min(1.0, elapsed / 0.18)
+            * min(1.0, max(0.0, (duration - elapsed) / 0.24))
+        )
+        if alpha <= 0:
+            return
+        lines = [
+            render_text("Sogeking shoot down that flag", "ui", shadow=True),
+            render_text("Roger That...", "ui", shadow=True),
+        ]
+        width, height = screen.get_size()
+        row_rect = layout.row_rects.get(row.id)
+        max_width = max(1, min(width - 32, round((row_rect.width if row_rect else width) * 0.92)))
+        for index, line in enumerate(lines):
+            if line.get_width() > max_width:
+                lines[index] = pygame.transform.smoothscale(
+                    line,
+                    (max_width, max(1, round(line.get_height() * max_width / line.get_width()))),
+                )
+        gap = 3
+        panel_width = max(line.get_width() for line in lines) + 24
+        panel_height = sum(line.get_height() for line in lines) + gap + 14
+        center_x = row_rect.centerx if row_rect else width // 2
+        first_row = min(layout.row_rects.values(), key=lambda rect: rect.top) if layout.row_rects else None
+        top_y = max(8, first_row.top - panel_height - 18) if first_row else 8
+        panel_rect = pygame.Rect(0, 0, panel_width, panel_height)
+        panel_rect.midtop = (center_x, top_y)
+        panel = pygame.Surface(panel_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(
+            panel, (24, 10, 18, round(alpha * 0.82)), panel.get_rect(), border_radius=8,
+        )
+        pygame.draw.rect(
+            panel, (194, 52, 70, round(alpha * 0.88)), panel.get_rect(), 1, border_radius=8,
+        )
+        screen.blit(panel, panel_rect)
+        line_y = panel_rect.top + 7
+        for line in lines:
+            line.set_alpha(alpha)
+            screen.blit(line, line.get_rect(midtop=(center_x, line_y)))
+            line_y += line.get_height() + gap
 
     def _draw_kamui_effect(self, screen, state: GameState, layout, now: float) -> None:
         """Render Kakashi's one-shot dimensional row-value exchange."""
